@@ -1,7 +1,7 @@
 import os
 import torch
 import numpy as np
-import imageio 
+import imageio
 import json
 import torch.nn.functional as F
 import cv2
@@ -56,11 +56,11 @@ def load_clevr_data(basedir, half_res=False, testskip=1):
             skip = testskip
             
         for frame in meta['frames'][::skip]:
-            fname = os.path.join(basedir, frame['file_path'] + '.png')
-            imgs.append(imageio.imread(fname))
+            fname = os.path.join(basedir, frame['file_path'])
+            imgs.append(imageio.imread(fname)[..., :3])
             # TODO: masks.append(np.load)
             poses.append(np.array(frame['transform_matrix']))
-        imgs = (np.array(imgs) / 255.).astype(np.float32) # keep all 4 channels (RGBA)
+        imgs = (np.array(imgs) / 255.).astype(np.float32)  # keep all 4 channels (RGBA)
         poses = np.array(poses).astype(np.float32)
         counts.append(counts[-1] + imgs.shape[0])
         all_imgs.append(imgs)
@@ -85,18 +85,15 @@ def load_clevr_data(basedir, half_res=False, testskip=1):
         W = W//2
         focal = focal/2.
 
-        imgs_half_res = np.zeros((imgs.shape[0], H, W, 4))
+        imgs_half_res = np.zeros((imgs.shape[0], H, W, 3))
         for i, img in enumerate(imgs):
             imgs_half_res[i] = cv2.resize(img, (W, H), interpolation=cv2.INTER_AREA)
         imgs = imgs_half_res
 
-        masks_half_res = np.zeros((masks.shape[0], H, W, 4))
+        masks_half_res = np.zeros((masks.shape[0], H, W, 3))
         for i, mask in enumerate(masks):
             masks_half_res[i] = cv2.resize(img, (W, H), interpolation=cv2.INTER_AREA)
         masks = masks_half_res
         # imgs = tf.image.resize_area(imgs, [400, 400]).numpy()
 
-        
-    return imgs, masks, poses, render_poses, [H, W, focal], i_split
-
-
+    return imgs, poses, render_poses, [H, W, focal], i_split
