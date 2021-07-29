@@ -95,6 +95,7 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
             metas[s] = json.load(fp)
     
     instance_color_list = torch.from_numpy(np.loadtxt(os.path.join(basedir, 'train/instance_label_render.txt'))).to(torch.uint8)
+    instance_num = instance_color_list.shape[0]  # include background
 
     all_imgs = []
     all_masks = []
@@ -115,7 +116,7 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
             imgs.append(imageio.imread(fname)[..., :3])
             colored_mask = imageio.imread(os.path.join(os.path.split(fname)[0], 'mask_' + os.path.split(fname)[1]))
             colored_mask = torch.from_numpy(colored_mask[..., :3])
-            mask = color2label(colored_mask, instance_color_list)
+            mask = color2label(colored_mask, instance_color_list).cpu().numpy()
             masks.append(mask)
             poses.append(np.array(frame['transform_matrix']))
         imgs = (np.array(imgs) / 255.).astype(np.float32)  # keep all 4 channels (RGBA)
@@ -152,4 +153,4 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
             masks_half_res[i] = cv2.resize(img, (W, H), interpolation=cv2.INTER_AREA)
         masks = masks_half_res
 
-    return imgs, masks, poses, render_poses, [H, W, focal], i_split
+    return imgs, masks, instance_num, poses, render_poses, [H, W, focal], i_split

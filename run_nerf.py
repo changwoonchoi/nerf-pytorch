@@ -190,7 +190,7 @@ def create_nerf(args):
     model = NeRF(D=args.netdepth, W=args.netwidth,
                  input_ch=input_ch, output_ch=output_ch, skips=skips,
                  input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
-                 use_instance=args.instance_mask).to(device)
+                 instance_num=args.instance_num).to(device)
     grad_vars = list(model.parameters())
 
     model_fine = None
@@ -437,6 +437,7 @@ def config_parser():
     # training options
     parser.add_argument("--instance_mask", action="store_true",
                         help='NeRF with instance mask')
+    parser.add_argument("--instance_num", type=int, default=1, help="temp argument")
     parser.add_argument("--netdepth", type=int, default=8,
                         help='layers in network')
     parser.add_argument("--netwidth", type=int, default=256,
@@ -609,11 +610,12 @@ def train():
 
     elif args.dataset_type == 'clevr':
         if args.instance_mask:
-            images, masks, poses, render_poses, hwf, i_split = load_clevr_instance_data(args.datadir, args.half_res, args.testskip)
+            images, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(args.datadir, args.half_res, args.testskip)
         else:
             images, poses, render_poses, hwf, i_split = load_clevr_data(args.datadir, args.half_res, args.testskip)
         print('Loaded CLEVR', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
+        args.instance_num = instance_num
 
         hemi_R = np.mean(np.linalg.norm(poses[:, :3, -1], axis=-1))
         near = hemi_R - 4
