@@ -54,7 +54,7 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
 	return outputs
 
 
-def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
+def batchify_rays(rays_flat, chunk=1024 * 32, **kwargs):
 	"""
 	Render rays in smaller minibatches to avoid OOM.
 	"""
@@ -70,10 +70,10 @@ def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
 	return all_ret
 
 
-def render(H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True,
-				  near=0., far=1.,
-				  use_viewdirs=False, c2w_staticcam=None,
-				  **kwargs):
+def render(
+		H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True, near=0., far=1., use_viewdirs=False, c2w_staticcam=None,
+		**kwargs
+):
 	"""
 	Render rays
 	Args:
@@ -142,11 +142,11 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
 	H, W, focal = hwf
 
-	if render_factor!=0:
+	if render_factor != 0:
 		# Render downsampled for speed
-		H = H//render_factor
-		W = W//render_factor
-		focal = focal/render_factor
+		H = H // render_factor
+		W = W // render_factor
+		focal = focal / render_factor
 
 	rgbs = []
 	disps = []
@@ -155,10 +155,10 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 	for i, c2w in enumerate(tqdm(render_poses)):
 		print(i, time.time() - t)
 		t = time.time()
-		rgb, disp, acc, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3,:4], **render_kwargs)
+		rgb, disp, acc, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
 		rgbs.append(rgb.cpu().numpy())
 		disps.append(disp.cpu().numpy())
-		if i==0:
+		if i == 0:
 			print(rgb.shape, disp.shape)
 
 		"""
@@ -171,7 +171,6 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 			rgb8 = to8b(rgbs[-1])
 			filename = os.path.join(savedir, '{:03d}.png'.format(i))
 			imageio.imwrite(filename, rgb8)
-
 
 	rgbs = np.stack(rgbs, 0)
 	disps = np.stack(disps, 0)
@@ -191,26 +190,26 @@ def create_nerf(args):
 		embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args.i_embed)
 	output_ch = 5 if args.N_importance > 0 else 4
 	skips = [4]
-	model = NeRF(D=args.netdepth, W=args.netwidth,
-				 input_ch=input_ch, output_ch=output_ch, skips=skips,
-				 input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
-				 instance_num=args.instance_num).to(device)
+	model = NeRF(
+		D=args.netdepth, W=args.netwidth, input_ch=input_ch, output_ch=output_ch, skips=skips,
+		input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,instance_num=args.instance_num
+	).to(device)
+
 	grad_vars = list(model.parameters())
 
 	model_fine = None
 	if args.N_importance > 0:
-		model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
-						  input_ch=input_ch, output_ch=output_ch, skips=skips,
-						  input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
-						  instance_num=args.instance_num).to(device)
+		model_fine = NeRF(
+			D=args.netdepth_fine, W=args.netwidth_fine, input_ch=input_ch, output_ch=output_ch, skips=skips,
+			input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
+			instance_num=args.instance_num
+		).to(device)
+
 		grad_vars += list(model_fine.parameters())
 
-	network_query_fn = lambda inputs, viewdirs, network_fn : run_network(
-																inputs, viewdirs, network_fn,
-																embed_fn=embed_fn,
-																embeddirs_fn=embeddirs_fn,
-																netchunk=args.netchunk
-																)
+	network_query_fn = lambda inputs, viewdirs, network_fn: run_network(
+		inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn,netchunk=args.netchunk
+	)
 
 	# Create optimizer
 	optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
@@ -225,8 +224,7 @@ def create_nerf(args):
 	if args.ft_path is not None and args.ft_path!='None':
 		ckpts = [args.ft_path]
 	else:
-		ckpts = [os.path.join(basedir, expname, f) \
-			for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
+		ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
 
 	print('Found ckpts', ckpts)
 	if len(ckpts) > 0 and not args.no_reload:
@@ -245,15 +243,15 @@ def create_nerf(args):
 	##########################
 
 	render_kwargs_train = {
-		'network_query_fn' : network_query_fn,
-		'perturb' : args.perturb,
-		'N_importance' : args.N_importance,
-		'network_fine' : model_fine,
-		'N_samples' : args.N_samples,
-		'network_fn' : model,
-		'use_viewdirs' : args.use_viewdirs,
-		'white_bkgd' : args.white_bkgd,
-		'raw_noise_std' : args.raw_noise_std,
+		'network_query_fn': network_query_fn,
+		'perturb': args.perturb,
+		'N_importance': args.N_importance,
+		'network_fine': model_fine,
+		'N_samples': args.N_samples,
+		'network_fn': model,
+		'use_viewdirs': args.use_viewdirs,
+		'white_bkgd': args.white_bkgd,
+		'raw_noise_std': args.raw_noise_std,
 	}
 
 	# NDC only good for LLFF-style forward facing data
@@ -287,56 +285,47 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
 
-	raw2alpha = lambda raw, dists, act_fn=F.relu: 1.-torch.exp(-act_fn(raw)*dists)
+	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	if instance_num > 0:
 
 		raise NotImplementedError
 	else:
-		dists = z_vals[...,1:] - z_vals[...,:-1]
-		dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[...,:1].shape)], -1)  # [N_rays, N_samples]
+		dists = z_vals[..., 1:] - z_vals[..., :-1]
+		dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
 
-		dists = dists * torch.norm(rays_d[...,None,:], dim=-1)
+		dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
 
-		rgb = torch.sigmoid(raw[...,:3])  # [N_rays, N_samples, 3]
+		rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
 		noise = 0.
 		if raw_noise_std > 0.:
-			noise = torch.randn(raw[...,3].shape) * raw_noise_std
+			noise = torch.randn(raw[..., 3].shape) * raw_noise_std
 
 			# Overwrite randomly sampled data if pytest
 			if pytest:
 				np.random.seed(0)
-				noise = np.random.rand(*list(raw[...,3].shape)) * raw_noise_std
+				noise = np.random.rand(*list(raw[..., 3].shape)) * raw_noise_std
 				noise = torch.Tensor(noise)
 
 		alpha = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
 		# weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
-		weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1.-alpha + 1e-10], -1), -1)[:, :-1]
-		rgb_map = torch.sum(weights[...,None] * rgb, -2)  # [N_rays, 3]
+		weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
+		rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 
 		depth_map = torch.sum(weights * z_vals, -1)
 		disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
 		acc_map = torch.sum(weights, -1)
 
 		if white_bkgd:
-			rgb_map = rgb_map + (1.-acc_map[...,None])
+			rgb_map = rgb_map + (1. - acc_map[..., None])
 
 		return rgb_map, disp_map, acc_map, weights, depth_map
 
 
-def render_rays(ray_batch,
-				network_fn,
-				network_query_fn,
-				N_samples,
-				retraw=False,
-				lindisp=False,
-				perturb=0.,
-				N_importance=0,
-				network_fine=None,
-				white_bkgd=False,
-				raw_noise_std=0.,
-				verbose=False,
-				pytest=False):
+def render_rays(
+		ray_batch, network_fn, network_query_fn, N_samples, retraw=False, lindisp=False, perturb=0., N_importance=0,
+		network_fine=None, white_bkgd=False, raw_noise_std=0., verbose=False, pytest=False
+):
 	"""
 	Volumetric rendering.
 	Args:
@@ -353,7 +342,7 @@ def render_rays(ray_batch,
 		random points in time.
 		N_importance: int. Number of additional times to sample along each ray.
 			These samples are only passed to network_fine.
-			network_fine: "fine" network with same spec as network_fn.
+		network_fine: "fine" network with same spec as network_fn.
 		white_bkgd: bool. If True, assume a white background.
 		raw_noise_std: ...
 		verbose: bool. If True, print more debugging info.
@@ -369,24 +358,24 @@ def render_rays(ray_batch,
 			sample.
 	"""
 	N_rays = ray_batch.shape[0]
-	rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
-	viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
-	bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
-	near, far = bounds[...,0], bounds[...,1] # [-1,1]
+	rays_o, rays_d = ray_batch[:, 0:3], ray_batch[:, 3:6]  # [N_rays, 3] each
+	viewdirs = ray_batch[:, -3:] if ray_batch.shape[-1] > 8 else None
+	bounds = torch.reshape(ray_batch[..., 6:8], [-1, 1, 2])
+	near, far = bounds[...,0], bounds[..., 1]  # [-1,1]
 
 	t_vals = torch.linspace(0., 1., steps=N_samples)
 	if not lindisp:
-		z_vals = near * (1.-t_vals) + far * (t_vals)
+		z_vals = near * (1. - t_vals) + far * (t_vals)
 	else:
-		z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
+		z_vals = 1. / (1. / near * (1. - t_vals) + 1. / far * (t_vals))
 
 	z_vals = z_vals.expand([N_rays, N_samples])
 
 	if perturb > 0.:
 		# get intervals between samples
-		mids = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-		upper = torch.cat([mids, z_vals[...,-1:]], -1)
-		lower = torch.cat([z_vals[...,:1], mids], -1)
+		mids = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
+		upper = torch.cat([mids, z_vals[..., -1:]], -1)
+		lower = torch.cat([z_vals[..., :1], mids], -1)
 		# stratified samples in those intervals
 		t_rand = torch.rand(z_vals.shape)
 
@@ -398,25 +387,25 @@ def render_rays(ray_batch,
 
 		z_vals = lower + (upper - lower) * t_rand
 
-	pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
+	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
 
 
 	# raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
 	rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(
 		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest
-		)
+	)
 
 	if N_importance > 0:
 
 		rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
 
-		z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-		z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
+		z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
+		z_samples = sample_pdf(z_vals_mid, weights[..., 1:-1], N_importance, det=(perturb == 0.), pytest=pytest)
 		z_samples = z_samples.detach()
 
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
-		pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
+		pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
 
 		run_fn = network_fn if network_fine is None else network_fine
 		# raw = run_network(pts, fn=run_fn)
@@ -424,9 +413,9 @@ def render_rays(ray_batch,
 
 		rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(
 			raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest
-			)
+		)
 
-	ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map}
+	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
 	if retraw:
 		ret['raw'] = raw
 	if N_importance > 0:
@@ -684,7 +673,10 @@ def train():
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', render_poses.shape)
 
-			rgbs, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test, gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor)
+			rgbs, _ = render_path(
+				render_poses, hwf, K, args.chunk, render_kwargs_test,
+				gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor
+			)
 			print('Done rendering', testsavedir)
 			imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
 
@@ -775,9 +767,9 @@ def train():
 				target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 
 		#####  Core optimization loop  #####
-		rgb, disp, acc, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
-												verbose=i < 10, retraw=True,
-												**render_kwargs_train)
+		rgb, disp, acc, extras = render(
+			H, W, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True, **render_kwargs_train
+		)
 
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
@@ -807,7 +799,7 @@ def train():
 		#####           end            #####
 
 		# Rest is logging
-		if i%args.i_weights == 0:
+		if i % args.i_weights == 0:
 			path = os.path.join(basedir, expname, '{:06d}.tar'.format(i))
 			torch.save({
 				'global_step': global_step,
@@ -817,7 +809,7 @@ def train():
 			}, path)
 			print('Saved checkpoints at', path)
 
-		if i% args.i_video == 0 and i > 0:
+		if i % args.i_video == 0 and i > 0:
 			# Turn on testing mode
 			with torch.no_grad():
 				rgbs, disps = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test)
@@ -833,62 +825,23 @@ def train():
 			#     render_kwargs_test['c2w_staticcam'] = None
 			#     imageio.mimwrite(moviebase + 'rgb_still.mp4', to8b(rgbs_still), fps=30, quality=8)
 
-		if i%args.i_testset == 0 and i > 0:
+		if i % args.i_testset == 0 and i > 0:
 			testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(i))
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', poses[i_test].shape)
 			with torch.no_grad():
-				render_path(torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test, gt_imgs=images[i_test], savedir=testsavedir)
+				render_path(
+					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
+					gt_imgs=images[i_test], savedir=testsavedir
+				)
 			print('Saved test set')
 
 		if i % args.i_print == 0:
 			tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
-		"""
-			print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
-			print('iter time {:.05f}'.format(dt))
-
-			with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_print):
-				tf.contrib.summary.scalar('loss', loss)
-				tf.contrib.summary.scalar('psnr', psnr)
-				tf.contrib.summary.histogram('tran', trans)
-				if args.N_importance > 0:
-					tf.contrib.summary.scalar('psnr0', psnr0)
-
-
-			if i%args.i_img==0:
-
-				# Log a rendered validation view to Tensorboard
-				img_i=np.random.choice(i_val)
-				target = images[img_i]
-				pose = poses[img_i, :3,:4]
-				with torch.no_grad():
-					rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
-														**render_kwargs_test)
-
-				psnr = mse2psnr(img2mse(rgb, target))
-
-				with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
-
-					tf.contrib.summary.image('rgb', to8b(rgb)[tf.newaxis])
-					tf.contrib.summary.image('disp', disp[tf.newaxis,...,tf.newaxis])
-					tf.contrib.summary.image('acc', acc[tf.newaxis,...,tf.newaxis])
-
-					tf.contrib.summary.scalar('psnr_holdout', psnr)
-					tf.contrib.summary.image('rgb_holdout', target[tf.newaxis])
-
-
-				if args.N_importance > 0:
-
-					with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
-						tf.contrib.summary.image('rgb0', to8b(extras['rgb0'])[tf.newaxis])
-						tf.contrib.summary.image('disp0', extras['disp0'][tf.newaxis,...,tf.newaxis])
-						tf.contrib.summary.image('z_std', extras['z_std'][tf.newaxis,...,tf.newaxis])
-		"""
 
 		global_step += 1
 
 
 if __name__=='__main__':
 	torch.set_default_tensor_type('torch.cuda.FloatTensor')
-
 	train()
