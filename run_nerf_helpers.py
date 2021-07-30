@@ -125,7 +125,7 @@ class NeRF(nn.Module):
 		else:
 			outputs = self.output_linear(h)
 
-		return outputs    
+		return outputs
 
 	def load_weights_from_keras(self, weights):
 		assert self.use_viewdirs, "Not implemented if use_viewdirs=False"
