@@ -26,7 +26,8 @@ DEBUG = False
 
 
 def batchify(fn, chunk):
-	"""Constructs a version of 'fn' that applies to smaller batches.
+	"""
+	Constructs a version of 'fn' that applies to smaller batches.
 	"""
 	if chunk is None:
 		return fn
@@ -36,7 +37,8 @@ def batchify(fn, chunk):
 
 
 def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
-	"""Prepares inputs and applies network 'fn'.
+	"""
+	Prepares inputs and applies network 'fn'.
 	"""
 	inputs_flat = torch.reshape(inputs, [-1, inputs.shape[-1]])
 	embedded = embed_fn(inputs_flat)
@@ -53,8 +55,10 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
 
 
 def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
-	"""Render rays in smaller minibatches to avoid OOM.
 	"""
+	Render rays in smaller minibatches to avoid OOM.
+	"""
+	breakpoint()
 	all_ret = {}
 	for i in range(0, rays_flat.shape[0], chunk):
 		ret = render_rays(rays_flat[i:i+chunk], **kwargs)
@@ -71,27 +75,27 @@ def render(H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True,
 				  near=0., far=1.,
 				  use_viewdirs=False, c2w_staticcam=None,
 				  **kwargs):
-	"""Render rays
+	"""
+	Render rays
 	Args:
-	  H: int. Height of image in pixels.
-	  W: int. Width of image in pixels.
-	  focal: float. Focal length of pinhole camera.
-	  chunk: int. Maximum number of rays to process simultaneously. Used to
-		control maximum memory usage. Does not affect final results.
-	  rays: array of shape [2, batch_size, 3]. Ray origin and direction for
-		each example in batch.
-	  c2w: array of shape [3, 4]. Camera-to-world transformation matrix.
-	  ndc: bool. If True, represent ray origin, direction in NDC coordinates.
-	  near: float or array of shape [batch_size]. Nearest distance for a ray.
-	  far: float or array of shape [batch_size]. Farthest distance for a ray.
-	  use_viewdirs: bool. If True, use viewing direction of a point in space in model.
-	  c2w_staticcam: array of shape [3, 4]. If not None, use this transformation matrix for
-	   camera while using other c2w argument for viewing directions.
+		H: int. Height of image in pixels.
+		W: int. Width of image in pixels.
+		focal: float. Focal length of pinhole camera.
+		chunk: int. Maximum number of rays to process simultaneously.
+			Used to control maximum memory usage. Does not affect final results.
+		rays: array of shape [2, batch_size, 3]. Ray origin and direction for each example in batch.
+		c2w: array of shape [3, 4]. Camera-to-world transformation matrix.
+		ndc: bool. If True, represent ray origin, direction in NDC coordinates.
+		near: float or array of shape [batch_size]. Nearest distance for a ray.
+		far: float or array of shape [batch_size]. Farthest distance for a ray.
+		use_viewdirs: bool. If True, use viewing direction of a point in space in model.
+		c2w_staticcam: array of shape [3, 4]. If not None, use this transformation matrix for
+			camera while using other c2w argument for viewing directions.
 	Returns:
-	  rgb_map: [batch_size, 3]. Predicted RGB values for rays.
-	  disp_map: [batch_size]. Disparity map. Inverse of depth.
-	  acc_map: [batch_size]. Accumulated opacity (alpha) along a ray.
-	  extras: dict with everything returned by render_rays().
+		rgb_map: [batch_size, 3]. Predicted RGB values for rays.
+		disp_map: [batch_size]. Disparity map. Inverse of depth.
+		acc_map: [batch_size]. Accumulated opacity (alpha) along a ray.
+		extras: dict with everything returned by render_rays().
 	"""
 	if c2w is not None:
 		# special case to render full image
@@ -106,8 +110,8 @@ def render(H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True,
 		if c2w_staticcam is not None:
 			# special case to visualize effect of viewdirs
 			rays_o, rays_d = get_rays(H, W, K, c2w_staticcam)
-		viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)
-		viewdirs = torch.reshape(viewdirs, [-1,3]).float()
+		viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)  # (N_rand, 3)
+		viewdirs = torch.reshape(viewdirs, [-1,3]).float()  # (N_rand, 3)
 
 	sh = rays_d.shape # [..., 3]
 	if ndc:
@@ -177,7 +181,8 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
 
 def create_nerf(args):
-	"""Instantiate NeRF's MLP model.
+	"""
+	Instantiate NeRF's MLP model.
 	"""
 	embed_fn, input_ch = get_embedder(args.multires, args.i_embed)
 
@@ -198,13 +203,15 @@ def create_nerf(args):
 		model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
 						  input_ch=input_ch, output_ch=output_ch, skips=skips,
 						  input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
-						  use_instance=args.instance_mask).to(device)
+						  instance_num=args.instance_num).to(device)
 		grad_vars += list(model_fine.parameters())
 
-	network_query_fn = lambda inputs, viewdirs, network_fn : run_network(inputs, viewdirs, network_fn,
+	network_query_fn = lambda inputs, viewdirs, network_fn : run_network(
+																inputs, viewdirs, network_fn,
 																embed_fn=embed_fn,
 																embeddirs_fn=embeddirs_fn,
-																netchunk=args.netchunk)
+																netchunk=args.netchunk
+																)
 
 	# Create optimizer
 	optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
@@ -219,7 +226,8 @@ def create_nerf(args):
 	if args.ft_path is not None and args.ft_path!='None':
 		ckpts = [args.ft_path]
 	else:
-		ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
+		ckpts = [os.path.join(basedir, expname, f) \
+			for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
 
 	print('Found ckpts', ckpts)
 	if len(ckpts) > 0 and not args.no_reload:
@@ -263,7 +271,8 @@ def create_nerf(args):
 
 
 def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=False):
-	"""Transforms model's predictions to semantically meaningful values.
+	"""
+	Transforms model's predictions to semantically meaningful values.
 	Args:
 		raw: [num_rays, num_samples along ray, 4]. Prediction from model.
 		z_vals: [num_rays, num_samples along ray]. Integration time.
@@ -321,35 +330,36 @@ def render_rays(ray_batch,
 				raw_noise_std=0.,
 				verbose=False,
 				pytest=False):
-	"""Volumetric rendering.
+	"""
+	Volumetric rendering.
 	Args:
-	  ray_batch: array of shape [batch_size, ...]. All information necessary
-		for sampling along a ray, including: ray origin, ray direction, min
-		dist, max dist, and unit-magnitude viewing direction.
-	  network_fn: function. Model for predicting RGB and density at each point
-		in space.
-	  network_query_fn: function used for passing queries to network_fn.
-	  N_samples: int. Number of different times to sample along each ray.
-	  retraw: bool. If True, include model's raw, unprocessed predictions.
-	  lindisp: bool. If True, sample linearly in inverse depth rather than in depth.
-	  perturb: float, 0 or 1. If non-zero, each ray is sampled at stratified
+		ray_batch: array of shape [batch_size, ...]. All information necessary
+			for sampling along a ray, including: ray origin, ray direction, min
+			dist, max dist, and unit-magnitude viewing direction.
+		network_fn: function. Model for predicting RGB and density at each point
+			in space.
+		network_query_fn: function used for passing queries to network_fn.
+		N_samples: int. Number of different times to sample along each ray.
+		retraw: bool. If True, include model's raw, unprocessed predictions.
+		lindisp: bool. If True, sample linearly in inverse depth rather than in depth.
+		perturb: float, 0 or 1. If non-zero, each ray is sampled at stratified
 		random points in time.
-	  N_importance: int. Number of additional times to sample along each ray.
-		These samples are only passed to network_fine.
-	  network_fine: "fine" network with same spec as network_fn.
-	  white_bkgd: bool. If True, assume a white background.
-	  raw_noise_std: ...
-	  verbose: bool. If True, print more debugging info.
+		N_importance: int. Number of additional times to sample along each ray.
+			These samples are only passed to network_fine.
+			network_fine: "fine" network with same spec as network_fn.
+		white_bkgd: bool. If True, assume a white background.
+		raw_noise_std: ...
+		verbose: bool. If True, print more debugging info.
 	Returns:
-	  rgb_map: [num_rays, 3]. Estimated RGB color of a ray. Comes from fine model.
-	  disp_map: [num_rays]. Disparity map. 1 / depth.
-	  acc_map: [num_rays]. Accumulated opacity along each ray. Comes from fine model.
-	  raw: [num_rays, num_samples, 4]. Raw predictions from model.
-	  rgb0: See rgb_map. Output for coarse model.
-	  disp0: See disp_map. Output for coarse model.
-	  acc0: See acc_map. Output for coarse model.
-	  z_std: [num_rays]. Standard deviation of distances along ray for each
-		sample.
+		rgb_map: [num_rays, 3]. Estimated RGB color of a ray. Comes from fine model.
+		disp_map: [num_rays]. Disparity map. 1 / depth.
+		acc_map: [num_rays]. Accumulated opacity along each ray. Comes from fine model.
+		raw: [num_rays, num_samples, 4]. Raw predictions from model.
+		rgb0: See rgb_map. Output for coarse model.
+		disp0: See disp_map. Output for coarse model.
+		acc0: See acc_map. Output for coarse model.
+		z_std: [num_rays]. Standard deviation of distances along ray for each
+			sample.
 	"""
 	N_rays = ray_batch.shape[0]
 	rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
@@ -384,7 +394,7 @@ def render_rays(ray_batch,
 	pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
 
 
-#     raw = run_network(pts)
+	# raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
 	rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
@@ -400,7 +410,7 @@ def render_rays(ray_batch,
 		pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
 
 		run_fn = network_fn if network_fine is None else network_fine
-#         raw = run_network(pts, fn=run_fn)
+		# raw = run_network(pts, fn=run_fn)
 		raw = network_query_fn(pts, viewdirs, run_fn)
 
 		rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
@@ -611,11 +621,11 @@ def train():
 	elif args.dataset_type == 'clevr':
 		if args.instance_mask:
 			images, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(args.datadir, args.half_res, args.testskip)
+			args.instance_num = instance_num
 		else:
 			images, poses, render_poses, hwf, i_split = load_clevr_data(args.datadir, args.half_res, args.testskip)
 		print('Loaded CLEVR', images.shape, render_poses.shape, hwf, args.datadir)
 		i_train, i_val, i_test = i_split
-		args.instance_num = instance_num
 
 		hemi_R = np.mean(np.linalg.norm(poses[:, :3, -1], axis=-1))
 		near = hemi_R - 4

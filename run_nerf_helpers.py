@@ -107,7 +107,7 @@ class NeRF(nn.Module):
 
 		if self.use_viewdirs:
 			alpha = self.alpha_linear(h)
-			if self.use_instance:
+			if self.instance_num > 0:
 				instance = self.instance_linear(h)
 				# instance = nn.Sigmoid(instance)  -> activate with softmax function after accumulate along ray direction.
 			feature = self.feature_linear(h)
