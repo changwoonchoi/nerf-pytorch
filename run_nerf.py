@@ -287,39 +287,35 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
-	if instance_num > 0:
+	dists = z_vals[..., 1:] - z_vals[..., :-1]
+	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
 
-		raise NotImplementedError
-	else:
-		dists = z_vals[..., 1:] - z_vals[..., :-1]
-		dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
+	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
 
-		dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
+	rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
+	noise = 0.
+	if raw_noise_std > 0.:
+		noise = torch.randn(raw[..., 3].shape) * raw_noise_std
 
-		rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
-		noise = 0.
-		if raw_noise_std > 0.:
-			noise = torch.randn(raw[..., 3].shape) * raw_noise_std
+		# Overwrite randomly sampled data if pytest
+		if pytest:
+			np.random.seed(0)
+			noise = np.random.rand(*list(raw[..., 3].shape)) * raw_noise_std
+			noise = torch.Tensor(noise)
 
-			# Overwrite randomly sampled data if pytest
-			if pytest:
-				np.random.seed(0)
-				noise = np.random.rand(*list(raw[..., 3].shape)) * raw_noise_std
-				noise = torch.Tensor(noise)
+	alpha = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
+	# weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
+	weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
+	rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 
-		alpha = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
-		# weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
-		weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
-		rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
+	depth_map = torch.sum(weights * z_vals, -1)
+	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
+	acc_map = torch.sum(weights, -1)
 
-		depth_map = torch.sum(weights * z_vals, -1)
-		disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
-		acc_map = torch.sum(weights, -1)
+	if white_bkgd:
+		rgb_map = rgb_map + (1. - acc_map[..., None])
 
-		if white_bkgd:
-			rgb_map = rgb_map + (1. - acc_map[..., None])
-
-		return rgb_map, disp_map, acc_map, weights, depth_map
+	return rgb_map, disp_map, acc_map, weights, depth_map
 
 
 def render_rays(
@@ -442,7 +438,7 @@ def config_parser():
 
 	# training options
 	parser.add_argument("--instance_mask", action="store_true", help='NeRF with instance mask')
-	parser.add_argument("--instance_num", type=int, default=1, help="temp argument")
+	parser.add_argument("--instance_num", type=int, default=0, help="temp argument")
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
 	parser.add_argument("--netdepth", type=int, default=8, help='layers in network')
 	parser.add_argument("--netwidth", type=int, default=256, help='channels per layer')
