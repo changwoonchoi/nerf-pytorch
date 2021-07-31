@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm, trange
+from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 
@@ -66,7 +67,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, **kwargs):
 				all_ret[k] = []
 			all_ret[k].append(ret[k])
 
-	all_ret = {k : torch.cat(all_ret[k], 0) for k in all_ret}
+	all_ret = {k: torch.cat(all_ret[k], 0) for k in all_ret}
 	return all_ret
 
 
@@ -112,16 +113,16 @@ def render(
 		viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)  # (N_rand, 3)
 		viewdirs = torch.reshape(viewdirs, [-1,3]).float()  # (N_rand, 3)
 
-	sh = rays_d.shape # [..., 3]
+	sh = rays_d.shape  # [..., 3]
 	if ndc:
 		# for forward facing scenes
 		rays_o, rays_d = ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
 
 	# Create ray batch
-	rays_o = torch.reshape(rays_o, [-1,3]).float()
-	rays_d = torch.reshape(rays_d, [-1,3]).float()
+	rays_o = torch.reshape(rays_o, [-1, 3]).float()
+	rays_d = torch.reshape(rays_d, [-1, 3]).float()
 
-	near, far = near * torch.ones_like(rays_d[...,:1]), far * torch.ones_like(rays_d[...,:1])
+	near, far = near * torch.ones_like(rays_d[..., :1]), far * torch.ones_like(rays_d[..., :1])
 	rays = torch.cat([rays_o, rays_d, near, far], -1)
 	if use_viewdirs:
 		rays = torch.cat([rays, viewdirs], -1)
@@ -132,9 +133,9 @@ def render(
 		k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
 		all_ret[k] = torch.reshape(all_ret[k], k_sh)
 
-	k_extract = ['rgb_map', 'disp_map', 'acc_map']
+	k_extract = ['rgb_map', 'disp_map', 'acc_map', 'instance_map']
 	ret_list = [all_ret[k] for k in k_extract]
-	ret_dict = {k : all_ret[k] for k in all_ret if k not in k_extract}
+	ret_dict = {k: all_ret[k] for k in all_ret if k not in k_extract}
 	return ret_list + [ret_dict]
 
 
@@ -150,14 +151,16 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
 	rgbs = []
 	disps = []
+	instances = []
 
 	t = time.time()
 	for i, c2w in enumerate(tqdm(render_poses)):
 		print(i, time.time() - t)
 		t = time.time()
-		rgb, disp, acc, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+		rgb, disp, acc, instance, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
 		rgbs.append(rgb.cpu().numpy())
 		disps.append(disp.cpu().numpy())
+		instances.append(instance.cpu().numpy())
 		if i == 0:
 			print(rgb.shape, disp.shape)
 
@@ -174,8 +177,9 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
 	rgbs = np.stack(rgbs, 0)
 	disps = np.stack(disps, 0)
+	instances = np.stack(instances, 0)
 
-	return rgbs, disps
+	return rgbs, disps, instances
 
 
 def create_nerf(args):
@@ -273,7 +277,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 	Args:
 		raw:
 		- instance_num==0: [num_rays, num_samples along ray, 4]. Prediction from model. (R,G,B,a)
-		- instance_num >0: [num_rays, num_samples along ray, 10]. (R,G,B,instance_num,a)
+		- instance_num >0: [num_rays, num_samples along ray, 10]. (R,G,B,a,instance_num)
 		z_vals: [num_rays, num_samples along ray]. Integration time.
 		rays_d: [num_rays, 3]. Direction of each ray.
 		instance_num: Number of instances in the scene
@@ -284,15 +288,12 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 		weights: [num_rays, num_samples]. Weights assigned to each sampled color.
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
-
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
 	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
-
 	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
 
-	rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
 	noise = 0.
 	if raw_noise_std > 0.:
 		noise = torch.randn(raw[..., 3].shape) * raw_noise_std
@@ -306,7 +307,17 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 	alpha = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
 	# weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
 	weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
+
+	rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
 	rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
+
+	if instance_num > 0:
+		# TODO: activation function?
+		instance_score = torch.sigmoid(raw[..., 4:])  # (N_rays, N_samples, instance_num)
+		instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_num)
+		instance_map = F.softmax(instance_map, dim=-1)
+	else:
+		instance_map = None
 
 	depth_map = torch.sum(weights * z_vals, -1)
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
@@ -315,7 +326,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 	if white_bkgd:
 		rgb_map = rgb_map + (1. - acc_map[..., None])
 
-	return rgb_map, disp_map, acc_map, weights, depth_map
+	return rgb_map, disp_map, acc_map, weights, depth_map, instance_map
 
 
 def render_rays(
@@ -385,16 +396,15 @@ def render_rays(
 
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
 
-
 	# raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
-	rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(
+	rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
 		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest
 	)
 
 	if N_importance > 0:
 
-		rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
+		rgb_map_0, disp_map_0, acc_map_0, instance_map0 = rgb_map, disp_map, acc_map, instance_map
 
 		z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
 		z_samples = sample_pdf(z_vals_mid, weights[..., 1:-1], N_importance, det=(perturb == 0.), pytest=pytest)
@@ -406,18 +416,18 @@ def render_rays(
 		run_fn = network_fn if network_fine is None else network_fine
 		# raw = run_network(pts, fn=run_fn)
 		raw = network_query_fn(pts, viewdirs, run_fn)
-
-		rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(
-			raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest
+		rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
+			raw, z_vals, rays_d, run_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest
 		)
 
-	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
+	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map, 'instance_map': instance_map}
 	if retraw:
 		ret['raw'] = raw
 	if N_importance > 0:
 		ret['rgb0'] = rgb_map_0
 		ret['disp0'] = disp_map_0
 		ret['acc0'] = acc_map_0
+		ret['instance0'] = instance_map0
 		ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
 	for k in ret:
@@ -523,6 +533,7 @@ def train():
 
 	parser = config_parser()
 	args = parser.parse_args()
+	writer = SummaryWriter()
 
 	# Load data
 	K = None
@@ -719,6 +730,7 @@ def train():
 
 		# Sample random ray batch
 		if use_batching:
+			# TODO: implement for batch
 			# Random over all images
 			batch = rays_rgb[i_batch:i_batch + N_rand]  # [B, 2+1, 3*?]
 			batch = torch.transpose(batch, 0, 1)
@@ -730,12 +742,14 @@ def train():
 				rand_idx = torch.randperm(rays_rgb.shape[0])
 				rays_rgb = rays_rgb[rand_idx]
 				i_batch = 0
-
 		else:
 			# Random from one image
 			img_i = np.random.choice(i_train)
 			target = images[img_i]
 			target = torch.Tensor(target).to(device)
+			if args.instance_num > 0:
+				target_mask = masks[img_i]
+				target_mask = torch.Tensor(target_mask).to(device)
 			pose = poses[img_i, :3, :4]
 
 			if N_rand is not None:
@@ -754,7 +768,7 @@ def train():
 				else:
 					coords = torch.stack(torch.meshgrid(torch.linspace(0, H - 1, H), torch.linspace(0, W - 1, W)), -1)  # (H, W, 2)
 
-				coords = torch.reshape(coords, [-1,2])  # (H * W, 2)
+				coords = torch.reshape(coords, [-1, 2])  # (H * W, 2)
 				select_inds = np.random.choice(coords.shape[0], size=[N_rand], replace=False)  # (N_rand,)
 				select_coords = coords[select_inds].long()  # (N_rand, 2)
 				rays_o = rays_o[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
@@ -763,14 +777,19 @@ def train():
 				target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 
 		#####  Core optimization loop  #####
-		rgb, disp, acc, extras = render(
+		rgb, disp, acc, instance, extras = render(
 			H, W, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True, **render_kwargs_train
 		)
 
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
+		# TODO: Loss function for instance label
+		if args.instance_num > 0:
+			raise NotImplementedError
+		else:
+			instance_loss = 0
 		trans = extras['raw'][..., -1]
-		loss = img_loss
+		loss = img_loss + instance_loss
 		psnr = mse2psnr(img_loss)
 
 		if 'rgb0' in extras:
@@ -778,6 +797,12 @@ def train():
 			loss = loss + img_loss0
 			psnr0 = mse2psnr(img_loss0)
 
+		if 'instance0' in extras:
+			instance_loss0 = () if args.instance_num > 0 else 0
+			loss = loss + instance_loss0
+
+		if i % 100 == 0:
+			writer.add_scalar(os.path.join(basedir, expname), loss, i)
 		loss.backward()
 		optimizer.step()
 
@@ -836,6 +861,7 @@ def train():
 			tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
 
 		global_step += 1
+	writer.flush()
 
 
 if __name__=='__main__':

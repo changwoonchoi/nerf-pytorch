@@ -119,7 +119,7 @@ class NeRF(nn.Module):
 
 			rgb = self.rgb_linear(h)
 			if self.instance_num > 0:
-				outputs = torch.cat([rgb, instance, alpha], -1)
+				outputs = torch.cat([rgb, alpha, instance], -1)
 			else:
 				outputs = torch.cat([rgb, alpha], -1)
 		else:
