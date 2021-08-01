@@ -3,16 +3,18 @@ import torch
 def label2color(label, color_list):
 	"""
 	params:
-		label: (H, W) int torch tensor
+		label: (H, W, 6) one-hot encoded torch tensor
 		color_list: colors of labels
 	returns:
 		colored_mask: (H, W, 3)
 	"""
 	colored_mask = torch.zeros([label.shape[0], label.shape[1], 3])
-	for i in range(int(torch.max(label).item())):
-		mask_i = label == i
-		colored_mask[mask_i] = color_list[i]
-	# TODO: need to verify
+	mask = torch.argmax(label, dim=-1)
+	for i in range(len(color_list)):
+		mask_i = mask == i
+		print(torch.sum(mask_i))
+		colored_mask[mask_i] = color_list[i].float().to(colored_mask.device)
+
 	return colored_mask
 
 
@@ -22,10 +24,14 @@ def color2label(colored_mask, color_list):
 		colored_mask: (H, W, 3)
 		color_list: colors of labels
 	returns:
-		label: (H, W) torch tensor
+		label: (H, W, N_instance) one-hot encoded torch tensor
 	"""
-	label = torch.zeros([colored_mask.shape[0], colored_mask.shape[1]])
+	label = torch.zeros([colored_mask.shape[0], colored_mask.shape[1], len(color_list)])
 	for i, color in enumerate(color_list):
-		mask_i = torch.sum((colored_mask.view(-1, 3) == color), dim=-1).reshape([label.shape[0], label.shape[1]]).to(torch.bool)
-		label[mask_i] = i
-	return label.to(torch.uint8)
+		one_hot = torch.zeros(len(color_list))
+		one_hot[i] = 1
+		mask_i = (colored_mask.view([-1, 3]) == color).reshape([label.shape[0], label.shape[1], 3])
+		mask_i = torch.logical_and(torch.logical_and(mask_i[:,:,0], mask_i[:,:,1]), mask_i[:,:,2])
+		print(torch.sum(mask_i))
+		label[mask_i] = one_hot
+	return label
