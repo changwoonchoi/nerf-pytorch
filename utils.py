@@ -23,13 +23,17 @@ def color2label(colored_mask, color_list):
 		colored_mask: (H, W, 3)
 		color_list: colors of labels
 	returns:
-		label: (H, W, N_instance) one-hot encoded torch tensor
+		label_onehot: (H, W, N_instance) one-hot encoded torch tensor
+		label: (H, W) stores instance num
 	"""
-	label = torch.zeros([colored_mask.shape[0], colored_mask.shape[1], len(color_list)])
+	label_onehot = torch.zeros([colored_mask.shape[0], colored_mask.shape[1], len(color_list)])
+	label = torch.zeros([colored_mask.shape[0], colored_mask.shape[1]])
+
 	for i, color in enumerate(color_list):
 		one_hot = torch.zeros(len(color_list))
 		one_hot[i] = 1
 		mask_i = (colored_mask.view([-1, 3]) == color).reshape([label.shape[0], label.shape[1], 3])
 		mask_i = torch.logical_and(torch.logical_and(mask_i[:,:,0], mask_i[:,:,1]), mask_i[:,:,2])
-		label[mask_i] = one_hot
-	return label
+		label_onehot[mask_i] = one_hot
+		label[mask_i] = i
+	return label_onehot, label

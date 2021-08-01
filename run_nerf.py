@@ -315,7 +315,8 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 		# TODO: activation function?
 		instance_score = torch.sigmoid(raw[..., 4:])  # (N_rays, N_samples, instance_num)
 		instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_num)
-		instance_map = F.softmax(instance_map, dim=-1)
+		# instance_map = F.softmax(instance_map, dim=-1)
+		# no need normalize -> use CrossEntropyLoss
 	else:
 		instance_map = None
 
@@ -603,7 +604,7 @@ def train():
 
 	elif args.dataset_type == 'clevr':
 		if args.instance_mask:
-			images, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(
+			images, masks_onehot, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(
 				args.datadir, args.half_res, args.testskip
 			)
 			args.instance_num = instance_num
@@ -750,6 +751,8 @@ def train():
 			if args.instance_num > 0:
 				target_mask = masks[img_i]
 				target_mask = torch.Tensor(target_mask).to(device)
+				target_mask_onehot = masks_onehot[img_i]
+				target_mask_onehot = torch.Tensor(target_mask_onehot).to(device)
 			pose = poses[img_i, :3, :4]
 
 			if N_rand is not None:
@@ -775,6 +778,8 @@ def train():
 				rays_d = rays_d[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 				batch_rays = torch.stack([rays_o, rays_d], 0)
 				target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
+				target_mask_s = target_mask[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, N_instance)
+				target_mask_onehot_s = target_mask_onehot[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, N_instance)
 
 		#####  Core optimization loop  #####
 		rgb, disp, acc, instance, extras = render(
@@ -785,6 +790,7 @@ def train():
 		img_loss = img2mse(rgb, target_s)
 		# TODO: Loss function for instance label
 		if args.instance_num > 0:
+			instance_loss = nn.CrossEntropyLoss(instance, target_mask_s)
 			raise NotImplementedError
 		else:
 			instance_loss = 0
