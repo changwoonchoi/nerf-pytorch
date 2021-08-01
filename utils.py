@@ -12,7 +12,6 @@ def label2color(label, color_list):
 	mask = torch.argmax(label, dim=-1)
 	for i in range(len(color_list)):
 		mask_i = mask == i
-		print(torch.sum(mask_i))
 		colored_mask[mask_i] = color_list[i].float().to(colored_mask.device)
 
 	return colored_mask
@@ -32,6 +31,5 @@ def color2label(colored_mask, color_list):
 		one_hot[i] = 1
 		mask_i = (colored_mask.view([-1, 3]) == color).reshape([label.shape[0], label.shape[1], 3])
 		mask_i = torch.logical_and(torch.logical_and(mask_i[:,:,0], mask_i[:,:,1]), mask_i[:,:,2])
-		print(torch.sum(mask_i))
 		label[mask_i] = one_hot
 	return label
