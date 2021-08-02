@@ -153,6 +153,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 	rgbs = []
 	disps = []
 	instances = []
+	instance_colors = []
 
 	t = time.time()
 	for i, c2w in enumerate(tqdm(render_poses)):
@@ -182,6 +183,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 				mask_j = argmax == j
 				instance_infer[mask_j] = onehot_j
 			instance_color = label2color(instance_infer, color_list).cpu().numpy().astype(np.uint8)
+			instance_colors.append(instance_color)
 			
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
 			filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
@@ -191,8 +193,9 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 	rgbs = np.stack(rgbs, 0)
 	disps = np.stack(disps, 0)
 	instances = np.stack(instances, 0)
+	instance_colors = np.stack(instance_colors, 0)
 
-	return rgbs, disps, instances
+	return rgbs, disps, instances, instance_colors
 
 
 def render_per_instance(
@@ -224,6 +227,8 @@ def render_per_instance(
 	rays = torch.cat([rays_o, rays_d, near, far], -1)
 	if use_viewdirs:
 		rays = torch.cat([rays, viewdirs], -1)
+
+
 
 
 
@@ -886,7 +891,6 @@ def train():
 			writer.add_scalar('Loss/instance_CrossEntropy', instance_loss, i)
 			writer.add_scalar('Loss/total_loss', loss, i)
 
-		
 		loss.backward()
 		optimizer.step()
 
@@ -935,18 +939,18 @@ def train():
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', poses[i_test].shape)
 			with torch.no_grad():
-				rgbs, _, instances = render_path(
+				rgbs, _, instances, instance_colors = render_path(
 					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
 					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list, savedir=testsavedir
 				)
 
-				gt_img_batch = np.zeros((len(i_test), 3, images[i_test[0].shape[0], images[i_test[0].shape[1]]]))
+				gt_img_batch = np.zeros((len(i_test), 3, images[i_test[0]].shape[0], images[i_test[0]].shape[1]))
 				for test_idx in range(len(i_test)):
 					gt_img_batch[test_idx] = images[i_test[test_idx]].transpose((2, 0, 1))
 
 				writer.add_images('test/gt_rgb', gt_img_batch, i)
-				writer.add_images('test/inferred_rgb', rgbs, i)
-				writer.add_images('test/inferred_mask', instances, i)
+				writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
+				writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
 				if args.render_decompose:
 					render_path_per_instance(
 						torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
