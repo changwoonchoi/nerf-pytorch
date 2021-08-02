@@ -17,3 +17,6 @@ precrop_frac = 0.5
 
 half_res = False
 instance_mask
+
+i_video = 10000000000000
+i_testset = 10000

@@ -176,11 +176,11 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 			
 			instance_infer = torch.zeros_like(instance)
 			argmax = torch.argmax(instance, dim=-1)
-			for i in range(instance.shape[-1]):
-				onehot_i = torch.zeros(instance.shape[-1])
-				onehot_i[i] = 1.
-				mask_i = argmax == i
-				instance_infer[mask_i] = onehot_i
+			for j in range(instance.shape[-1]):
+				onehot_j = torch.zeros(instance.shape[-1])
+				onehot_j[j] = 1.
+				mask_j = argmax == j
+				instance_infer[mask_j] = onehot_j
 			instance_color = label2color(instance_infer, color_list).cpu().numpy().astype(np.uint8)
 			
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
