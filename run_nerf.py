@@ -174,7 +174,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 		if savedir is not None:
 			rgb8 = to8b(rgbs[-1])
 			
-			instance_infer = torch.zeros_like(instances)
+			instance_infer = torch.zeros_like(instance)
 			argmax = torch.argmax(instance, dim=-1)
 			for i in range(instance.shape[-1]):
 				onehot_i = torch.zeros(instance.shape[-1])
