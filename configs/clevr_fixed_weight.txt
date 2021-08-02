@@ -1,4 +1,4 @@
-expname = clevr_debug
+expname = clevr_fixed_weight
 basedir = ./logs
 datadir = ./data/clevr/scene_1
 dataset_type = clevr
@@ -21,3 +21,6 @@ instance_mask
 i_video = 10000000000000
 i_testset = 10000
 testskip = 32
+
+render_decompose = False
+fixed_CE_weight = True
