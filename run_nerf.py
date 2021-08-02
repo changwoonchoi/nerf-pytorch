@@ -112,7 +112,7 @@ def render(
 			# special case to visualize effect of viewdirs
 			rays_o, rays_d = get_rays(H, W, K, c2w_staticcam)
 		viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)  # (N_rand, 3)
-		viewdirs = torch.reshape(viewdirs, [-1,3]).float()  # (N_rand, 3)
+		viewdirs = torch.reshape(viewdirs, [-1, 3]).float()  # (N_rand, 3)
 
 	sh = rays_d.shape  # [..., 3]
 	if ndc:
@@ -195,7 +195,38 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 	return rgbs, disps, instances
 
 
-def render_per_instance():
+def render_per_instance(
+		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=None, near=0., far=1., use_viewdirs=False,
+		c2w_staticcam=None, *kwargs
+):
+	"""
+	Render rays per instances
+	"""
+	if c2w is not None:
+		rays_o, rays_d = get_rays(H, W, K, c2w)
+	else:
+		rays_o, rays_d = rays
+
+	if use_viewdirs:
+		viewdirs = rays_d
+		if c2w_staticcam is not None:
+			rays_o, rays_d = get_rays(H, W, K, c2w_staticcam)
+		viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)
+		viewdirs = torch.reshape(viewdirs, [-1, 3]).float()
+
+	if ndc:
+		rays_o, rays_d = ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
+
+	rays_o = torch.reshape(rays_o, [-1, 3]).float()
+	rays_d = torch.reshape(rays_d, [-1, 3]).float()
+
+	near, far = near * torch.ones_like(rays_d[..., :1]), far * torch.ones_like(rays_d[..., :1])
+	rays = torch.cat([rays_o, rays_d, near, far], -1)
+	if use_viewdirs:
+		rays = torch.cat([rays, viewdirs], -1)
+
+
+
 	raise NotImplementedError
 
 
@@ -207,7 +238,6 @@ def render_path_per_instance(render_poses, hwf, K, chunk, render_kwargs, gt_imgs
 		if savedir is not None:
 			for n_i in range(rgb.shape[0]):
 				rgb8 = to8b(rgb[n_i])
-
 
 	raise NotImplementedError
 
@@ -855,6 +885,7 @@ def train():
 			writer.add_scalar('Loss/rgb_MSE', img_loss, i)
 			writer.add_scalar('Loss/instance_CrossEntropy', instance_loss, i)
 			writer.add_scalar('Loss/total_loss', loss, i)
+
 		
 		loss.backward()
 		optimizer.step()
@@ -886,7 +917,7 @@ def train():
 		if i % args.i_video == 0 and i > 0:
 			# Turn on testing mode
 			with torch.no_grad():
-				rgbs, disps = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test)
+				rgbs, disps, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test)
 			print('Done, saving', rgbs.shape, disps.shape)
 			moviebase = os.path.join(basedir, expname, '{}_spiral_{:06d}_'.format(expname, i))
 			imageio.mimwrite(moviebase + 'rgb.mp4', to8b(rgbs), fps=30, quality=8)
@@ -904,10 +935,18 @@ def train():
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', poses[i_test].shape)
 			with torch.no_grad():
-				render_path(
+				rgbs, _, instances = render_path(
 					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
 					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list, savedir=testsavedir
 				)
+
+				gt_img_batch = np.zeros((len(i_test), 3, images[i_test[0].shape[0], images[i_test[0].shape[1]]]))
+				for test_idx in range(len(i_test)):
+					gt_img_batch[test_idx] = images[i_test[test_idx]].transpose((2, 0, 1))
+
+				writer.add_images('test/gt_rgb', gt_img_batch, i)
+				writer.add_images('test/inferred_rgb', rgbs, i)
+				writer.add_images('test/inferred_mask', instances, i)
 				if args.render_decompose:
 					render_path_per_instance(
 						torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
