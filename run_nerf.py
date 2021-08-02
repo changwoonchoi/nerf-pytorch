@@ -819,7 +819,8 @@ def train():
 			instance_loss0 = CEloss(extras['instance0'], target_mask_s.long()) if args.instance_num > 0 else 0
 			instance_loss = instance_loss + instance_loss0
 
-		loss = img_loss + instance_loss
+		alpha = 0.01
+		loss = img_loss + alpha * instance_loss
 		if i % 100 == 0:
 			writer.add_scalar('Loss/rgb_MSE', img_loss, i)
 			writer.add_scalar('Loss/instance_CrossEntropy', instance_loss, i)
