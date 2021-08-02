@@ -610,7 +610,7 @@ def train():
 		print('Loaded deepvoxels', images.shape, render_poses.shape, hwf, args.datadir)
 		i_train, i_val, i_test = i_split
 
-		hemi_R = np.mean(np.linalg.norm(poses[:,:3,-1], axis=-1))
+		hemi_R = np.mean(np.linalg.norm(poses[:, :3, -1], axis=-1))
 		near = hemi_R - 1.
 		far = hemi_R + 1.
 
@@ -805,6 +805,9 @@ def train():
 
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
+		instance_weights = torch.ones(args.instance_num)
+		instance_weights[0] /= 20
+		CEloss = nn.CrossEntropyLoss(weight=instance_weights)
 		# TODO: Loss function for instance label
 		if args.instance_num > 0:
 			instance_loss = CEloss(instance, target_mask_s.long())

@@ -20,3 +20,4 @@ instance_mask
 
 i_video = 10000000000000
 i_testset = 10000
+testskip = 32
