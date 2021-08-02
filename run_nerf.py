@@ -700,7 +700,7 @@ def train():
 
 			rgbs, _ = render_path(
 				render_poses, hwf, K, args.chunk, render_kwargs_test,
-				gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor
+				gt_imgs=images, color_list=instance_color_list, savedir=testsavedir, render_factor=args.render_factor
 			)
 			print('Done rendering', testsavedir)
 			imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
@@ -805,7 +805,8 @@ def train():
 
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
-		instance_weights = torch.ones(args.instance_num)
+		data_bias = torch.tensor([torch.sum(target_mask_s == k).item() for k in range(args.instance_num)])
+		instance_weights = F.normalize(torch.ones(args.instance_num) / data_bias, dim=0)
 		instance_weights[0] /= 20
 		CEloss = nn.CrossEntropyLoss(weight=instance_weights)
 		# TODO: Loss function for instance label
