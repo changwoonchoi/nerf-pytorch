@@ -140,7 +140,7 @@ def render(
 	return ret_list + [ret_dict]
 
 
-def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None, savedir=None, render_factor=0):
+def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None, color_list=None, savedir=None, render_factor=0):
 
 	H, W, focal = hwf
 
@@ -181,7 +181,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 				onehot_i[i] = 1.
 				mask_i = argmax == i
 				instance_infer[mask_i] = onehot_i
-			instance_color = label2color(instance_infer).cpu().numpy().astype(np.uint8)
+			instance_color = label2color(instance_infer, color_list).cpu().numpy().astype(np.uint8)
 			
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
 			filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
@@ -619,6 +619,9 @@ def train():
 			images, masks_onehot, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(
 				args.datadir, args.half_res, args.testskip
 			)
+			instance_color_list = torch.from_numpy(
+				np.loadtxt(os.path.join(args.datadir, 'train/instance_label_render.txt'))
+			).to(torch.uint8)
 			args.instance_num = instance_num
 		else:
 			images, poses, render_poses, hwf, i_split = load_clevr_data(
@@ -876,7 +879,7 @@ def train():
 			with torch.no_grad():
 				render_path(
 					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
-					gt_imgs=images[i_test], gt_masks=masks[i_test], savedir=testsavedir
+					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list, savedir=testsavedir
 				)
 			print('Saved test set')
 
