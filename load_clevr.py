@@ -5,7 +5,7 @@ import imageio
 import json
 import torch.nn.functional as F
 import cv2
-from utils import color2label, label2color
+from utils import color2label
 
 
 trans_t = lambda t: torch.Tensor([
@@ -119,7 +119,9 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 			imgs.append(imageio.imread(fname)[..., :3])
 			colored_mask = imageio.imread(os.path.join(os.path.split(fname)[0], 'mask_' + os.path.split(fname)[1]))
 			colored_mask = torch.from_numpy(colored_mask[..., :3])
-			mask_onehot, mask = color2label(colored_mask, instance_color_list).cpu().numpy()
+			mask_onehot, mask = color2label(colored_mask, instance_color_list)
+			mask_onehot = mask_onehot.cpu().numpy()
+			mask = mask.cpu().numpy()
 			masks_onehot.append(mask_onehot)
 			masks.append(mask)
 			poses.append(np.array(frame['transform_matrix']))
@@ -158,7 +160,7 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 		masks_half_res = np.zeros((masks.shape[0], H, W, -1))
 		for i, mask in enumerate(masks):
 			masks_half_res[i] = cv2.resize(masks, (W, H), interpolation=cv2.INTER_AREA)
-		for i, mask_oneho in enumerate(masks_onehot):
+		for i, mask_onehot in enumerate(masks_onehot):
 			masks_onehot_half_res[i] = cv2.resize(masks_onehot, (W, H), interpolation=cv2.INTER_AREA)
 
 		masks_onehot = masks_onehot_half_res

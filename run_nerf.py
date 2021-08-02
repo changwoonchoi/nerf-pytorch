@@ -20,6 +20,7 @@ from load_blender import load_blender_data
 from load_LINEMOD import load_LINEMOD_data
 from load_clevr import load_clevr_data, load_clevr_instance_data
 
+from utils import label2color
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
@@ -139,7 +140,7 @@ def render(
 	return ret_list + [ret_dict]
 
 
-def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
+def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None, savedir=None, render_factor=0):
 
 	H, W, focal = hwf
 
@@ -172,8 +173,20 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
 		if savedir is not None:
 			rgb8 = to8b(rgbs[-1])
-			filename = os.path.join(savedir, '{:03d}.png'.format(i))
-			imageio.imwrite(filename, rgb8)
+			
+			instance_infer = torch.zeros_like(instances)
+			argmax = torch.argmax(instance, dim=-1)
+			for i in range(instance.shape[-1]):
+				onehot_i = torch.zeros(instance.shape[-1])
+				onehot_i[i] = 1.
+				mask_i = argmax == i
+				instance_infer[mask_i] = onehot_i
+			instance_color = label2color(instance_infer).cpu().numpy().astype(np.uint8)
+			
+			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
+			filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
+			imageio.imwrite(filename_rgb, rgb8)
+			imageio.imwrite(filename_instance, instance_color)
 
 	rgbs = np.stack(rgbs, 0)
 	disps = np.stack(disps, 0)
@@ -534,7 +547,6 @@ def train():
 
 	parser = config_parser()
 	args = parser.parse_args()
-	writer = SummaryWriter()
 
 	# Load data
 	K = None
@@ -651,6 +663,8 @@ def train():
 		f = os.path.join(basedir, expname, 'config.txt')
 		with open(f, 'w') as file:
 			file.write(open(args.config, 'r').read())
+	
+	writer = SummaryWriter(log_dir=os.path.join(basedir, expname))
 
 	# Create nerf model
 	render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
@@ -790,25 +804,27 @@ def train():
 		img_loss = img2mse(rgb, target_s)
 		# TODO: Loss function for instance label
 		if args.instance_num > 0:
-			instance_loss = nn.CrossEntropyLoss(instance, target_mask_s)
-			raise NotImplementedError
+			instance_loss = CEloss(instance, target_mask_s.long())
 		else:
 			instance_loss = 0
 		trans = extras['raw'][..., -1]
-		loss = img_loss + instance_loss
 		psnr = mse2psnr(img_loss)
 
 		if 'rgb0' in extras:
 			img_loss0 = img2mse(extras['rgb0'], target_s)
-			loss = loss + img_loss0
+			img_loss = img_loss + img_loss0
 			psnr0 = mse2psnr(img_loss0)
 
 		if 'instance0' in extras:
-			instance_loss0 = () if args.instance_num > 0 else 0
-			loss = loss + instance_loss0
+			instance_loss0 = CEloss(extras['instance0'], target_mask_s.long()) if args.instance_num > 0 else 0
+			instance_loss = instance_loss + instance_loss0
 
+		loss = img_loss + instance_loss
 		if i % 100 == 0:
-			writer.add_scalar(os.path.join(basedir, expname), loss, i)
+			writer.add_scalar('Loss/rgb_MSE', img_loss, i)
+			writer.add_scalar('Loss/instance_CrossEntropy', instance_loss, i)
+			writer.add_scalar('Loss/total_loss', loss, i)
+		
 		loss.backward()
 		optimizer.step()
 
@@ -859,12 +875,12 @@ def train():
 			with torch.no_grad():
 				render_path(
 					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
-					gt_imgs=images[i_test], savedir=testsavedir
+					gt_imgs=images[i_test], gt_masks=masks[i_test], savedir=testsavedir
 				)
 			print('Saved test set')
 
 		if i % args.i_print == 0:
-			tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
+			tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()} MSE: {img_loss.item()} instance_CE: {instance_loss.item()} PSNR: {psnr.item()}")
 
 		global_step += 1
 	writer.flush()
