@@ -34,7 +34,7 @@ def batchify(fn, chunk):
 	if chunk is None:
 		return fn
 	def ret(inputs):
-		return torch.cat([fn(inputs[i:i+chunk]) for i in range(0, inputs.shape[0], chunk)], 0)
+		return torch.cat([fn(inputs[i:i + chunk]) for i in range(0, inputs.shape[0], chunk)], 0)
 	return ret
 
 
@@ -73,7 +73,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, **kwargs):
 
 
 def render(
-		H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True, near=0., far=1., use_viewdirs=False, c2w_staticcam=None,
+		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1., use_viewdirs=False, c2w_staticcam=None,
 		**kwargs
 ):
 	"""
@@ -193,6 +193,23 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 	instances = np.stack(instances, 0)
 
 	return rgbs, disps, instances
+
+
+def render_per_instance():
+	raise NotImplementedError
+
+
+def render_path_per_instance(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None, color_list=None, savedir=None):
+	H, W, focal = hwf
+
+	for i, c2w in enumerate(tqdm(render_poses)):
+		rgb, _, _, instance, _ = render_per_instance(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+		if savedir is not None:
+			for n_i in range(rgb.shape[0]):
+				rgb8 = to8b(rgb[n_i])
+
+
+	raise NotImplementedError
 
 
 def create_nerf(args):
@@ -470,6 +487,7 @@ def config_parser():
 	parser.add_argument("--netwidth_fine", type=int, default=256, help='channels per layer in fine network')
 	parser.add_argument("--N_rand", type=int, default=32 * 32 * 4,
 						help='batch size (number of random rays per gradient step)')
+	parser.add_argument("--fixed_CE_weight", action='store_true', help='use fixed weight in CE Loss')
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_decay", type=int, default=250,
 						help='exponential learning rate decay (in 1000 steps)')
@@ -502,6 +520,7 @@ def config_parser():
 						help='render the test set instead of render_poses path')
 	parser.add_argument("--render_factor", type=int, default=0,
 						help='downsampling factor to speed up rendering, set 4 or 8 for fast preview')
+	parser.add_argument("--render_decompose", action='store_true', help="render decomposed instance in test phase")
 
 	# training options
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')
@@ -806,8 +825,12 @@ def train():
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
 		data_bias = torch.tensor([torch.sum(target_mask_s == k).item() for k in range(args.instance_num)])
-		instance_weights = F.normalize(torch.ones(args.instance_num) / data_bias, dim=0)
-		instance_weights[0] /= 20
+		if args.fixed_CE_weight:
+			bg_index = torch.argmax(data_bias).item()
+			instance_weights = torch.ones(args.instance_num)
+			instance_weights[bg_index] /= 20
+		else:
+			instance_weights = F.normalize(torch.ones(args.instance_num) / data_bias, dim=0)
 		CEloss = nn.CrossEntropyLoss(weight=instance_weights)
 		# TODO: Loss function for instance label
 		if args.instance_num > 0:
@@ -885,6 +908,11 @@ def train():
 					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
 					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list, savedir=testsavedir
 				)
+				if args.render_decompose:
+					render_path_per_instance(
+						torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
+						color_list=instance_color_list, savedir=testsavedir
+					)
 			print('Saved test set')
 
 		if i % args.i_print == 0:
@@ -894,6 +922,6 @@ def train():
 	writer.flush()
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
 	torch.set_default_tensor_type('torch.cuda.FloatTensor')
 	train()
