@@ -62,7 +62,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, **kwargs):
 	"""
 	all_ret = {}
 	for i in range(0, rays_flat.shape[0], chunk):
-		ret = render_rays(rays_flat[i:i+chunk], **kwargs)
+		ret = render_rays(rays_flat[i:i + chunk], **kwargs)
 		for k in ret:
 			if k not in all_ret:
 				all_ret[k] = []
@@ -73,8 +73,8 @@ def batchify_rays(rays_flat, chunk=1024 * 32, **kwargs):
 
 
 def render(
-		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1., use_viewdirs=False, c2w_staticcam=None,
-		**kwargs
+		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1.,
+		use_viewdirs=False, c2w_staticcam=None, **kwargs
 ):
 	"""
 	Render rays
@@ -140,7 +140,10 @@ def render(
 	return ret_list + [ret_dict]
 
 
-def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None, color_list=None, savedir=None, render_factor=0):
+def render_path(
+		render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None,
+		color_list=None, savedir=None, render_factor=0
+):
 
 	H, W, focal = hwf
 
@@ -198,9 +201,19 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_mas
 	return rgbs, disps, instances, instance_colors
 
 
+def batchify_rays_per_instance(rays_flat, chunk=1024 * 32, **kwargs):
+	all_rgb_per_instance = []
+	for i in range(0, rays_flat.shape[0], chunk):
+		rgb_per_instance = render_rays_per_instance(rays_flat[i:i + chunk], **kwargs)
+		all_rgb_per_instance.append(rgb_per_instance)
+
+	all_rgb_per_instance = torch.stack(all_rgb_per_instance, dim=0)
+	return all_rgb_per_instance
+
+
 def render_per_instance(
 		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=None, near=0., far=1., use_viewdirs=False,
-		c2w_staticcam=None, *kwargs
+		c2w_staticcam=None, **kwargs
 ):
 	"""
 	Render rays per instances
@@ -217,6 +230,7 @@ def render_per_instance(
 		viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)
 		viewdirs = torch.reshape(viewdirs, [-1, 3]).float()
 
+	sh = rays_d.shape
 	if ndc:
 		rays_o, rays_d = ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
 
@@ -228,14 +242,14 @@ def render_per_instance(
 	if use_viewdirs:
 		rays = torch.cat([rays, viewdirs], -1)
 
+	rgb_per_instance = batchify_rays_per_instance(rays, chunk, **kwargs)
+	return rgb_per_instance
 
 
-
-
-	raise NotImplementedError
-
-
-def render_path_per_instance(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None, color_list=None, savedir=None):
+def render_path_per_instance(
+		render_poses, hwf, K, chunk, render_kwargs,
+		gt_imgs=None, gt_masks=None, color_list=None, savedir=None
+):
 	H, W, focal = hwf
 
 	for i, c2w in enumerate(tqdm(render_poses)):
@@ -293,7 +307,8 @@ def create_nerf(args):
 	if args.ft_path is not None and args.ft_path!='None':
 		ckpts = [args.ft_path]
 	else:
-		ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
+		ckpts = [os.path.join(basedir, expname, f) \
+				 for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
 
 	print('Found ckpts', ckpts)
 	if len(ckpts) > 0 and not args.no_reload:
@@ -336,7 +351,7 @@ def create_nerf(args):
 	return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer
 
 
-def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd=False, pytest=False):
+def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd=False, pytest=False, decompose=False):
 	"""
 	Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -345,7 +360,8 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 		- instance_num >0: [num_rays, num_samples along ray, 10]. (R,G,B,a,instance_num)
 		z_vals: [num_rays, num_samples along ray]. Integration time.
 		rays_d: [num_rays, 3]. Direction of each ray.
-		instance_num: Number of instances in the scene
+		instance_num: Number of instances in the scene.
+		decompose: if True returns per-instance RGBs.
 	Returns:
 		rgb_map: [num_rays, 3]. Estimated RGB color of a ray.
 		disp_map: [num_rays]. Disparity map. Inverse of depth map.
@@ -353,6 +369,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 		weights: [num_rays, num_samples]. Weights assigned to each sampled color.
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
+	# TODO: implement here (when decompose=True), refactor code->reduce overlapping codes.
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -434,13 +451,13 @@ def render_rays(
 	rays_o, rays_d = ray_batch[:, 0:3], ray_batch[:, 3:6]  # [N_rays, 3] each
 	viewdirs = ray_batch[:, -3:] if ray_batch.shape[-1] > 8 else None
 	bounds = torch.reshape(ray_batch[..., 6:8], [-1, 1, 2])
-	near, far = bounds[...,0], bounds[..., 1]  # [-1,1]
+	near, far = bounds[..., 0], bounds[..., 1]  # [-1,1]
 
 	t_vals = torch.linspace(0., 1., steps=N_samples)
 	if not lindisp:
 		z_vals = near * (1. - t_vals) + far * (t_vals)
 	else:
-		z_vals = 1. / (1. / near * (1. - t_vals) + 1. / far * (t_vals))
+		z_vals = 1. / (1. / near * (1. - t_vals) + 1. / far * t_vals)
 
 	z_vals = z_vals.expand([N_rays, N_samples])
 
@@ -464,8 +481,8 @@ def render_rays(
 
 	# raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
-	rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
-		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest
+	rgb_map, disp_map, acc_map, weights, depth_map, instance_map, _ = raw2outputs(
+		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=False
 	)
 
 	if N_importance > 0:
@@ -477,13 +494,14 @@ def render_rays(
 		z_samples = z_samples.detach()
 
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
-		pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
+		pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]
+		# [N_rays, N_samples + N_importance, 3]
 
 		run_fn = network_fn if network_fine is None else network_fine
 		# raw = run_network(pts, fn=run_fn)
 		raw = network_query_fn(pts, viewdirs, run_fn)
-		rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
-			raw, z_vals, rays_d, run_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest
+		rgb_map, disp_map, acc_map, weights, depth_map, instance_map, _ = raw2outputs(
+			raw, z_vals, rays_d, run_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=False
 		)
 
 	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map, 'instance_map': instance_map}
@@ -502,6 +520,39 @@ def render_rays(
 
 	return ret
 
+def render_rays_per_instance(
+		ray_batch, network_fn, network_query_fn, N_samples, retraw=False, lindisp=False, perturb=0., N_importance=0,
+		network_fine=None, white_bkgd=False, raw_noise_std=0, pytest=False
+):
+	N_rays = ray_batch.shape[0]
+	rays_o, rays_d = ray_batch[:, 0:3], ray_batch[:, 3:6]
+	viewdirs = ray_batch[:, -3:] if ray_batch.shape[-1] > 0 else None
+	bounds = torch.reshape(ray_batch[..., 6:8], [-1, 1, 2])
+	near, far = bounds[..., 0], bounds[..., 1]
+
+	t_vals = torch.linspace(0., 1., steps=N_samples)
+	if not lindisp:
+		z_vals = near * (1. - t_vals) + far * (t_vals)
+	else:
+		z_vals = 1. / (1. / near * (1. - t_vals) + 1. / far * t_vals)
+
+	z_vals = z_vals.append([N_rays, N_samples])
+
+	if perturb > 0:
+		mids = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
+		upper = torch.cat([mids, z_vals[..., -1:]], -1)
+		lower = torch.cat([z_vals[..., :1], mids], -1)
+		t_rand = torch.rand(z_vals.shape)
+		z_vals = lower + (upper - lower) * t_rand
+
+	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]
+
+	raw = network_query_fn(pts, viewdirs, network_fn)
+	rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
+		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=True
+	)
+
+	raise NotImplementedError
 
 def config_parser():
 
@@ -748,7 +799,9 @@ def train():
 				# Default is smoother render_poses path
 				images = None
 
-			testsavedir = os.path.join(basedir, expname, 'renderonly_{}_{:06d}'.format('test' if args.render_test else 'path', start))
+			testsavedir = os.path.join(
+				basedir, expname, 'renderonly_{}_{:06d}'.format('test' if args.render_test else 'path', start)
+			)
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', render_poses.shape)
 
@@ -838,9 +891,13 @@ def train():
 							torch.linspace(W // 2 - dW, W // 2 + dW - 1, 2 * dW)
 						), -1)
 					if i == start:
-						print(f"[Config] Center cropping of size {2*dH} x {2*dW} is enabled until iter {args.precrop_iters}")
+						print(
+							f"[Config] Center cropping of size {2*dH} x {2*dW} is enabled until iter \
+							{args.precrop_iters}"
+						)
 				else:
-					coords = torch.stack(torch.meshgrid(torch.linspace(0, H - 1, H), torch.linspace(0, W - 1, W)), -1)  # (H, W, 2)
+					coords = torch.stack(torch.meshgrid(torch.linspace(0, H - 1, H), torch.linspace(0, W - 1, W)), -1)
+					# (H, W, 2)
 
 				coords = torch.reshape(coords, [-1, 2])  # (H * W, 2)
 				select_inds = np.random.choice(coords.shape[0], size=[N_rand], replace=False)  # (N_rand,)
@@ -850,7 +907,7 @@ def train():
 				batch_rays = torch.stack([rays_o, rays_d], 0)
 				target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 				target_mask_s = target_mask[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, N_instance)
-				target_mask_onehot_s = target_mask_onehot[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, N_instance)
+				target_mask_onehot_s = target_mask_onehot[select_coords[:, 0], select_coords[:, 1]]  #(N_rand, N_instance)
 
 		#####  Core optimization loop  #####
 		rgb, disp, acc, instance, extras = render(
@@ -959,7 +1016,10 @@ def train():
 			print('Saved test set')
 
 		if i % args.i_print == 0:
-			tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()} MSE: {img_loss.item()} instance_CE: {instance_loss.item()} PSNR: {psnr.item()}")
+			tqdm.write(
+				f"[TRAIN] Iter: {i} Loss: {loss.item()} MSE: {img_loss.item()}\
+				instance_CE: {instance_loss.item()} PSNR: {psnr.item()}"
+			)
 
 		global_step += 1
 	writer.flush()
