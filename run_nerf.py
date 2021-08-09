@@ -56,25 +56,29 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
 	return outputs
 
 
-def batchify_rays(rays_flat, chunk=1024 * 32, **kwargs):
+def batchify_rays(rays_flat, chunk=1024 * 32, decompose=False, **kwargs):
 	"""
 	Render rays in smaller minibatches to avoid OOM.
 	"""
 	all_ret = {}
 	for i in range(0, rays_flat.shape[0], chunk):
-		ret = render_rays(rays_flat[i:i + chunk], **kwargs)
+		ret = render_rays(rays_flat[i:i + chunk], decompose=decompose, **kwargs)
 		for k in ret:
 			if k not in all_ret:
 				all_ret[k] = []
 			all_ret[k].append(ret[k])
-
-	all_ret = {k: torch.cat(all_ret[k], 0) for k in all_ret}
+	# all_ret = {k: torch.cat(all_ret[k], 0) for k in all_ret}
+	for k in all_ret:
+		if k == 'decomposed_rgb_map' or k == 'decomposed_rgb_map0':
+			all_ret[k] = torch.cat(all_ret[k], dim=1)
+		else:
+			all_ret[k] = torch.cat(all_ret[k], dim=0)
 	return all_ret
 
 
 def render(
 		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1.,
-		use_viewdirs=False, c2w_staticcam=None, **kwargs
+		use_viewdirs=False, c2w_staticcam=None, decompose=False, **kwargs
 ):
 	"""
 	Render rays
@@ -129,12 +133,18 @@ def render(
 		rays = torch.cat([rays, viewdirs], -1)
 
 	# Render and reshape
-	all_ret = batchify_rays(rays, chunk, **kwargs)
+	all_ret = batchify_rays(rays, chunk, decompose=decompose, **kwargs)
 	for k in all_ret:
-		k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
-		all_ret[k] = torch.reshape(all_ret[k], k_sh)
-
-	k_extract = ['rgb_map', 'disp_map', 'acc_map', 'instance_map']
+		if k == 'decomposed_rgb_map' or k == 'decomposed_rgb_map0':
+			k_sh = list(all_ret[k].shape[:1]) + list(sh[:-1]) + list(all_ret[k].shape[2:])
+			all_ret[k] = torch.reshape(all_ret[k], k_sh)
+		else:
+			k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
+			all_ret[k] = torch.reshape(all_ret[k], k_sh)
+	if decompose:
+		k_extract = ['rgb_map', 'disp_map', 'acc_map', 'instance_map', 'decomposed_rgb_map']
+	else:
+		k_extract = ['rgb_map', 'disp_map', 'acc_map', 'instance_map']
 	ret_list = [all_ret[k] for k in k_extract]
 	ret_dict = {k: all_ret[k] for k in all_ret if k not in k_extract}
 	return ret_list + [ret_dict]
@@ -142,7 +152,7 @@ def render(
 
 def render_path(
 		render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, gt_masks=None,
-		color_list=None, savedir=None, render_factor=0
+		color_list=None, savedir=None, render_factor=0, decompose=False
 ):
 
 	H, W, focal = hwf
@@ -162,7 +172,12 @@ def render_path(
 	for i, c2w in enumerate(tqdm(render_poses)):
 		print(i, time.time() - t)
 		t = time.time()
-		rgb, disp, acc, instance, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+		if decompose:
+			rgb, disp, acc, instance, decomposed_rgb, _ = render(
+				H, W, K, chunk=chunk, c2w=c2w[:3, :4], decompose=decompose, **render_kwargs
+			)
+		else:
+			rgb, disp, acc, instance, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
 		rgbs.append(rgb.cpu().numpy())
 		disps.append(disp.cpu().numpy())
 		instances.append(instance.cpu().numpy())
@@ -187,6 +202,10 @@ def render_path(
 				instance_infer[mask_j] = onehot_j
 			instance_color = label2color(instance_infer, color_list).cpu().numpy().astype(np.uint8)
 			instance_colors.append(instance_color)
+			if decompose:
+				for k, object in enumerate(decomposed_rgb):
+					filename_object = os.path.join(savedir, 'decomposed_rgb_{:03d}_{}.png'.format(i, k))
+					imageio.imwrite(filename_object, to8b(object.cpu().numpy()))
 			
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
 			filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
@@ -199,66 +218,6 @@ def render_path(
 	instance_colors = np.stack(instance_colors, 0)
 
 	return rgbs, disps, instances, instance_colors
-
-
-def batchify_rays_per_instance(rays_flat, chunk=1024 * 32, **kwargs):
-	all_rgb_per_instance = []
-	for i in range(0, rays_flat.shape[0], chunk):
-		rgb_per_instance = render_rays_per_instance(rays_flat[i:i + chunk], **kwargs)
-		all_rgb_per_instance.append(rgb_per_instance)
-
-	all_rgb_per_instance = torch.stack(all_rgb_per_instance, dim=0)
-	return all_rgb_per_instance
-
-
-def render_per_instance(
-		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=None, near=0., far=1., use_viewdirs=False,
-		c2w_staticcam=None, **kwargs
-):
-	"""
-	Render rays per instances
-	"""
-	if c2w is not None:
-		rays_o, rays_d = get_rays(H, W, K, c2w)
-	else:
-		rays_o, rays_d = rays
-
-	if use_viewdirs:
-		viewdirs = rays_d
-		if c2w_staticcam is not None:
-			rays_o, rays_d = get_rays(H, W, K, c2w_staticcam)
-		viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)
-		viewdirs = torch.reshape(viewdirs, [-1, 3]).float()
-
-	sh = rays_d.shape
-	if ndc:
-		rays_o, rays_d = ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
-
-	rays_o = torch.reshape(rays_o, [-1, 3]).float()
-	rays_d = torch.reshape(rays_d, [-1, 3]).float()
-
-	near, far = near * torch.ones_like(rays_d[..., :1]), far * torch.ones_like(rays_d[..., :1])
-	rays = torch.cat([rays_o, rays_d, near, far], -1)
-	if use_viewdirs:
-		rays = torch.cat([rays, viewdirs], -1)
-
-	rgb_per_instance = batchify_rays_per_instance(rays, chunk, **kwargs)
-	return rgb_per_instance
-
-
-def render_path_per_instance(
-		render_poses, hwf, K, chunk, render_kwargs,
-		gt_imgs=None, gt_masks=None, color_list=None, savedir=None
-):
-	H, W, focal = hwf
-
-	for i, c2w in enumerate(tqdm(render_poses)):
-		rgb, _, _, instance, _ = render_per_instance(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
-		if savedir is not None:
-			for n_i in range(rgb.shape[0]):
-				rgb8 = to8b(rgb[n_i])
-
-	raise NotImplementedError
 
 
 def create_nerf(args):
@@ -391,16 +350,30 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 	weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
 
 	rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
-	rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 
 	if instance_num > 0:
-		# TODO: activation function?
 		instance_score = torch.sigmoid(raw[..., 4:])  # (N_rays, N_samples, instance_num)
-		instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_num)
-		# instance_map = F.softmax(instance_map, dim=-1)
-		# no need normalize -> use CrossEntropyLoss
+		if decompose:
+			# decomposed_rgb_map = torch.zeros([instance_num, *instance_score.shape[:-1], rgb.shape[-1]])
+			decomposed_rgb_map = []
+			instance_mask = torch.argmax(instance_score, dim=-1)
+			for i in range(instance_num):
+				mask_i = instance_mask == i
+				decomposed_rgb = torch.zeros([*instance_score.shape[:-1], rgb.shape[-1]])
+				decomposed_rgb[mask_i] = rgb[mask_i]
+				decomposed_rgb_map_i = torch.sum(weights[..., None] * decomposed_rgb, -2)
+				decomposed_rgb_map.append(decomposed_rgb_map_i)
+			decomposed_rgb_map = torch.stack(decomposed_rgb_map, dim=0)
+			instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_num)
+			rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
+		else:
+			instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_num)
+			rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
+			decomposed_rgb_map = None
 	else:
+		rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 		instance_map = None
+		decomposed_rgb_map = None
 
 	depth_map = torch.sum(weights * z_vals, -1)
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
@@ -408,13 +381,12 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 
 	if white_bkgd:
 		rgb_map = rgb_map + (1. - acc_map[..., None])
-
-	return rgb_map, disp_map, acc_map, weights, depth_map, instance_map
+	return rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map
 
 
 def render_rays(
 		ray_batch, network_fn, network_query_fn, N_samples, retraw=False, lindisp=False, perturb=0., N_importance=0,
-		network_fine=None, white_bkgd=False, raw_noise_std=0., verbose=False, pytest=False
+		network_fine=None, white_bkgd=False, raw_noise_std=0., verbose=False, pytest=False, decompose=False
 ):
 	"""
 	Volumetric rendering.
@@ -481,8 +453,8 @@ def render_rays(
 
 	# raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
-	rgb_map, disp_map, acc_map, weights, depth_map, instance_map, _ = raw2outputs(
-		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=False
+	rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map = raw2outputs(
+		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=decompose
 	)
 
 	if N_importance > 0:
@@ -500,11 +472,16 @@ def render_rays(
 		run_fn = network_fn if network_fine is None else network_fine
 		# raw = run_network(pts, fn=run_fn)
 		raw = network_query_fn(pts, viewdirs, run_fn)
-		rgb_map, disp_map, acc_map, weights, depth_map, instance_map, _ = raw2outputs(
-			raw, z_vals, rays_d, run_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=False
+		rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map0 = raw2outputs(
+			raw, z_vals, rays_d, run_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=decompose
 		)
-
-	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map, 'instance_map': instance_map}
+	if decompose:
+		ret = {
+			'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map, 'instance_map': instance_map,
+			'decomposed_rgb_map': decomposed_rgb_map
+		}
+	else:
+		ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map, 'instance_map': instance_map}
 	if retraw:
 		ret['raw'] = raw
 	if N_importance > 0:
@@ -512,6 +489,8 @@ def render_rays(
 		ret['disp0'] = disp_map_0
 		ret['acc0'] = acc_map_0
 		ret['instance0'] = instance_map0
+		if decompose:
+			ret['decomposed_rgb_map0'] = decomposed_rgb_map0
 		ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
 	for k in ret:
@@ -520,39 +499,6 @@ def render_rays(
 
 	return ret
 
-def render_rays_per_instance(
-		ray_batch, network_fn, network_query_fn, N_samples, retraw=False, lindisp=False, perturb=0., N_importance=0,
-		network_fine=None, white_bkgd=False, raw_noise_std=0, pytest=False
-):
-	N_rays = ray_batch.shape[0]
-	rays_o, rays_d = ray_batch[:, 0:3], ray_batch[:, 3:6]
-	viewdirs = ray_batch[:, -3:] if ray_batch.shape[-1] > 0 else None
-	bounds = torch.reshape(ray_batch[..., 6:8], [-1, 1, 2])
-	near, far = bounds[..., 0], bounds[..., 1]
-
-	t_vals = torch.linspace(0., 1., steps=N_samples)
-	if not lindisp:
-		z_vals = near * (1. - t_vals) + far * (t_vals)
-	else:
-		z_vals = 1. / (1. / near * (1. - t_vals) + 1. / far * t_vals)
-
-	z_vals = z_vals.append([N_rays, N_samples])
-
-	if perturb > 0:
-		mids = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
-		upper = torch.cat([mids, z_vals[..., -1:]], -1)
-		lower = torch.cat([z_vals[..., :1], mids], -1)
-		t_rand = torch.rand(z_vals.shape)
-		z_vals = lower + (upper - lower) * t_rand
-
-	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]
-
-	raw = network_query_fn(pts, viewdirs, network_fn)
-	rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
-		raw, z_vals, rays_d, network_fn.instance_num, raw_noise_std, white_bkgd, pytest=pytest, decompose=True
-	)
-
-	raise NotImplementedError
 
 def config_parser():
 
@@ -805,12 +751,13 @@ def train():
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', render_poses.shape)
 
-			rgbs, _ = render_path(
+			render_path(
 				render_poses, hwf, K, args.chunk, render_kwargs_test,
-				gt_imgs=images, color_list=instance_color_list, savedir=testsavedir, render_factor=args.render_factor
+				color_list=instance_color_list, savedir=testsavedir, render_factor=args.render_factor,
+				decompose=args.render_decompose
 			)
 			print('Done rendering', testsavedir)
-			imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
+			# imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
 
 			return
 
@@ -998,7 +945,8 @@ def train():
 			with torch.no_grad():
 				rgbs, _, instances, instance_colors = render_path(
 					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
-					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list, savedir=testsavedir
+					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list,
+					savedir=testsavedir, decompose=args.render_decompose
 				)
 
 				gt_img_batch = np.zeros((len(i_test), 3, images[i_test[0]].shape[0], images[i_test[0]].shape[1]))
@@ -1008,11 +956,6 @@ def train():
 				writer.add_images('test/gt_rgb', gt_img_batch, i)
 				writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
 				writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
-				if args.render_decompose:
-					render_path_per_instance(
-						torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
-						color_list=instance_color_list, savedir=testsavedir
-					)
 			print('Saved test set')
 
 		if i % args.i_print == 0:
