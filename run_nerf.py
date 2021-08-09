@@ -573,6 +573,8 @@ def config_parser():
 	parser.add_argument("--dataset_type", type=str, default='llff', help='options: llff / blender / deepvoxels')
 	parser.add_argument("--testskip", type=int, default=8,
 						help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
+	parser.add_argument("--trainskip", type=int, default=1,
+						help='will load 1/N images from train sets, to experiment with smaller datasets')
 
 	## deepvoxels flags
 	parser.add_argument("--shape", type=str, default='greek',
@@ -679,7 +681,7 @@ def train():
 	elif args.dataset_type == 'clevr':
 		if args.instance_mask:
 			images, masks_onehot, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(
-				args.datadir, args.half_res, args.testskip
+				args.datadir, args.half_res, args.testskip, args.trainskip
 			)
 			instance_color_list = torch.from_numpy(
 				np.loadtxt(os.path.join(args.datadir, 'train/instance_label_render.txt'))
@@ -687,7 +689,7 @@ def train():
 			args.instance_num = instance_num
 		else:
 			images, poses, render_poses, hwf, i_split = load_clevr_data(
-				args.datadir, args.half_res, args.testskip
+				args.datadir, args.half_res, args.testskip, args.trainskip
 			)
 		print('Loaded CLEVR', images.shape, render_poses.shape, hwf, args.datadir)
 		i_train, i_val, i_test = i_split

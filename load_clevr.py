@@ -35,7 +35,7 @@ def pose_spherical(theta, phi, radius):
 	return c2w
 
 
-def load_clevr_data(basedir, half_res=False, testskip=1):
+def load_clevr_data(basedir, half_res=False, testskip=1, trainskip=1):
 	splits = ['train', 'val', 'test']
 	metas = {}
 	for s in splits:
@@ -49,8 +49,8 @@ def load_clevr_data(basedir, half_res=False, testskip=1):
 		meta = metas[s]
 		imgs = []
 		poses = []
-		if s == 'train' or testskip == 0:
-			skip = 1
+		if s == 'train':
+			skip = trainskip
 		else:
 			skip = testskip
 			
@@ -88,7 +88,7 @@ def load_clevr_data(basedir, half_res=False, testskip=1):
 	return imgs, poses, render_poses, [H, W, focal], i_split
 
 
-def load_clevr_instance_data(basedir, half_res=False, testskip=1):
+def load_clevr_instance_data(basedir, half_res=False, testskip=1, trainskip=1):
 	splits = ['train', 'val', 'test']
 	metas = {}
 	for s in splits:
@@ -109,8 +109,8 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 		masks_onehot = []
 		masks = []
 		poses = []
-		if s == 'train' or testskip == 0:
-			skip = 1
+		if s == 'train':
+			skip = trainskip
 		else:
 			skip = testskip
 			
