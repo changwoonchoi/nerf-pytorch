@@ -99,14 +99,12 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 	instance_num = instance_color_list.shape[0]  # include background
 
 	all_imgs = []
-	all_masks_onehot = []
 	all_masks = []
 	all_poses = []
 	counts = [0]
 	for s in splits:
 		meta = metas[s]
 		imgs = []
-		masks_onehot = []
 		masks = []
 		poses = []
 		if s == 'train' or testskip == 0:
@@ -119,7 +117,8 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 			imgs.append(imageio.imread(fname)[..., :3])
 			colored_mask = imageio.imread(os.path.join(os.path.split(fname)[0], 'mask_' + os.path.split(fname)[1]))
 			colored_mask = torch.from_numpy(colored_mask[..., :3])
-			mask_onehot, mask = color2label(colored_mask, instance_color_list)
+			mask = color2label(colored_mask, instance_color_list)
+			mask_onehot = torch.nn.functional.one_hot(mask, num_classes=len(instance_color_list))
 			mask_onehot = mask_onehot.cpu().numpy()
 			mask = mask.cpu().numpy()
 			masks_onehot.append(mask_onehot)
@@ -160,10 +159,6 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 		masks_half_res = np.zeros((masks.shape[0], H, W, -1))
 		for i, mask in enumerate(masks):
 			masks_half_res[i] = cv2.resize(masks, (W, H), interpolation=cv2.INTER_AREA)
-		for i, mask_onehot in enumerate(masks_onehot):
-			masks_onehot_half_res[i] = cv2.resize(masks_onehot, (W, H), interpolation=cv2.INTER_AREA)
-
-		masks_onehot = masks_onehot_half_res
 		masks = masks_half_res
 
-	return imgs, masks_onehot, masks, instance_num, poses, render_poses, [H, W, focal], i_split
+	return imgs, masks, instance_num, poses, render_poses, [H, W, focal], i_split
