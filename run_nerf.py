@@ -363,9 +363,16 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 			instance_mask = torch.argmax(instance_score, dim=-1)
 			for i in range(instance_num):
 				mask_i = instance_mask == i
+
+				alpha_i = torch.zeros_like(alpha)
+				alpha_i[mask_i] = alpha[mask_i]
+				weights_i = alpha_i * torch.cumprod(
+					torch.cat([torch.ones((alpha_i.shape[0], 1)), 1. - alpha_i + 1e-10], -1), -1
+				)[:, :-1]
+
 				decomposed_rgb = torch.zeros([*instance_score.shape[:-1], rgb.shape[-1]])
 				decomposed_rgb[mask_i] = rgb[mask_i]
-				decomposed_rgb_map_i = torch.sum(weights[..., None] * decomposed_rgb, -2)
+				decomposed_rgb_map_i = torch.sum(weights_i[..., None] * decomposed_rgb, -2)
 				decomposed_rgb_map.append(decomposed_rgb_map_i)
 			decomposed_rgb_map = torch.stack(decomposed_rgb_map, dim=0)
 			instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_num)
@@ -929,11 +936,10 @@ def train():
 		if i % args.i_video == 0 and i > 0:
 			# Turn on testing mode
 			with torch.no_grad():
-				rgbs, disps, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test)
-			print('Done, saving', rgbs.shape, disps.shape)
+				rgbs, _, _, _, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test)
+			print('Done, saving', rgbs.shape)
 			moviebase = os.path.join(basedir, expname, '{}_spiral_{:06d}_'.format(expname, i))
 			imageio.mimwrite(moviebase + 'rgb.mp4', to8b(rgbs), fps=30, quality=8)
-			imageio.mimwrite(moviebase + 'disp.mp4', to8b(disps / np.max(disps)), fps=30, quality=8)
 
 			# if args.use_viewdirs:
 			#     render_kwargs_test['c2w_staticcam'] = render_poses[0][:3,:4]
