@@ -167,6 +167,7 @@ def render_path(
 	disps = []
 	instances = []
 	instance_colors = []
+	decomposed_rgbs = []
 
 	t = time.time()
 	for i, c2w in enumerate(tqdm(render_poses)):
@@ -178,9 +179,12 @@ def render_path(
 			)
 		else:
 			rgb, disp, acc, instance, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+			decomposed_rgb = None
 		rgbs.append(rgb.cpu().numpy())
 		disps.append(disp.cpu().numpy())
 		instances.append(instance.cpu().numpy())
+		if decompose:
+			decomposed_rgbs.append(decomposed_rgb.cpu().numpy())
 		if i == 0:
 			print(rgb.shape, disp.shape)
 
@@ -216,8 +220,10 @@ def render_path(
 	disps = np.stack(disps, 0)
 	instances = np.stack(instances, 0)
 	instance_colors = np.stack(instance_colors, 0)
+	if decompose:
+		decomposed_rgbs = np.stack(decomposed_rgbs, 0)
 
-	return rgbs, disps, instances, instance_colors
+	return rgbs, disps, instances, instance_colors, decomposed_rgbs
 
 
 def create_nerf(args):
@@ -250,7 +256,7 @@ def create_nerf(args):
 		grad_vars += list(model_fine.parameters())
 
 	network_query_fn = lambda inputs, viewdirs, network_fn: run_network(
-		inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn,netchunk=args.netchunk
+		inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn, netchunk=args.netchunk
 	)
 
 	# Create optimizer
@@ -328,7 +334,6 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 		weights: [num_rays, num_samples]. Weights assigned to each sampled color.
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
-	# TODO: implement here (when decompose=True), refactor code->reduce overlapping codes.
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -354,7 +359,6 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 	if instance_num > 0:
 		instance_score = torch.sigmoid(raw[..., 4:])  # (N_rays, N_samples, instance_num)
 		if decompose:
-			# decomposed_rgb_map = torch.zeros([instance_num, *instance_score.shape[:-1], rgb.shape[-1]])
 			decomposed_rgb_map = []
 			instance_mask = torch.argmax(instance_score, dim=-1)
 			for i in range(instance_num):
@@ -943,7 +947,7 @@ def train():
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', poses[i_test].shape)
 			with torch.no_grad():
-				rgbs, _, instances, instance_colors = render_path(
+				rgbs, _, instances, instance_colors, decomposed_rgbs = render_path(
 					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
 					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list,
 					savedir=testsavedir, decompose=args.render_decompose
@@ -956,6 +960,12 @@ def train():
 				writer.add_images('test/gt_rgb', gt_img_batch, i)
 				writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
 				writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
+				if args.render_decompose:
+					for mask_idx in range(decomposed_rgbs.shape[1]):
+						writer.add_images(
+							'test/decomposed_rgb_{}'.format(mask_idx),
+							decomposed_rgbs[:, mask_idx, ...].transpose((0, 3, 1, 2)), i
+						)
 			print('Saved test set')
 
 		if i % args.i_print == 0:
