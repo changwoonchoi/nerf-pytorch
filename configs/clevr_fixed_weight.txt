@@ -1,6 +1,6 @@
 expname = clevr_fixed_weight
-basedir = ./logs
-datadir = ./data/clevr/scene_1
+basedir = ../logs
+datadir = ../data/clevr/scene_1
 dataset_type = clevr
 
 no_batching = True

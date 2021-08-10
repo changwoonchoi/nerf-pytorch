@@ -5,7 +5,7 @@ import imageio
 import json
 import torch.nn.functional as F
 import cv2
-from utils import color2label
+from utils import color2label, colored_mask_to_label_map_np
 
 
 trans_t = lambda t: torch.Tensor([
@@ -95,7 +95,7 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 		with open(os.path.join(basedir, 'transforms_{}.json'.format(s)), 'r') as fp:
 			metas[s] = json.load(fp)
 	
-	instance_color_list = torch.from_numpy(np.loadtxt(os.path.join(basedir, 'train/instance_label_render.txt'))).to(torch.uint8)
+	instance_color_list = np.loadtxt(os.path.join(basedir, 'train/instance_label_render.txt'))
 	instance_num = instance_color_list.shape[0]  # include background
 
 	all_imgs = []
@@ -113,29 +113,32 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 			skip = testskip
 			
 		for frame in meta['frames'][::skip]:
-			fname = os.path.join(basedir, frame['file_path'])
-			imgs.append(imageio.imread(fname)[..., :3])
-			colored_mask = imageio.imread(os.path.join(os.path.split(fname)[0], 'mask_' + os.path.split(fname)[1]))
-			colored_mask = torch.from_numpy(colored_mask[..., :3])
-			mask = color2label(colored_mask, instance_color_list)
-			mask_onehot = torch.nn.functional.one_hot(mask, num_classes=len(instance_color_list))
-			mask_onehot = mask_onehot.cpu().numpy()
-			mask = mask.cpu().numpy()
-			masks_onehot.append(mask_onehot)
-			masks.append(mask)
-			poses.append(np.array(frame['transform_matrix']))
-		imgs = (np.array(imgs) / 255.).astype(np.float32)  # keep all 4 channels (RGBA)
+			image_file_path = os.path.join(basedir, frame['file_path'])
+			mask_file_path = os.path.join(os.path.split(image_file_path)[0], 'mask_' + os.path.split(image_file_path)[1])
+
+			# (1) load RGB Image
+			image = imageio.imread(image_file_path, pilmode='RGB')
+			imgs.append(image)
+
+			# (2) load colored mask and convert into labeled mask
+			colored_mask = imageio.imread(mask_file_path, pilmode='RGB')
+			labeled_mask = colored_mask_to_label_map_np(colored_mask, instance_color_list)
+			masks.append(labeled_mask)
+
+			# (3) load pose information
+			pose = np.array(frame['transform_matrix'])
+			poses.append(pose)
+
+		imgs = (np.array(imgs) / 255.).astype(np.float32)
 		poses = np.array(poses).astype(np.float32)
 		counts.append(counts[-1] + imgs.shape[0])
 		all_imgs.append(imgs)
-		all_masks_onehot.append(masks_onehot)
 		all_masks.append(masks)
 		all_poses.append(poses)
 	
 	i_split = [np.arange(counts[i], counts[i + 1]) for i in range(3)]
 	
 	imgs = np.concatenate(all_imgs, 0)
-	masks_onehot = np.concatenate(all_masks_onehot, 0)
 	masks = np.concatenate(all_masks, 0)
 	poses = np.concatenate(all_poses, 0)
 	
@@ -155,10 +158,9 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1):
 			imgs_half_res[i] = cv2.resize(img, (W, H), interpolation=cv2.INTER_AREA)
 		imgs = imgs_half_res
 
-		masks_onehot_half_res = np.zeros((masks_onehot.shape[0], H, W, -1))
 		masks_half_res = np.zeros((masks.shape[0], H, W, -1))
 		for i, mask in enumerate(masks):
-			masks_half_res[i] = cv2.resize(masks, (W, H), interpolation=cv2.INTER_AREA)
+			masks_half_res[i] = cv2.resize(mask, (W, H), interpolation=cv2.INTER_AREA)
 		masks = masks_half_res
 
-	return imgs, masks, instance_num, poses, render_poses, [H, W, focal], i_split
+	return imgs, masks, instance_color_list, poses, render_poses, [H, W, focal], i_split
