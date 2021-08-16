@@ -654,6 +654,9 @@ def train():
 			args.datadir, args.clean_mask, args.factor, recenter=True, bd_factor=.75,
 			spherify=args.spherify
 		)
+		instance_color_list = torch.from_numpy(
+			np.loadtxt(os.path.join(args.datadir, 'masks/instance_label_render.txt'))
+		).to(torch.uint8)
 		hwf = poses[0, :3, -1]
 		poses = poses[:, :3, :4]
 		print('Loaded real_data', images.shape, render_poses.shape, hwf, args.datadir)
