@@ -19,6 +19,7 @@ from load_deepvoxels import load_dv_data
 from load_blender import load_blender_data
 from load_LINEMOD import load_LINEMOD_data
 from load_clevr import load_clevr_data, load_clevr_instance_data
+from load_real_data import load_real_data
 
 from utils import label2color
 
@@ -240,7 +241,7 @@ def create_nerf(args):
 	skips = [4]
 	model = NeRF(
 		D=args.netdepth, W=args.netwidth, input_ch=input_ch, output_ch=output_ch, skips=skips,
-		input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,instance_num=args.instance_num
+		input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs, instance_num=args.instance_num
 	).to(device)
 
 	grad_vars = list(model.parameters())
@@ -361,8 +362,13 @@ def raw2outputs(raw, z_vals, rays_d, instance_num=0, raw_noise_std=0, white_bkgd
 		if decompose:
 			decomposed_rgb_map = []
 			instance_mask = torch.argmax(instance_score, dim=-1)
+			# max_score_value, instance_mask = torch.max(instance_score, dim=-1)
+			# ths = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 0.999]
+			# th = ths[10]
 			for i in range(instance_num):
 				mask_i = instance_mask == i
+				# th_i = max_score_value > th
+				# mask_i = torch.logical_and(mask_i, th_i)
 
 				alpha_i = torch.zeros_like(alpha)
 				alpha_i[mask_i] = alpha[mask_i]
@@ -522,6 +528,7 @@ def config_parser():
 
 	# training options
 	parser.add_argument("--instance_mask", action="store_true", help='NeRF with instance mask')
+	parser.add_argument("--clean_mask", action="store_true", help="Use clean instance mask")
 	parser.add_argument("--instance_num", type=int, default=0, help="temp argument")
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
 	parser.add_argument("--netdepth", type=int, default=8, help='layers in network')
@@ -641,6 +648,35 @@ def train():
 			near = 0.
 			far = 1.
 		print('NEAR FAR', near, far)
+	
+	elif args.dataset_type == 'real_data':
+		images, masks, poses, bds, render_poses, i_test = load_real_data(
+			args.datadir, args.clean_mask, args.factor, recenter=True, bd_factor=.75,
+			spherify=args.spherify
+		)
+		hwf = poses[0, :3, -1]
+		poses = poses[:, :3, :4]
+		print('Loaded real_data', images.shape, render_poses.shape, hwf, args.datadir)
+		if not isinstance(i_test, list):
+			i_test = [i_test]
+
+		if args.llffhold > 0:
+			print('Auto LLFF holdout,', args.llffhold)
+			i_test = np.arange(images.shape[0])[::args.llffhold]
+		
+		i_val = i_test
+		i_train = np.array(
+			[i for i in np.arange(int(images.shape[0])) if (i not in i_test and i not in i_val)]
+		)
+
+		print ('DEFINING BOUNDS')
+		if args.no_ndc:
+			near = np.ndarray.min(bds) * .9
+			far = np.ndarray.max(bds) * 1.
+		else:
+			near = 0.
+			far = 1.
+		print ('NEAR FAR', near, far)
 
 	elif args.dataset_type == 'blender':
 		images, poses, render_poses, hwf, i_split = load_blender_data(args.datadir, args.half_res, args.testskip)
@@ -680,7 +716,7 @@ def train():
 
 	elif args.dataset_type == 'clevr':
 		if args.instance_mask:
-			images, masks_onehot, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(
+			images, _, masks, instance_num, poses, render_poses, hwf, i_split = load_clevr_instance_data(
 				args.datadir, args.half_res, args.testskip, args.trainskip
 			)
 			instance_color_list = torch.from_numpy(
@@ -835,8 +871,8 @@ def train():
 			if args.instance_num > 0:
 				target_mask = masks[img_i]
 				target_mask = torch.Tensor(target_mask).to(device)
-				target_mask_onehot = masks_onehot[img_i]
-				target_mask_onehot = torch.Tensor(target_mask_onehot).to(device)
+				# target_mask_onehot = masks_onehot[img_i]
+				# target_mask_onehot = torch.Tensor(target_mask_onehot).to(device)
 			pose = poses[img_i, :3, :4]
 
 			if N_rand is not None:
@@ -867,20 +903,18 @@ def train():
 				batch_rays = torch.stack([rays_o, rays_d], 0)
 				target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 				target_mask_s = target_mask[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, N_instance)
-				target_mask_onehot_s = target_mask_onehot[select_coords[:, 0], select_coords[:, 1]]  #(N_rand, N_instance)
-
+				# target_mask_onehot_s = target_mask_onehot[select_coords[:, 0], select_coords[:, 1]]  #(N_rand, N_instance)
 		#####  Core optimization loop  #####
 		rgb, disp, acc, instance, extras = render(
 			H, W, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True, **render_kwargs_train
 		)
-
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
 		data_bias = torch.tensor([torch.sum(target_mask_s == k).item() for k in range(args.instance_num)])
 		if args.fixed_CE_weight:
 			bg_index = torch.argmax(data_bias).item()
 			instance_weights = torch.ones(args.instance_num)
-			instance_weights[bg_index] /= 20
+			instance_weights[bg_index] /= 4
 		else:
 			instance_weights = F.normalize(torch.ones(args.instance_num) / data_bias, dim=0)
 		CEloss = nn.CrossEntropyLoss(weight=instance_weights)
