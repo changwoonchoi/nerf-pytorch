@@ -5,8 +5,7 @@ import imageio
 import json
 import torch.nn.functional as F
 import cv2
-from utils import color2label, colored_mask_to_label_map_np
-
+from utils.utils_old import colored_mask_to_label_map_np
 
 trans_t = lambda t: torch.Tensor([
 	[1, 0, 0, 0],

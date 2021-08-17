@@ -2,13 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+
+import utils.logging_utils
 from nerf_models.positional_embedder import get_embedder
 import os
 
 
 # Model
 class NeRF(nn.Module):
-	def __init__(self, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4], use_viewdirs=False, instance_label_dimension=0):
+	def __init__(self, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4],
+	             use_viewdirs=False, instance_label_dimension=0):
 		""" 
 		"""
 		super(NeRF, self).__init__()
@@ -16,6 +19,7 @@ class NeRF(nn.Module):
 		self.W = W
 		self.input_ch = input_ch
 		self.input_ch_views = input_ch_views
+		self.output_ch = output_ch
 		self.skips = skips
 		self.use_viewdirs = use_viewdirs
 		self.instance_label_dimension = instance_label_dimension
@@ -39,6 +43,15 @@ class NeRF(nn.Module):
 		else:
 			self.output_linear = nn.Linear(W, output_ch)
 
+	def __str__(self):
+		logs = ["[NeRF]"]
+		logs += ["\t- depth : %s" % str(self.D)]
+		logs += ["\t- width : %s" % str(self.W)]
+		logs += ["\t- input_ch : %s" % str(self.input_ch)]
+		logs += ["\t- output_ch : %s" % str(self.output_ch)]
+		logs += ["\t- instance_label_dimension : %s" % str(self.instance_label_dimension)]
+		return "\n".join(logs)
+
 	def forward(self, x):
 		input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
 		h = input_pts
@@ -50,7 +63,7 @@ class NeRF(nn.Module):
 
 		if self.use_viewdirs:
 			alpha = self.alpha_linear(h)
-			if self.instance_num > 0:
+			if self.instance_label_dimension > 0:
 				instance = self.instance_linear(h)
 				# instance = nn.Sigmoid(instance)  -> activate with softmax function after accumulate along ray direction.
 			feature = self.feature_linear(h)
@@ -61,7 +74,7 @@ class NeRF(nn.Module):
 				h = F.relu(h)
 
 			rgb = self.rgb_linear(h)
-			if self.instance_num > 0:
+			if self.instance_label_dimension > 0:
 				outputs = torch.cat([rgb, alpha, instance], -1)
 			else:
 				outputs = torch.cat([rgb, alpha], -1)
@@ -126,11 +139,13 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
 	outputs = torch.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])
 	return outputs
 
+
 def create_nerf(args):
 	"""
 	Instantiate NeRF's MLP model.
 	"""
 	embed_fn, input_ch = get_embedder(args.multires, args.i_embed)
+	logger = utils.logging_utils.load_logger("NeRF Loader")
 
 	input_ch_views = 0
 	embeddirs_fn = None
@@ -140,8 +155,9 @@ def create_nerf(args):
 	skips = [4]
 	model = NeRF(
 		D=args.netdepth, W=args.netwidth, input_ch=input_ch, output_ch=output_ch, skips=skips,
-		input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,instance_label_dimension=args.label_encoder.get_dimension()
+		input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,instance_label_dimension=args.instance_label_dimension
 	).to(args.device)
+	logger.info(model)
 
 	grad_vars = list(model.parameters())
 
@@ -150,9 +166,10 @@ def create_nerf(args):
 		model_fine = NeRF(
 			D=args.netdepth_fine, W=args.netwidth_fine, input_ch=input_ch, output_ch=output_ch, skips=skips,
 			input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
-			instance_label_dimension=args.label_encoder.get_dimension()
+			instance_label_dimension=args.instance_label_dimension
 		).to(args.device)
-
+		logger.info("NeRF fine model")
+		logger.info(model)
 		grad_vars += list(model_fine.parameters())
 
 	network_query_fn = lambda inputs, viewdirs, network_fn: run_network(
@@ -175,10 +192,11 @@ def create_nerf(args):
 		ckpts = [os.path.join(basedir, expname, f) \
 				 for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
 
-	print('Found ckpts', ckpts)
+	logger.info('Found ckpts: %s' % str(ckpts))
+
 	if len(ckpts) > 0 and not args.no_reload:
 		ckpt_path = ckpts[-1]
-		print('Reloading from', ckpt_path)
+		logger.info('Reloading from %s' % str(ckpt_path))
 		ckpt = torch.load(ckpt_path)
 
 		start = ckpt['global_step']
@@ -205,7 +223,7 @@ def create_nerf(args):
 
 	# NDC only good for LLFF-style forward facing data
 	if args.dataset_type != 'llff' or args.no_ndc:
-		print('Not ndc!')
+		logger.info('Not ndc!')
 		render_kwargs_train['ndc'] = False
 		render_kwargs_train['lindisp'] = args.lindisp
 
