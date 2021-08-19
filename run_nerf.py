@@ -172,7 +172,7 @@ def render_path(
 
 	t = time.time()
 	for i, c2w in enumerate(tqdm(render_poses)):
-		print(i, time.time() - t)
+		# print(i, time.time() - t)
 		t = time.time()
 		if decompose:
 			rgb, disp, acc, instance, decomposed_rgb, _ = render(
@@ -197,7 +197,7 @@ def render_path(
 
 		if savedir is not None:
 			rgb8 = to8b(rgbs[-1])
-			
+
 			instance_infer = torch.zeros_like(instance)
 			argmax = torch.argmax(instance, dim=-1)
 			for j in range(instance.shape[-1]):
@@ -211,7 +211,7 @@ def render_path(
 				for k, object in enumerate(decomposed_rgb):
 					filename_object = os.path.join(savedir, 'decomposed_rgb_{:03d}_{}.png'.format(i, k))
 					imageio.imwrite(filename_object, to8b(object.cpu().numpy()))
-			
+
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
 			filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
 			imageio.imwrite(filename_rgb, rgb8)
@@ -648,7 +648,7 @@ def train():
 			near = 0.
 			far = 1.
 		print('NEAR FAR', near, far)
-	
+
 	elif args.dataset_type == 'real_data':
 		images, masks, poses, bds, render_poses, i_test = load_real_data(
 			args.datadir, args.clean_mask, args.factor, recenter=True, bd_factor=.75,
@@ -666,7 +666,7 @@ def train():
 		if args.llffhold > 0:
 			print('Auto LLFF holdout,', args.llffhold)
 			i_test = np.arange(images.shape[0])[::args.llffhold]
-		
+
 		i_val = i_test
 		i_train = np.array(
 			[i for i in np.arange(int(images.shape[0])) if (i not in i_test and i not in i_val)]
@@ -769,7 +769,7 @@ def train():
 		f = os.path.join(basedir, expname, 'config.txt')
 		with open(f, 'w') as file:
 			file.write(open(args.config, 'r').read())
-	
+
 	writer = SummaryWriter(log_dir=os.path.join(basedir, expname))
 
 	# Create nerf model
@@ -913,7 +913,8 @@ def train():
 		)
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
-		data_bias = torch.tensor([torch.sum(target_mask_s == k).item() for k in range(args.instance_num)])
+		data_bias_sampled = torch.tensor([torch.sum(target_mask_s == k).item() for k in range(args.instance_num)])
+		data_bias = torch.tensor([torch.sum(target_mask.view(-1) == k).item() for k in range(args.instance_num)])
 		if args.fixed_CE_weight:
 			bg_index = torch.argmax(data_bias).item()
 			instance_weights = torch.ones(args.instance_num)
@@ -938,7 +939,7 @@ def train():
 			instance_loss0 = CEloss(extras['instance0'], target_mask_s.long()) if args.instance_num > 0 else 0
 			instance_loss = instance_loss + instance_loss0
 
-		alpha = 0.01
+		alpha = 0.005
 		loss = img_loss + alpha * instance_loss
 		if i % 100 == 0:
 			writer.add_scalar('Loss/rgb_MSE', img_loss, i)

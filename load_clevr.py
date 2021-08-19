@@ -115,7 +115,7 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1, trainskip=1):
 			skip = testskip
 			
 		for frame in meta['frames'][::skip]:
-			fname = os.path.join(basedir, frame['file_path'])
+			fname = os.path.join(basedir, s, os.path.split(frame['file_path'])[-1])
 			imgs.append(imageio.imread(fname)[..., :3])
 			colored_mask = imageio.imread(os.path.join(os.path.split(fname)[0], 'mask_' + os.path.split(fname)[1]))
 			colored_mask = torch.from_numpy(colored_mask[..., :3])
@@ -139,7 +139,7 @@ def load_clevr_instance_data(basedir, half_res=False, testskip=1, trainskip=1):
 	masks_onehot = np.concatenate(all_masks_onehot, 0)
 	masks = np.concatenate(all_masks, 0)
 	poses = np.concatenate(all_poses, 0)
-	
+
 	H, W = imgs[0].shape[:2]
 	camera_angle_x = float(meta['camera_angle_x'])
 	focal = .5 * W / np.tan(.5 * camera_angle_x)
