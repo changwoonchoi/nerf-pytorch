@@ -6,7 +6,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="5"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from config_parser import config_parser
-from dataset.dataset_loader import load_dataset
+from dataset.dataset_interface import load_dataset
 
 from utils.generator_utils import *
 import matplotlib.pyplot as plt

@@ -2,6 +2,20 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from functools import reduce
+
+
+def colored_mask_to_label_map_np(colored_mask, color_list):
+    """
+    params:
+        colored_mask: (H, W, 3)
+        color_list: colors of labels
+    returns:
+        label: (H, W) stores instance num
+    """
+    f = lambda label, i: np.where(np.all(colored_mask == color_list[i], axis=-1), i, label)
+    label_init = np.zeros(colored_mask.shape[:-1], dtype=np.int32)
+    return reduce(f, list(range(len(color_list))), label_init)
 
 
 def label_to_colored_label(label, label_color_list):
@@ -37,7 +51,12 @@ class LabelEncoder:
 
     def error(self, output_encoded_label, target_label, **kwargs):
         target_encoded_label = self.encode(target_label)
-        return nn.MSELoss(output_encoded_label, target_encoded_label)
+
+        if len(target_encoded_label.shape) == 1:
+            # output_encoded_label = output_encoded_label[:,0]
+            target_encoded_label = torch.unsqueeze(target_encoded_label, 1)
+        criterion = nn.MSELoss()
+        return criterion(output_encoded_label, target_encoded_label)
 
 
 class OneHotLabelEncoder(LabelEncoder):
@@ -52,7 +71,7 @@ class OneHotLabelEncoder(LabelEncoder):
     
     def error(self, output_encoded_label, target_label, **kwargs):
         data_bias = torch.tensor([torch.sum(target_label == k).item() for k in range(self.label_number)])
-        if kwargs.get("fixed_CE_weight", False):
+        if kwargs.get("fixed_CE_weight", True):
             bg_index = torch.argmax(data_bias).item()
             instance_weights = torch.ones(self.label_number)
             instance_weights[bg_index] /= 20
@@ -67,14 +86,18 @@ class OneHotLabelEncoder(LabelEncoder):
 
 class ScalarLabelEncoder(LabelEncoder):
     def encode(self, label):
-        return label.float() / self.label_number
+        print(label[0:10])
+        encoded_label = (label.float() + 0.5) / self.label_number
+        print(encoded_label[0:10])
+        return encoded_label
 
     def encode_np(self, label_np):
-        return label_np.astype(np.float32) / self.label_number
+        return (label_np.astype(np.float32) + 0.5) / self.label_number
 
     def decode(self, encoded_label):
-        index = (encoded_label * self.label_number).long()
+        index = torch.floor(encoded_label * self.label_number).long()
         index = torch.clip(index, min=0, max=self.label_number-1)
+        index = torch.squeeze(index, -1)
         return index
 
     def get_dimension(self):
@@ -82,14 +105,14 @@ class ScalarLabelEncoder(LabelEncoder):
 
 
 class ColoredLabelEncoder(LabelEncoder):
-    def encode(self, label_np):
-        return self.label_color_list[label_np]
+    def encode(self, label):
+        return self.label_color_list[label.long()].float().cuda() / 255.0
 
     def encode_np(self, label_np):
-        return self.label_color_list_np[label_np]
+        return self.label_color_list_np[label_np].astype(np.float32) / 255.0
     
     def encoded_label_to_colored_label(self, encoded_label):
-        return encoded_label
+        return encoded_label * 255.0
     
     def get_dimension(self):
         return 3

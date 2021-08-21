@@ -3,6 +3,7 @@ import time
 from tqdm import tqdm, trange
 import os
 import imageio
+from utils.label_utils import *
 
 DEBUG = False
 
@@ -26,10 +27,9 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
 	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
-
 	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
 
-	rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
+
 	noise = 0.
 	if raw_noise_std > 0.:
 		noise = torch.randn(raw[..., 3].shape) * raw_noise_std
@@ -43,6 +43,8 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	alpha = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
 	# weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
 	weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
+
+	rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
 	rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 
 	if instance_label_dimension > 0:
@@ -164,7 +166,6 @@ def render_rays(ray_batch,
 	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
 	if instance_map != None:
 		ret['instance_map'] = instance_map
-		ret['instance0'] = instance_map_0
 
 	if retraw:
 		ret['raw'] = raw
@@ -172,6 +173,8 @@ def render_rays(ray_batch,
 		ret['rgb0'] = rgb_map_0
 		ret['disp0'] = disp_map_0
 		ret['acc0'] = acc_map_0
+		if instance_map_0 != None:
+			ret['instance0'] = instance_map_0
 		ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
 	for k in ret:

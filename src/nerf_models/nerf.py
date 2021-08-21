@@ -50,6 +50,8 @@ class NeRF(nn.Module):
 		logs += ["\t- input_ch : %s" % str(self.input_ch)]
 		logs += ["\t- output_ch : %s" % str(self.output_ch)]
 		logs += ["\t- instance_label_dimension : %s" % str(self.instance_label_dimension)]
+		logs += ["\t- use_view_dir : %s" % str(self.use_viewdirs)]
+
 		return "\n".join(logs)
 
 	def forward(self, x):

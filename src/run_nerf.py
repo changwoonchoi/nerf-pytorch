@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import os
 
 #os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 #os.environ["CUDA_VISIBLE_DEVICES"] = "5"
@@ -9,19 +8,19 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
 DEBUG = False
 
-from config_parser import config_parser, export_config
+from config_parser import export_config
 from nerf_models.nerf_renderer import render, render_path
 from nerf_models.nerf import create_nerf
-from dataset.dataset_loader import load_dataset
 
 from torch.utils.tensorboard import SummaryWriter
-from utils.generator_utils import *
-from utils.timing_utils import *
 from tqdm import tqdm, trange
 from utils.label_utils import *
-from nerf_models.nerf_renderer_helper import *
-
 from miscellaneous.test_dataset_speed import *
+
+
+def test():
+    parser = config_parser()
+    # TODO : only test?
 
 
 def train():
@@ -29,6 +28,7 @@ def train():
     args = parser.parse_args()
     args.device = device
 
+    # (0) Print train phase overview
     logger_dataset = load_logger("Dataset Info")
     logger_export = load_logger("Export Logger")
     use_instance_mask = args.instance_mask
@@ -71,7 +71,7 @@ def train():
         writer = SummaryWriter(log_dir=os.path.join(basedir, expname))
 
     # (3) Create nerf model
-    with time_measure("[3] NeRF Load"):
+    with time_measure("[3] NeRF load"):
         # set instance label dimension
         label_encoder = None
         if use_instance_mask:
@@ -124,14 +124,14 @@ def train():
                                                   verbose=i < 10, retraw=True,
                                                   **render_kwargs_train)
 
-
         optimizer.zero_grad()
         rgb = result['rgb_map']
         img_loss = img2mse(rgb, target_rgb)
         if use_instance_mask:
             instance_loss = label_encoder.error(
                 output_encoded_label=result['instance_map'],
-                target_label=target_label
+                target_label=target_label,
+                fixed_CE_weight=args.fixed_CE_weight
             )
         else:
             instance_loss = 0
@@ -147,10 +147,12 @@ def train():
         if 'instance0' in result and use_instance_mask:
             instance_loss0 = label_encoder.error(
                 output_encoded_label=result['instance0'],
-                target_label=target_label
+                target_label=target_label,
+                fixed_CE_weight=args.fixed_CE_weight
             )
             instance_loss = instance_loss + instance_loss0
-        alpha = 0.01
+
+        alpha = args.instance_loss_weight
         loss = img_loss + alpha * instance_loss
         if i % 100 == 0:
             writer.add_scalar('Loss/rgb_MSE', img_loss, i)
@@ -191,6 +193,9 @@ def train():
                                                                       gt_imgs=None, savedir=testsavedir,
                                                                       label_encoder=label_encoder, render_factor=4)
                 writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
+                disps = np.expand_dims(disps, -1)
+                writer.add_images('test/inferred_disps', disps.transpose((0, 3, 1, 2)), i)
+
                 if use_instance_mask:
                     writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
 

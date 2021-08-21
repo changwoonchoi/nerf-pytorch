@@ -8,14 +8,14 @@ import torch
 
 
 class NerfDataset(Dataset, ABC):
-	def __init__(self, name):
+	def __init__(self, name, **kwargs):
 		self.original_width = 0
 		self.original_height = 0
 		self.width = 0
 		self.height = 0
 		self.scale = 1
 
-		self.split = "train"
+		self.split = kwargs.get("split", "train")
 		self.name = name
 
 		self.focal = 0
@@ -77,7 +77,7 @@ class NerfDataset(Dataset, ABC):
 
 	def __str__(self):
 		logs = ["[Dataset]"]
-		logs += ["\t- type : %s" % "clevr"]
+		logs += ["\t- type : %s" % self.name]
 		logs += ["\t- split : %s" % self.split]
 		logs += ["\t- scale : %s" % str(self.scale)]
 		logs += ["\t- size (raw) : %d x %d" % (self.original_width, self.original_height)]
@@ -87,3 +87,9 @@ class NerfDataset(Dataset, ABC):
 
 	def __len__(self):
 		pass
+
+
+def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
+	from dataset.dataset_clevr import ClevrDataset
+	if dataset_type == "clevr":
+		return ClevrDataset(basedir, **kwargs)

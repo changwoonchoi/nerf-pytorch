@@ -1,7 +1,6 @@
 import numpy as np
-from dataset.dataset_loader import NerfDataset
+from dataset.dataset_interface import NerfDataset
 from torch.utils.data import DataLoader
-from dataset.per_pixel_dataset import PerPixelDataset
 from nerf_models.nerf_renderer_helper import *
 import torch
 import matplotlib.pyplot as plt

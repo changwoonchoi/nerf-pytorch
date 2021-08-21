@@ -6,7 +6,7 @@ import numpy as np
 import json
 import imageio
 import torch
-from utils.utils_old import colored_mask_to_label_map_np
+from utils.label_utils import colored_mask_to_label_map_np
 from utils.math_utils import pose_spherical
 
 import matplotlib.pyplot as plt
@@ -17,8 +17,7 @@ import cv2
 
 class ClevrDataset(NerfDataset):
 	def __init__(self, basedir, **kwargs):
-		super().__init__("clevr")
-		self.split = kwargs.get("split", "train")
+		super().__init__("clevr", **kwargs)
 		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
 			self.meta = json.load(fp)
 

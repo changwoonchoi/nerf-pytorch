@@ -11,6 +11,7 @@ def config_parser():
 
 	# training options
 	parser.add_argument("--instance_mask", action="store_true", help='NeRF with instance mask')
+	parser.add_argument("--instance_loss_weight", type=float, default=0.01, help='Instance loss weight')
 	parser.add_argument("--instance_label_encoding", type=str, default="one_hot",
 	                    help="how to encode instance label. one of single, one_hot, label_color")
 	parser.add_argument("--instance_label_dimension", type=int, default=0, help="instance mask dimension")
