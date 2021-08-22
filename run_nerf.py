@@ -73,7 +73,13 @@ def batchify_rays(rays_flat, chunk=1024 * 32, decompose=False, **kwargs):
 		if k == 'decomposed_rgb_map' or k == 'decomposed_rgb_map0':
 			all_ret[k] = torch.cat(all_ret[k], dim=1)
 		else:
-			all_ret[k] = torch.cat(all_ret[k], dim=0)
+			if kwargs['network_fn'].instance_num == 0:
+				if k == 'instance_map' or k == 'instance0':
+					all_ret[k] = None
+				else:
+					all_ret[k] = torch.cat(all_ret[k], dim=0)
+			else:
+				all_ret[k] = torch.cat(all_ret[k], dim=0)
 	return all_ret
 
 
@@ -140,6 +146,9 @@ def render(
 			k_sh = list(all_ret[k].shape[:1]) + list(sh[:-1]) + list(all_ret[k].shape[2:])
 			all_ret[k] = torch.reshape(all_ret[k], k_sh)
 		else:
+			if kwargs['network_fn'].instance_num == 0:
+				if k == 'instance_map' or k == 'instance0':
+					continue
 			k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
 			all_ret[k] = torch.reshape(all_ret[k], k_sh)
 	if decompose:
@@ -511,7 +520,7 @@ def render_rays(
 		ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
 	for k in ret:
-		if (torch.isnan(ret[k]).any() or torch.isinf(ret[k]).any()) and DEBUG:
+		if DEBUG and (torch.isnan(ret[k]).any() or torch.isinf(ret[k]).any() or k is None):
 			print(f"! [Numerical Error] {k} contains nan or inf.")
 
 	return ret
@@ -905,7 +914,8 @@ def train():
 				rays_d = rays_d[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 				batch_rays = torch.stack([rays_o, rays_d], 0)
 				target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
-				target_mask_s = target_mask[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, N_instance)
+				if args.instance_num > 0:
+					target_mask_s = target_mask[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, N_instance)
 				# target_mask_onehot_s = target_mask_onehot[select_coords[:, 0], select_coords[:, 1]]  #(N_rand, N_instance)
 		#####  Core optimization loop  #####
 		rgb, disp, acc, instance, extras = render(
@@ -913,17 +923,17 @@ def train():
 		)
 		optimizer.zero_grad()
 		img_loss = img2mse(rgb, target_s)
-		data_bias_sampled = torch.tensor([torch.sum(target_mask_s == k).item() for k in range(args.instance_num)])
-		data_bias = torch.tensor([torch.sum(target_mask.view(-1) == k).item() for k in range(args.instance_num)])
-		if args.fixed_CE_weight:
-			bg_index = torch.argmax(data_bias).item()
-			instance_weights = torch.ones(args.instance_num)
-			instance_weights[bg_index] /= 4
-		else:
-			instance_weights = F.normalize(torch.ones(args.instance_num) / data_bias, dim=0)
-		CEloss = nn.CrossEntropyLoss(weight=instance_weights)
+		data_bias = torch.tensor([torch.sum(target_mask_s == k).item() for k in range(args.instance_num)])
+		# data_bias = torch.tensor([torch.sum(target_mask.view(-1) == k).item() for k in range(args.instance_num)])
 		# TODO: Loss function for instance label
 		if args.instance_num > 0:
+			if args.fixed_CE_weight:
+				bg_index = torch.argmax(data_bias).item()
+				instance_weights = torch.ones(args.instance_num)
+				instance_weights[bg_index] /= 4
+			else:
+				instance_weights = F.normalize(torch.ones(args.instance_num) / data_bias, dim=0)
+			CEloss = nn.CrossEntropyLoss(weight=instance_weights)
 			instance_loss = CEloss(instance, target_mask_s.long())
 		else:
 			instance_loss = 0
@@ -1015,10 +1025,16 @@ def train():
 			print('Saved test set')
 
 		if i % args.i_print == 0:
-			tqdm.write(
-				f"[TRAIN] Iter: {i} Loss: {loss.item()} MSE: {img_loss.item()}\
-				instance_CE: {instance_loss.item()} PSNR: {psnr.item()}"
-			)
+			if args.instance_num > 0:
+				tqdm.write(
+					f"[TRAIN] Iter: {i} Loss: {loss.item()} MSE: {img_loss.item()}\
+					instance_CE: {instance_loss.item()} PSNR: {psnr.item()}"
+				)
+			else:
+				tqdm.write(
+					f"[TRAIN] Iter: {i} Loss: {loss.item()} MSE: {img_loss.item()}\
+					instance_CE: {instance_loss} PSNR: {psnr.item()}"
+				)
 
 		global_step += 1
 	writer.flush()
