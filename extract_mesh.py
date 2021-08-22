@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 N = 256
 threshold = 0.001
 bound = 5.5
-
+decompose = False
 #################################################
 
 @ torch.no_grad()

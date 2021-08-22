@@ -192,7 +192,8 @@ def render_path(
 			decomposed_rgb = None
 		rgbs.append(rgb.cpu().numpy())
 		disps.append(disp.cpu().numpy())
-		instances.append(instance.cpu().numpy())
+		if render_kwargs['network_fn'].instance_num != 0:
+			instances.append(instance.cpu().numpy())
 		if decompose:
 			decomposed_rgbs.append(decomposed_rgb.cpu().numpy())
 		if i == 0:
@@ -206,30 +207,31 @@ def render_path(
 
 		if savedir is not None:
 			rgb8 = to8b(rgbs[-1])
-
-			instance_infer = torch.zeros_like(instance)
-			argmax = torch.argmax(instance, dim=-1)
-			for j in range(instance.shape[-1]):
-				onehot_j = torch.zeros(instance.shape[-1])
-				onehot_j[j] = 1.
-				mask_j = argmax == j
-				instance_infer[mask_j] = onehot_j
-			instance_color = label2color(instance_infer, color_list).cpu().numpy().astype(np.uint8)
-			instance_colors.append(instance_color)
-			if decompose:
-				for k, object in enumerate(decomposed_rgb):
-					filename_object = os.path.join(savedir, 'decomposed_rgb_{:03d}_{}.png'.format(i, k))
-					imageio.imwrite(filename_object, to8b(object.cpu().numpy()))
-
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
-			filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
 			imageio.imwrite(filename_rgb, rgb8)
-			imageio.imwrite(filename_instance, instance_color)
+			if render_kwargs['network_fn'].instance_num != 0:
+				instance_infer = torch.zeros_like(instance)
+				argmax = torch.argmax(instance, dim=-1)
+				for j in range(instance.shape[-1]):
+					onehot_j = torch.zeros(instance.shape[-1])
+					onehot_j[j] = 1.
+					mask_j = argmax == j
+					instance_infer[mask_j] = onehot_j
+				instance_color = label2color(instance_infer, color_list).cpu().numpy().astype(np.uint8)
+				instance_colors.append(instance_color)
+				if decompose:
+					for k, object in enumerate(decomposed_rgb):
+						filename_object = os.path.join(savedir, 'decomposed_rgb_{:03d}_{}.png'.format(i, k))
+						imageio.imwrite(filename_object, to8b(object.cpu().numpy()))
+
+				filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
+				imageio.imwrite(filename_instance, instance_color)
 
 	rgbs = np.stack(rgbs, 0)
 	disps = np.stack(disps, 0)
-	instances = np.stack(instances, 0)
-	instance_colors = np.stack(instance_colors, 0)
+	if render_kwargs['network_fn'].instance_num != 0:
+		instances = np.stack(instances, 0)
+		instance_colors = np.stack(instance_colors, 0)
 	if decompose:
 		decomposed_rgbs = np.stack(decomposed_rgbs, 0)
 
@@ -1003,25 +1005,36 @@ def train():
 			os.makedirs(testsavedir, exist_ok=True)
 			print('test poses shape', poses[i_test].shape)
 			with torch.no_grad():
-				rgbs, _, instances, instance_colors, decomposed_rgbs = render_path(
-					torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
-					gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list,
-					savedir=testsavedir, decompose=args.render_decompose
-				)
+				if args.instance_mask:
+					rgbs, _, instances, instance_colors, decomposed_rgbs = render_path(
+						torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
+						gt_imgs=images[i_test], gt_masks=masks[i_test], color_list=instance_color_list,
+						savedir=testsavedir, decompose=args.render_decompose
+					)
 
-				gt_img_batch = np.zeros((len(i_test), 3, images[i_test[0]].shape[0], images[i_test[0]].shape[1]))
-				for test_idx in range(len(i_test)):
-					gt_img_batch[test_idx] = images[i_test[test_idx]].transpose((2, 0, 1))
+					gt_img_batch = np.zeros((len(i_test), 3, images[i_test[0]].shape[0], images[i_test[0]].shape[1]))
+					for test_idx in range(len(i_test)):
+						gt_img_batch[test_idx] = images[i_test[test_idx]].transpose((2, 0, 1))
 
-				writer.add_images('test/gt_rgb', gt_img_batch, i)
-				writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
-				writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
-				if args.render_decompose:
-					for mask_idx in range(decomposed_rgbs.shape[1]):
-						writer.add_images(
-							'test/decomposed_rgb_{}'.format(mask_idx),
-							decomposed_rgbs[:, mask_idx, ...].transpose((0, 3, 1, 2)), i
-						)
+					writer.add_images('test/gt_rgb', gt_img_batch, i)
+					writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
+					writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
+					if args.render_decompose:
+						for mask_idx in range(decomposed_rgbs.shape[1]):
+							writer.add_images(
+								'test/decomposed_rgb_{}'.format(mask_idx),
+								decomposed_rgbs[:, mask_idx, ...].transpose((0, 3, 1, 2)), i
+							)
+				else:
+					rgbs, _, _, _, _ = render_path(
+						torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test,
+						gt_imgs=images[i_test], savedir=testsavedir
+					)
+					gt_img_batch = np.zeros((len(i_test), 3, images[i_test[0]].shape[0], images[i_test[0]].shape[1]))
+					for test_idx in range(len(i_test)):
+						gt_img_batch[test_idx] = images[i_test[test_idx]].transpose(2, 0, 1)
+					writer.add_images('test/gt_rgb', gt_img_batch, i)
+					writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
 			print('Saved test set')
 
 		if i % args.i_print == 0:

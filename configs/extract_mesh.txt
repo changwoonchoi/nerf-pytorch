@@ -1,0 +1,32 @@
+expname = extract_mesh
+basedir = ./logs
+datadir = ./data/clevr/scene_1
+dataset_type = clevr
+
+no_batching = True
+
+use_viewdirs = True
+lrate_decay = 500
+
+N_samples = 64
+N_importance = 128
+N_rand = 1024
+
+precrop_iters = 500
+precrop_frac = 0.5
+
+half_res = False
+instance_mask
+
+i_video = 10000000000000
+i_testset = 50000
+testskip = 32
+N_iter = 500000
+
+render_decompose = False
+fixed_CE_weight = False
+
+render_only = True
+render_test = True
+chunk = 16384
+render_decompose = True
