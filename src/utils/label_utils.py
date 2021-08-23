@@ -65,10 +65,10 @@ class OneHotLabelEncoder(LabelEncoder):
 
     def encode_np(self, label_np):
         return np.eye(self.label_number)[label_np]
-    
+
     def decode(self, encoded_label):
         return torch.argmax(encoded_label, dim=-1)
-    
+
     def error(self, output_encoded_label, target_label, **kwargs):
         data_bias = torch.tensor([torch.sum(target_label == k).item() for k in range(self.label_number)])
         if kwargs.get("fixed_CE_weight", True):
@@ -86,9 +86,7 @@ class OneHotLabelEncoder(LabelEncoder):
 
 class ScalarLabelEncoder(LabelEncoder):
     def encode(self, label):
-        print(label[0:10])
         encoded_label = (label.float() + 0.5) / self.label_number
-        print(encoded_label[0:10])
         return encoded_label
 
     def encode_np(self, label_np):
@@ -110,10 +108,10 @@ class ColoredLabelEncoder(LabelEncoder):
 
     def encode_np(self, label_np):
         return self.label_color_list_np[label_np].astype(np.float32) / 255.0
-    
+
     def encoded_label_to_colored_label(self, encoded_label):
         return encoded_label * 255.0
-    
+
     def get_dimension(self):
         return 3
 
