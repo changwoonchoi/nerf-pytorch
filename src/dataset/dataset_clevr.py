@@ -31,16 +31,16 @@ class ClevrDataset(NerfDataset):
 
 		self.camera_angle_x = float(self.meta['camera_angle_x'])
 
-		image0_path = os.path.join(self.basedir, self.meta['frames'][0]['file_path'])
+		image0_path = os.path.join(self.basedir, self.split, os.path.split(self.meta['frames'][0]['file_path'])[1])
 		image0 = imageio.imread(image0_path, pilmode='RGB')
 		self.original_height, self.original_width, _ = image0.shape
 
 		self.height = int(self.original_height * self.scale)
 		self.width = int(self.original_width * self.scale)
 		self.focal = .5 * self.width / np.tan(0.5 * self.camera_angle_x)
-		self.load_near_far_plane()
+		self.load_near_far_plane(**kwargs)
 
-	def load_near_far_plane(self):
+	def load_near_far_plane(self, **kwargs):
 		"""
 		Load near and far plane
 		:return:
@@ -55,8 +55,9 @@ class ClevrDataset(NerfDataset):
 				poses.append(pose)
 		poses = np.asarray(poses)
 		hemi_R = np.mean(np.linalg.norm(poses[:, :3, -1], axis=-1))
-		near = hemi_R - 4
-		far = hemi_R + 4
+		sample_length = kwargs.get("sample_length", 8)
+		near = hemi_R - sample_length / 2
+		far = hemi_R + sample_length / 2
 		self.near = near
 		self.far = far
 
@@ -69,7 +70,7 @@ class ClevrDataset(NerfDataset):
 		:param index: data index
 		"""
 		frame = self.meta['frames'][::self.skip][index]
-		image_file_path = os.path.join(self.basedir, frame['file_path'])
+		image_file_path = os.path.join(self.basedir, self.split, os.path.split(frame['file_path'])[1])
 		mask_file_path = os.path.join(os.path.split(image_file_path)[0], 'mask_' + os.path.split(image_file_path)[1])
 
 		# (1) load RGB Image

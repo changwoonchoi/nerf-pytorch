@@ -15,18 +15,69 @@ from nerf_models.nerf import create_nerf
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 from utils.label_utils import *
+from utils.mesh_utils import *
 from miscellaneous.test_dataset_speed import *
 
 
 def test():
     parser = config_parser()
-    # TODO : only test?
+    args = parser.parse_args()
+    args.device = device
+
+    dataset = load_dataset(args.dataset_type, args.datadir, split='test', skip=args.testskip, sample_length=args.sample_length)
+    dataset.load_instance_label_mask = args.instance_mask
+    dataset.load_all_data(num_of_workers=8)
+
+    hwf = [dataset.height, dataset.width, dataset.focal]
+    K = dataset.get_focal_matrix()
+
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    dataset.to_tensor(args.device)
+
+    basedir = args.basedir
+    expname = args.expname
+
+    if args.instance_mask:
+        label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding)
+        args.instance_label_dimension = label_encoder.get_dimension()
+    else:
+        args.instance_label_dimension = 0
+
+    _, render_kwargs_test, start, _, _ = create_nerf(args)
+    bds_dict = dataset.get_near_far_plane()
+    render_kwargs_test.update(bds_dict)
+
+    testsavedir = os.path.join(basedir, expname, 'render_only_{:06d}'.format(start))
+    os.makedirs(testsavedir, exist_ok=True)
+
+    with torch.no_grad():
+        _, _, _, _ = render_path(
+            torch.Tensor(dataset.poses).to(device), hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+            label_encoder=label_encoder, render_factor=4
+        )
+
+    if args.extract_mesh:
+        ###################
+        # TODO: move parameter to config file
+        N = 256
+        threshold = 0.001
+        bound = 4.5
+        ###################
+        net_query_fn = render_kwargs_test['network_query_fn']
+        net_fn = render_kwargs_test['network_fine']
+        sigma = query(N, bound, args.chunk, net_query_fn, net_fn)
+        mesh = march_cubes(sigma.cpu().numpy(), grid_num=N, th=threshold)
+        mesh.export(os.path.join(testsavedir, 'mesh_bound={}_th={}.obj'.format(bound, threshold)))
 
 
 def train():
     parser = config_parser()
     args = parser.parse_args()
     args.device = device
+
+    if args.render_only:
+        test()
+        return
 
     # (0) Print train phase overview
     logger_dataset = load_logger("Dataset Info")
@@ -50,8 +101,8 @@ def train():
             return target_dataset
 
         # load train and validation dataset
-        dataset = load_dataset_split("train")
-        dataset_val = load_dataset_split("val", skip=5)
+        dataset = load_dataset_split("train", sample_length=args.sample_length)
+        dataset_val = load_dataset_split("val", skip=5, sample_length=args.sample_length)
 
         hwf = [dataset.height, dataset.width, dataset.focal]
 
