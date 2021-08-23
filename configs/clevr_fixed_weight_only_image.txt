@@ -1,4 +1,4 @@
-expname = clevr_fixed_weight
+expname = clevr_fixed_weight_only_image
 basedir = ../logs
 datadir = ../data/clevr/scene_1
 dataset_type = clevr
@@ -16,7 +16,7 @@ precrop_iters = 500
 precrop_frac = 0.5
 
 half_res = False
-instance_mask = True
+instance_mask = False
 instance_label_encoding = one_hot
 
 i_video = 10000000000000

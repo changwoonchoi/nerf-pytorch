@@ -1,4 +1,4 @@
-expname = clevr_fixed_weight
+expname = clevr_colored_label
 basedir = ../logs
 datadir = ../data/clevr/scene_1
 dataset_type = clevr
@@ -17,11 +17,13 @@ precrop_frac = 0.5
 
 half_res = False
 instance_mask = True
-instance_label_encoding = one_hot
+instance_label_encoding = color
+instance_loss_weight = 0.5
+
 
 i_video = 10000000000000
 i_testset = 1000
 testskip = 32
 
 render_decompose = False
-fixed_CE_weight = True
+fixed_CE_weight = False
