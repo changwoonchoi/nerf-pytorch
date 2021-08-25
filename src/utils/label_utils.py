@@ -71,7 +71,7 @@ class OneHotLabelEncoder(LabelEncoder):
     
     def error(self, output_encoded_label, target_label, **kwargs):
         data_bias = torch.tensor([torch.sum(target_label == k).item() for k in range(self.label_number)])
-        if kwargs.get("fixed_CE_weight", True):
+        if kwargs.get("fixed_CE_weight", False):
             bg_index = torch.argmax(data_bias).item()
             instance_weights = torch.ones(self.label_number)
             instance_weights[bg_index] /= 20
@@ -86,9 +86,7 @@ class OneHotLabelEncoder(LabelEncoder):
 
 class ScalarLabelEncoder(LabelEncoder):
     def encode(self, label):
-        print(label[0:10])
         encoded_label = (label.float() + 0.5) / self.label_number
-        print(encoded_label[0:10])
         return encoded_label
 
     def encode_np(self, label_np):
