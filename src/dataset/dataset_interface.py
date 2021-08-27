@@ -13,7 +13,7 @@ class NerfDataset(Dataset, ABC):
 		self.original_height = 0
 		self.width = 0
 		self.height = 0
-		self.scale = 1
+		self.scale = kwargs.get("image_scale", 1)
 
 		self.split = kwargs.get("split", "train")
 		self.name = name
@@ -28,6 +28,7 @@ class NerfDataset(Dataset, ABC):
 		self.masks = []
 
 		self.instance_color_list = []
+		self.instance_num = 0
 
 		self.full_data_loaded = False
 		self.use_caching = True
@@ -83,6 +84,7 @@ class NerfDataset(Dataset, ABC):
 		logs += ["\t- size (raw) : %d x %d" % (self.original_width, self.original_height)]
 		logs += ["\t- size : %d x %d" % (self.width, self.height)]
 		logs += ["\t- image number : %d" % len(self)]
+		logs += ["\t- instance number : %d" % self.instance_num]
 		return "\n".join(logs)
 
 	def __len__(self):
@@ -91,5 +93,8 @@ class NerfDataset(Dataset, ABC):
 
 def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_clevr import ClevrDataset
+	from dataset.dataset_mitsuba import MitsubaDataset
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
+	elif dataset_type == "mitsuba":
+		return MitsubaDataset(basedir, **kwargs)

@@ -10,6 +10,7 @@ def config_parser():
 	parser.add_argument("--datadir", type=str, default='./data/llff/fern', help='input data directory')
 
 	# training options
+	parser.add_argument("--image_scale", type=float, default=1.0, help="image scale ex) 0.5 = half")
 	parser.add_argument("--instance_mask", action="store_true", help='NeRF with instance mask')
 	parser.add_argument("--instance_loss_weight", type=float, default=0.01, help='Instance loss weight')
 	parser.add_argument("--instance_label_encoding", type=str, default="one_hot",
