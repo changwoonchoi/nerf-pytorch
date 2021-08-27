@@ -8,5 +8,6 @@
 data/*
 logs/*
 .idea/*
+.DS_Store
 *.sh
 /src/trash/
