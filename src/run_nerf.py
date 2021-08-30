@@ -75,7 +75,7 @@ def train():
         # set instance label dimension
         label_encoder = None
         if use_instance_mask:
-            label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding)
+            label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding, args.instance_label_dimension)
             args.instance_label_dimension = label_encoder.get_dimension()
         else:
             args.instance_label_dimension = 0
@@ -88,6 +88,17 @@ def train():
         bds_dict = dataset.get_near_far_plane()
         render_kwargs_train.update(bds_dict)
         render_kwargs_test.update(bds_dict)
+
+        if use_instance_mask:
+            is_instance_label_logit = isinstance(label_encoder, OneHotLabelEncoder) and (args.CE_weight_type != "mse")
+            render_kwargs_train["is_instance_label_logit"] = is_instance_label_logit
+            render_kwargs_test["is_instance_label_logit"] = is_instance_label_logit
+        logger_render_options = load_logger("Render Kwargs")
+        logs = ["[Render Kwargs (simple only)]"]
+        for k, v in render_kwargs_train.items():
+            if isinstance(v, (str, float, int, bool)):
+                logs += ["\t-%s : %s" % (k, str(v))]
+        logger_render_options.info("\n".join(logs))
 
     # (4) Create the sample generator
     with time_measure("[4] Sample generator create"):
@@ -131,7 +142,7 @@ def train():
             instance_loss = label_encoder.error(
                 output_encoded_label=result['instance_map'],
                 target_label=target_label,
-                fixed_CE_weight=args.fixed_CE_weight
+                CE_weight_type=args.CE_weight_type
             )
         else:
             instance_loss = 0
@@ -148,7 +159,7 @@ def train():
             instance_loss0 = label_encoder.error(
                 output_encoded_label=result['instance0'],
                 target_label=target_label,
-                fixed_CE_weight=args.fixed_CE_weight
+                CE_weight_type=args.CE_weight_type
             )
             instance_loss = instance_loss + instance_loss0
 
@@ -188,7 +199,8 @@ def train():
             os.makedirs(testsavedir, exist_ok=True)
 
             with torch.no_grad():
-                rgbs, disps, instances, instance_colors = render_path(torch.Tensor(dataset_val.poses).to(device),
+                poses = torch.Tensor(dataset_val.poses).to(device)
+                rgbs, disps, instances, instance_colors = render_path(poses,
                                                                       hwf, K, args.chunk, render_kwargs_test,
                                                                       gt_imgs=None, savedir=testsavedir,
                                                                       label_encoder=label_encoder, render_factor=4)

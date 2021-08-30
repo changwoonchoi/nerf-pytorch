@@ -11,7 +11,7 @@ import os
 # Model
 class NeRF(nn.Module):
 	def __init__(self, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4],
-	             use_viewdirs=False, instance_label_dimension=0):
+	             use_viewdirs=False, instance_label_dimension=0, use_instance_feature_layer=False):
 		""" 
 		"""
 		super(NeRF, self).__init__()
@@ -23,6 +23,7 @@ class NeRF(nn.Module):
 		self.skips = skips
 		self.use_viewdirs = use_viewdirs
 		self.instance_label_dimension = instance_label_dimension
+		self.use_instance_feature_layer = use_instance_feature_layer
 		
 		self.pts_linears = nn.ModuleList(
 			[nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in range(D-1)])
@@ -38,7 +39,12 @@ class NeRF(nn.Module):
 			self.feature_linear = nn.Linear(W, W)
 			self.alpha_linear = nn.Linear(W, 1)
 			if self.instance_label_dimension > 0:
-				self.instance_linear = nn.Linear(W, self.instance_label_dimension)  # TODO: dimension?
+				if self.use_instance_feature_layer:
+					self.instance_feature_linear = nn.Linear(W, W//2)
+					self.instance_linear = nn.Linear(W//2, self.instance_label_dimension)
+				else:
+					self.instance_feature_linear = None
+					self.instance_linear = nn.Linear(W, self.instance_label_dimension)
 			self.rgb_linear = nn.Linear(W//2, 3)
 		else:
 			self.output_linear = nn.Linear(W, output_ch)
@@ -51,7 +57,7 @@ class NeRF(nn.Module):
 		logs += ["\t- output_ch : %s" % str(self.output_ch)]
 		logs += ["\t- instance_label_dimension : %s" % str(self.instance_label_dimension)]
 		logs += ["\t- use_view_dir : %s" % str(self.use_viewdirs)]
-
+		logs += ["\t- use_instance_feature_layer : %s" % str(self.use_instance_feature_layer)]
 		return "\n".join(logs)
 
 	def forward(self, x):
@@ -66,8 +72,11 @@ class NeRF(nn.Module):
 		if self.use_viewdirs:
 			alpha = self.alpha_linear(h)
 			if self.instance_label_dimension > 0:
-				instance = self.instance_linear(h)
-				# instance = nn.Sigmoid(instance)  -> activate with softmax function after accumulate along ray direction.
+				if self.use_instance_feature_layer:
+					instance = self.instance_linear(self.instance_feature_linear(h))
+				else:
+					instance = self.instance_linear(h)
+					# instance = nn.Sigmoid(instance)  -> activate with softmax function after accumulate along ray direction.
 			feature = self.feature_linear(h)
 			h = torch.cat([feature, input_views], -1)
 		
@@ -157,7 +166,9 @@ def create_nerf(args):
 	skips = [4]
 	model = NeRF(
 		D=args.netdepth, W=args.netwidth, input_ch=input_ch, output_ch=output_ch, skips=skips,
-		input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,instance_label_dimension=args.instance_label_dimension
+		input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
+		instance_label_dimension=args.instance_label_dimension,
+		use_instance_feature_layer=args.use_instance_feature_layer
 	).to(args.device)
 	logger.info(model)
 
@@ -168,7 +179,8 @@ def create_nerf(args):
 		model_fine = NeRF(
 			D=args.netdepth_fine, W=args.netwidth_fine, input_ch=input_ch, output_ch=output_ch, skips=skips,
 			input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs,
-			instance_label_dimension=args.instance_label_dimension
+			instance_label_dimension=args.instance_label_dimension,
+			use_instance_feature_layer=args.use_instance_feature_layer
 		).to(args.device)
 		logger.info("NeRF fine model")
 		logger.info(model)
