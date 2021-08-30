@@ -15,16 +15,20 @@ from nerf_models.nerf import create_nerf
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 from utils.label_utils import *
-from miscellaneous.test_dataset_speed import *
+from config_parser import recursive_config_parser
+from dataset.dataset_interface import load_dataset
+
+from utils.generator_utils import *
+from utils.timing_utils import *
 
 
 def test():
-    parser = config_parser()
+    parser = recursive_config_parser()
     # TODO : only test?
 
 
 def train():
-    parser = config_parser()
+    parser = recursive_config_parser()
     args = parser.parse_args()
     args.device = device
 
@@ -166,9 +170,12 @@ def train():
         alpha = args.instance_loss_weight
         loss = img_loss + alpha * instance_loss
         if i % 100 == 0:
+            # error in decoded space (0, 1, 2, ..., N-1) where N is number of instance
+            instance_loss_decoded = label_encoder.error_in_decoded_space(output_encoded_label=result['instance_map'], target_label=target_label)
             writer.add_scalar('Loss/rgb_MSE', img_loss, i)
             writer.add_scalar('Loss/instance_loss', instance_loss, i)
             writer.add_scalar('Loss/total_loss', loss, i)
+            writer.add_scalar('Loss/instance_loss_decoded', instance_loss_decoded, i)
 
         loss.backward()
         optimizer.step()

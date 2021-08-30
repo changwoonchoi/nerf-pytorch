@@ -1,10 +1,40 @@
 import configargparse
 import os
+from pathlib import Path
 
 
-def config_parser():
-	parser = configargparse.ArgumentParser()
+def load_all_include(config_file):
+	parser = config_parser()
+	args = parser.parse_args("--config %s" % config_file)
+	path = Path(config_file)
+
+	include = []
+	if args.include:
+		include.append(os.path.join(path.parent, args.include))
+		return include + load_all_include(os.path.join(path.parent, args.include))
+	else:
+		return include
+
+
+def recursive_config_parser():
+	parser = config_parser()
+	args = parser.parse_args()
+	include_files = load_all_include(args.config)
+	include_files = list(reversed(include_files))
+	print("Include files :", include_files)
+	parser = config_parser(default_files=include_files)
+	return parser
+
+
+def config_parser(default_files=None):
+	if default_files is not None:
+		parser = configargparse.ArgumentParser(default_config_files=default_files)
+	else:
+		parser = configargparse.ArgumentParser()
+
 	parser.add_argument('--config', is_config_file=True, help='config file path')
+	parser.add_argument('--include', type=str, default=None, help='config file path')
+
 	parser.add_argument("--expname", type=str, help='experiment name')
 	parser.add_argument("--basedir", type=str, default='./logs/', help='where to store ckpts and logs')
 	parser.add_argument("--datadir", type=str, default='./data/llff/fern', help='input data directory')

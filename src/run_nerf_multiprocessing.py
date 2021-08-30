@@ -17,7 +17,9 @@ def find_all_configs(directory):
 			configs.append(directory)
 		else:
 			for path in Path(directory).rglob('*.txt'):
-				configs.append(str(path))
+				path = str(path)
+				if 'common' not in path and 'default' not in path:
+					configs.append(path)
 	return configs
 
 

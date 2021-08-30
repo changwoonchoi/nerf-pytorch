@@ -49,6 +49,11 @@ class LabelEncoder:
         label = self.decode(encoded_label)
         return label_to_colored_label(label, self.label_color_list)
 
+    def error_in_decoded_space(self, output_encoded_label, target_label):
+        label = self.decode(output_encoded_label)
+        criterion = nn.L1Loss()
+        return criterion(label.float(), target_label.float())
+
     def error(self, output_encoded_label, target_label, **kwargs):
         target_encoded_label = self.encode(target_label)
 
@@ -79,7 +84,7 @@ class OneHotLabelEncoder(LabelEncoder):
             bg_index = torch.argmax(data_bias).item()
             instance_weights = torch.ones(self.label_number)
             instance_weights[bg_index] /= 20
-        elif weight_type == "biased":
+        elif weight_type == "adaptive":
             instance_weights = F.normalize(torch.ones(self.label_number) / (data_bias + 1), dim=0)
         else:
             instance_weights = torch.ones(self.label_number)
@@ -131,9 +136,6 @@ class RandomLabelEncoder(LabelEncoder):
         super().__init__(label_color_list_np)
         self.dimension = dimension
         self.random_encoding_np = np.random.rand(self.label_number, self.dimension)
-        print("Random encoding")
-        print(self.random_encoding_np)
-
         self.random_encoding = torch.tensor(self.random_encoding_np)
 
     def encode(self, label):
