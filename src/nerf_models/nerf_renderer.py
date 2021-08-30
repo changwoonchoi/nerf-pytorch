@@ -48,7 +48,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 
 	if instance_label_dimension > 0:
-		instance_score = torch.sigmoid(raw[..., 4:])  # (N_rays, N_samples, instance_label_dimension)
+		instance_score = raw[..., 4:]  # (N_rays, N_samples, instance_label_dimension)
 		instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_label_dimension)
 	else:
 		instance_map = None

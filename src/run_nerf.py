@@ -59,14 +59,14 @@ def test():
     if args.extract_mesh:
         ###################
         # TODO: move parameter to config file
-        N = 256
+        N_grid = 256
         threshold = 0.001
         bound = 4.5
         ###################
         net_query_fn = render_kwargs_test['network_query_fn']
         net_fn = render_kwargs_test['network_fine']
-        sigma = query(N, bound, args.chunk, net_query_fn, net_fn)
-        mesh = march_cubes(sigma.cpu().numpy(), grid_num=N, th=threshold)
+        sigma = query(N_grid, bound, args.chunk, net_query_fn, net_fn)
+        mesh = march_cubes(sigma.cpu().numpy(), grid_num=N_grid, th=threshold)
         mesh.export(os.path.join(testsavedir, 'mesh_bound={}_th={}.obj'.format(bound, threshold)))
 
 

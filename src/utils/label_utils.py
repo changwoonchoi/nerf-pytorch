@@ -56,7 +56,7 @@ class LabelEncoder:
             # output_encoded_label = output_encoded_label[:,0]
             target_encoded_label = torch.unsqueeze(target_encoded_label, 1)
         criterion = nn.MSELoss()
-        return criterion(output_encoded_label, target_encoded_label)
+        return criterion(torch.sigmoid(output_encoded_label), target_encoded_label)
 
 
 class OneHotLabelEncoder(LabelEncoder):
@@ -72,12 +72,10 @@ class OneHotLabelEncoder(LabelEncoder):
     def error(self, output_encoded_label, target_label, **kwargs):
         data_bias = torch.tensor([torch.sum(target_label == k).item() for k in range(self.label_number)])
         if kwargs.get("fixed_CE_weight", False):
-            bg_index = torch.argmax(data_bias).item()
-            instance_weights = torch.ones(self.label_number)
-            instance_weights[bg_index] /= 20
+            CEloss = nn.CrossEntropyLoss()
         else:
             instance_weights = F.normalize(torch.ones(self.label_number) / data_bias, dim=0)
-        CEloss = nn.CrossEntropyLoss(weight=instance_weights)
+            CEloss = nn.CrossEntropyLoss(weight=instance_weights)
         return CEloss(output_encoded_label, target_label.long())
 
     def get_dimension(self):
