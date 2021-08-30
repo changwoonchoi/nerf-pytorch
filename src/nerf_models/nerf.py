@@ -221,6 +221,7 @@ def create_nerf(args):
 		'use_viewdirs': args.use_viewdirs,
 		'white_bkgd': args.white_bkgd,
 		'raw_noise_std': args.raw_noise_std,
+		'label_encoding': args.instance_label_encoding,
 	}
 
 	# NDC only good for LLFF-style forward facing data

@@ -56,7 +56,7 @@ class LabelEncoder:
             # output_encoded_label = output_encoded_label[:,0]
             target_encoded_label = torch.unsqueeze(target_encoded_label, 1)
         criterion = nn.MSELoss()
-        return criterion(torch.sigmoid(output_encoded_label), target_encoded_label)
+        return criterion(output_encoded_label, target_encoded_label)
 
 
 class OneHotLabelEncoder(LabelEncoder):

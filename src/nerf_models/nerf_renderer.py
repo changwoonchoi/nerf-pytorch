@@ -8,7 +8,7 @@ from utils.label_utils import *
 DEBUG = False
 
 
-def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False):
+def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False, **kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
 		raw: [num_rays, num_samples along ray, 4]. Prediction from model.
@@ -48,7 +48,8 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 
 	if instance_label_dimension > 0:
-		instance_score = raw[..., 4:]  # (N_rays, N_samples, instance_label_dimension)
+		if kwargs.get("label_encoding") is not 'one_hot':
+			instance_score = torch.sigmoid(raw[..., 4:])  # (N_rays, N_samples, instance_label_dimension)
 		instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_label_dimension)
 	else:
 		instance_map = None
@@ -75,7 +76,7 @@ def render_rays(ray_batch,
 				white_bkgd=False,
 				raw_noise_std=0.,
 				verbose=False,
-				pytest=False):
+				pytest=False, **kwargs):
 	"""Volumetric rendering.
 	Args:
 	  ray_batch: array of shape [batch_size, ...]. All information necessary
@@ -141,7 +142,7 @@ def render_rays(ray_batch,
 	#     raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
 	rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
-		raw, z_vals, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest
+		raw, z_vals, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest, **kwargs
 	)
 
 	if N_importance > 0:
@@ -160,7 +161,7 @@ def render_rays(ray_batch,
 		raw = network_query_fn(pts, viewdirs, run_fn)
 
 		rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
-			raw, z_vals, rays_d, run_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest
+			raw, z_vals, rays_d, run_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest, **kwargs
 		)
 
 	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
