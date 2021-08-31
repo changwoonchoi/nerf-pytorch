@@ -1,10 +1,40 @@
 import configargparse
 import os
+from pathlib import Path
 
 
-def config_parser():
-	parser = configargparse.ArgumentParser()
+def load_all_include(config_file):
+	parser = config_parser()
+	args = parser.parse_args("--config %s" % config_file)
+	path = Path(config_file)
+
+	include = []
+	if args.include:
+		include.append(os.path.join(path.parent, args.include))
+		return include + load_all_include(os.path.join(path.parent, args.include))
+	else:
+		return include
+
+
+def recursive_config_parser():
+	parser = config_parser()
+	args = parser.parse_args()
+	include_files = load_all_include(args.config)
+	include_files = list(reversed(include_files))
+	print("Include files :", include_files)
+	parser = config_parser(default_files=include_files)
+	return parser
+
+
+def config_parser(default_files=None):
+	if default_files is not None:
+		parser = configargparse.ArgumentParser(default_config_files=default_files)
+	else:
+		parser = configargparse.ArgumentParser()
+
 	parser.add_argument('--config', is_config_file=True, help='config file path')
+	parser.add_argument('--include', type=str, default=None, help='config file path')
+
 	parser.add_argument("--expname", type=str, help='experiment name')
 	parser.add_argument("--basedir", type=str, default='./logs/', help='where to store ckpts and logs')
 	parser.add_argument("--datadir", type=str, default='./data/llff/fern', help='input data directory')
@@ -16,6 +46,7 @@ def config_parser():
 	parser.add_argument("--instance_label_encoding", type=str, default="one_hot",
 	                    help="how to encode instance label. one of single, one_hot, label_color")
 	parser.add_argument("--instance_label_dimension", type=int, default=0, help="instance mask dimension")
+	parser.add_argument("--use_instance_feature_layer", action="store_true", help='NeRF with instance_feature_layer(Zhi, 2021)')
 
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
 	parser.add_argument("--netdepth", type=int, default=8, help='layers in network')
@@ -24,11 +55,12 @@ def config_parser():
 	parser.add_argument("--netwidth_fine", type=int, default=256, help='channels per layer in fine network')
 	parser.add_argument("--N_rand", type=int, default=32 * 32 * 4,
 	                    help='batch size (number of random rays per gradient step)')
-	parser.add_argument("--fixed_CE_weight", action='store_true', help='use fixed weight in CE Loss')
+	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
+
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_decay", type=int, default=250,
 	                    help='exponential learning rate decay (in 1000 steps)')
-	parser.add_argument("--chunk", type=int, default=1024 * 32,
+	parser.add_argument("--chunk", type=int, default=1024 * 16,
 	                    help='number of rays processed in parallel, decrease if running out of memory')
 	parser.add_argument("--netchunk", type=int, default=1024 * 64,
 	                    help='number of pts sent through network in parallel, decrease if running out of memory')

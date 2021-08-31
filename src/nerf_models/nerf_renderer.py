@@ -8,7 +8,8 @@ from utils.label_utils import *
 DEBUG = False
 
 
-def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False, **kwargs):
+def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False,
+				is_instance_label_logit=True):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
 		raw: [num_rays, num_samples along ray, 4]. Prediction from model.
@@ -16,6 +17,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 		- instance_label_dimension >0: [num_rays, num_samples along ray, 10]. (R,G,B,a,instance_label_dimension)
 		z_vals: [num_rays, num_samples along ray]. Integration time.
 		rays_d: [num_rays, 3]. Direction of each ray.
+		is_instance_label_logit: export instance label as logit
 	Returns:
 		rgb_map: [num_rays, 3]. Estimated RGB color of a ray.
 		disp_map: [num_rays]. Disparity map. Inverse of depth map.
@@ -48,7 +50,9 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	rgb_map = torch.sum(weights[..., None] * rgb, -2)  # [N_rays, 3]
 
 	if instance_label_dimension > 0:
-		if kwargs.get("label_encoding") is not 'one_hot':
+		if is_instance_label_logit:
+			instance_score = raw[..., 4:]  # no sigmoid -> just use logits
+		else:
 			instance_score = torch.sigmoid(raw[..., 4:])  # (N_rays, N_samples, instance_label_dimension)
 		instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_label_dimension)
 	else:
@@ -76,7 +80,8 @@ def render_rays(ray_batch,
 				white_bkgd=False,
 				raw_noise_std=0.,
 				verbose=False,
-				pytest=False, **kwargs):
+				pytest=False,
+				is_instance_label_logit=False):
 	"""Volumetric rendering.
 	Args:
 	  ray_batch: array of shape [batch_size, ...]. All information necessary
@@ -142,7 +147,8 @@ def render_rays(ray_batch,
 	#     raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
 	rgb_map, disp_map, acc_map, weights, depth_map, instance_map = raw2outputs(
-		raw, z_vals, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest, **kwargs
+		raw, z_vals, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
+		is_instance_label_logit=is_instance_label_logit
 	)
 
 	if N_importance > 0:
@@ -188,6 +194,7 @@ def render_rays(ray_batch,
 def batchify_rays(rays_flat, chunk=1024 * 32, **kwargs):
 	"""Render rays in smaller minibatches to avoid OOM.
 	"""
+
 	all_ret = {}
 	for i in range(0, rays_flat.shape[0], chunk):
 		ret = render_rays(rays_flat[i:i + chunk], **kwargs)

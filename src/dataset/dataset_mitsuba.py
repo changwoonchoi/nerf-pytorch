@@ -83,11 +83,8 @@ class MitsubaDataset(NerfDataset):
 		# (3) load pose information
 		pose = np.array(frame['transform']).astype(np.float32)
 		# Mitsuba --> camera forward is +Z !!
-		print(pose)
-		print("Position", pose[:3,-1])
 		pose[:3, 0] *= -1
 		pose[:3, 2] *= -1
-		print(pose, "After")
 		image = image.astype(np.float32)
 		image /= 255.0
 
