@@ -74,10 +74,11 @@ class MitsubaDataset(NerfDataset):
 		if self.load_instance_label_mask:
 			mask = cv2.imread(mask_file_path)
 			mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
-			mask = mask[:, :, 0] + 256 * mask[:, :, 1] + 256 * 256 * mask[:, :, 2]
 
 			if self.scale != 1:
 				mask = cv2.resize(mask, None, fx=self.scale, fy=self.scale, interpolation=cv2.INTER_NEAREST)
+
+			mask = mask[:, :, 0] + 256 * mask[:, :, 1] + 256 * 256 * mask[:, :, 2]
 			instance_label_mask = mask.astype(np.int32)
 
 		# (3) load pose information

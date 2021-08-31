@@ -25,7 +25,7 @@ from utils.timing_utils import *
 
 
 def test():
-    parser = config_parser()
+    parser = recursive_config_parser()
     args = parser.parse_args()
     args.device = device
 
@@ -106,7 +106,7 @@ def train():
             return target_dataset
 
         # load train and validation dataset
-        dataset = load_dataset_split("train", sample_length=args.sample_length)
+        dataset = load_dataset_split("train", sample_length=args.sample_length, image_scale=args.image_scale)
         dataset_val = load_dataset_split("val", skip=5, sample_length=args.sample_length)
 
         hwf = [dataset.height, dataset.width, dataset.focal]

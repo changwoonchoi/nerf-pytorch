@@ -233,7 +233,8 @@ def create_nerf(args):
 		'use_viewdirs': args.use_viewdirs,
 		'white_bkgd': args.white_bkgd,
 		'raw_noise_std': args.raw_noise_std,
-		'label_encoding': args.instance_label_encoding,
+		# 'label_encoding': args.instance_label_encoding,
+		'decompose': False
 	}
 
 	# NDC only good for LLFF-style forward facing data
@@ -245,5 +246,6 @@ def create_nerf(args):
 	render_kwargs_test = {k : render_kwargs_train[k] for k in render_kwargs_train}
 	render_kwargs_test['perturb'] = False
 	render_kwargs_test['raw_noise_std'] = 0.
+	render_kwargs_test['decompose'] = True
 
 	return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer

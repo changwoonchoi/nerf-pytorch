@@ -128,6 +128,7 @@ class ColoredLabelEncoder(LabelEncoder):
 
     def decode(self, encoded_label):
         # this is useless
+        # let's use random-3D
         return
 
 
