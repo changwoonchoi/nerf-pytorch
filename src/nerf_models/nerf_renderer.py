@@ -26,14 +26,14 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
 	# TODO: when instance_num is large, out of memory...
-	instance_list = [66, 256]
+	instance_list = [0, 1, 2, 3, 4, 5]
+	th = 0.
 
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
 	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
 	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
-
 
 	noise = 0.
 	if raw_noise_std > 0.:
@@ -63,7 +63,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	if decompose:
 		decomposed_rgb_map = []
 		decomposed_instance_map = []
-		instance_mask = label_encoder.decode(instance_score)
+		instance_mask = label_encoder.decode(instance_score, th=th)
 		for i in instance_list:
 			mask_i = instance_mask == i
 			alpha_i = torch.zeros_like(alpha)
@@ -382,14 +382,14 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs,
 						os.makedirs(decomposed_dir, exist_ok=True)
 						filename_decomposed_instance = os.path.join(decomposed_dir, 'instance_{}.png'.format(k))
 						filename_decomposed_rgb = os.path.join(decomposed_dir, 'rgb_{}.png'.format(k))
-						imageio.imwrite(filename_decomposed_instance, label_encoder.encoded_label_to_colored_label(decomposed_instances[i][k]).cpu().numpy().astype(np.uint8))
+						imageio.imwrite(filename_decomposed_instance, label_encoder.encoded_label_to_colored_label(decomposed_instances[i][k], th=0.).cpu().numpy().astype(np.uint8))
 						imageio.imwrite(filename_decomposed_rgb, to8b(decomposed_rgbs[i][k]))
 
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
 			imageio.imwrite(filename_rgb, rgb8)
 
-	decomposed_instances = torch.stack(decomposed_instances, 0).cpu().numpy()
-	decomposed_rgbs = np.stack(decomposed_rgbs, 0)
+	# decomposed_instances = torch.stack(decomposed_instances, 0).cpu().numpy()
+	# decomposed_rgbs = np.stack(decomposed_rgbs, 0)
 	rgbs = np.stack(rgbs, 0)
 	disps = np.stack(disps, 0)
 	if len(instances) > 0:

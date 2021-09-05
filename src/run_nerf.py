@@ -42,8 +42,10 @@ def test():
     basedir = args.basedir
     expname = args.expname
 
+    # writer = SummaryWriter(log_dir=os.path.join(basedir, expname))
+
     if args.instance_mask:
-        label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding)
+        label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding, args.instance_label_dimension)
         args.instance_label_dimension = label_encoder.get_dimension()
     else:
         args.instance_label_dimension = 0
@@ -52,13 +54,16 @@ def test():
     bds_dict = dataset.get_near_far_plane()
     render_kwargs_test.update(bds_dict)
 
+    if args.instance_mask:
+        is_instance_label_logit = isinstance(label_encoder, OneHotLabelEncoder) and (args.CE_weight_type != "mse")
+        render_kwargs_test["is_instance_label_logit"] = is_instance_label_logit
     testsavedir = os.path.join(basedir, expname, 'render_only_{:06d}'.format(start))
     os.makedirs(testsavedir, exist_ok=True)
 
     with torch.no_grad():
         _, _, _, _ = render_path(
             torch.Tensor(dataset.poses).to(device), hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-            label_encoder=label_encoder, render_factor=4
+            label_encoder=label_encoder, render_factor=1
         )
 
     if args.extract_mesh:
