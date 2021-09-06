@@ -42,11 +42,11 @@ class LabelEncoder:
     def encode(self, label):
         pass
 
-    def decode(self, encoded_label):
+    def decode(self, encoded_label, th=0.):
         pass
 
-    def encoded_label_to_colored_label(self, encoded_label):
-        label = self.decode(encoded_label)
+    def encoded_label_to_colored_label(self, encoded_label, th=0.):
+        label = self.decode(encoded_label, th=th)
         return label_to_colored_label(label, self.label_color_list)
 
     def error_in_decoded_space(self, output_encoded_label, target_label):
@@ -71,8 +71,18 @@ class OneHotLabelEncoder(LabelEncoder):
     def encode_np(self, label_np):
         return np.eye(self.label_number)[label_np]
 
-    def decode(self, encoded_label):
-        return torch.argmax(encoded_label, dim=-1)
+    def decode(self, encoded_label, th=0.):
+        if th > 0:
+            m = nn.Softmax(dim=-1)
+            label_prob = m(encoded_label)
+            label_prob_max = torch.amax(label_prob, dim=-1)
+            void_label = label_prob_max < th
+            decoded_label = torch.argmax(encoded_label, dim=-1)
+            decoded_label[void_label] = encoded_label.shape[-1]
+            return decoded_label
+            # void label is instance_num + 1
+        else:
+            return torch.argmax(encoded_label, dim=-1)
 
     def error(self, output_encoded_label, target_label, **kwargs):
         weight_type = kwargs["CE_weight_type"]
@@ -103,7 +113,7 @@ class ScalarLabelEncoder(LabelEncoder):
     def encode_np(self, label_np):
         return (label_np.astype(np.float32) + 0.5) / self.label_number
 
-    def decode(self, encoded_label):
+    def decode(self, encoded_label, th=0.):
         index = torch.floor(encoded_label * self.label_number).long()
         index = torch.clip(index, min=0, max=self.label_number-1)
         index = torch.squeeze(index, -1)
@@ -126,7 +136,7 @@ class ColoredLabelEncoder(LabelEncoder):
     def get_dimension(self):
         return 3
 
-    def decode(self, encoded_label):
+    def decode(self, encoded_label, th=0.):
         # this is useless
         # let's use random-3D
         return
@@ -145,7 +155,7 @@ class RandomLabelEncoder(LabelEncoder):
     def encode_np(self, label_np):
         return self.random_encoding_np[label_np]
 
-    def decode(self, encoded_label):
+    def decode(self, encoded_label, th=0.):
         encoded_label_unsqueezed = torch.unsqueeze(encoded_label, -2)
         encoded_label_unsqueezed_repeated = torch.cat(self.label_number * [encoded_label_unsqueezed], dim=-2)
         diff = encoded_label_unsqueezed_repeated - self.random_encoding

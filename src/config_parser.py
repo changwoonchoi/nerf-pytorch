@@ -90,6 +90,11 @@ def config_parser(default_files=None):
 	parser.add_argument("--render_factor", type=int, default=0,
 	                    help='downsampling factor to speed up rendering, set 4 or 8 for fast preview')
 	parser.add_argument("--render_decompose", action='store_true', help="render decomposed instance in test phase")
+	parser.add_argument("--alpha_th", type=float, default=.0, help='decompose alpha thredhold')
+	parser.add_argument("--instance_th", type=float, default=.0, help='decompose instance thredhold')
+
+	parser.add_argument("--decompose_target", type=str, default="0", help='decompose target instance ids')
+	parser.add_argument("--decompose_mode", type=str, default="binary", help='decompose mode one of all or binary')
 
 	# training options
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')

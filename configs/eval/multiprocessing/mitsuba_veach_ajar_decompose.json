@@ -1,0 +1,6 @@
+{
+  "available_gpus" : [0,1,2,3,4],
+  "config_lists":[
+    "../configs/eval/mitsuba/veach-ajar/onehot_equal_decompose"
+  ]
+}

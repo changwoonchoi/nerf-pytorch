@@ -98,3 +98,19 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return ClevrDataset(basedir, **kwargs)
 	elif dataset_type == "mitsuba":
 		return MitsubaDataset(basedir, **kwargs)
+
+
+def load_dataset_split(args, split="train", skip=1):
+	# create dataset config
+	configs = {
+		"sample_length": args.sample_length,
+		"image_scale": args.image_scale,
+		"skip": skip
+	}
+	target_dataset = load_dataset(args.dataset_type, args.datadir, split=split, **configs)
+	target_dataset.load_instance_label_mask = args.instance_mask
+
+	# real data load using multiprocessing(torch DataLoader) --> load all at once
+	# TODO : if dataset is too large, it may not be loaded at once.
+	target_dataset.load_all_data(num_of_workers=10)
+	return target_dataset

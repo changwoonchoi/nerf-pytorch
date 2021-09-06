@@ -9,7 +9,8 @@ DEBUG = False
 
 
 def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False,
-				is_instance_label_logit=True, decompose=False, label_encoder=None):
+				is_instance_label_logit=True, decompose=False, alpha_th=0.0, instance_th=0.0, decompose_target=None,
+				decompose_mode="binary", label_encoder=None):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
 		raw: [num_rays, num_samples along ray, 4]. Prediction from model.
@@ -18,6 +19,13 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 		z_vals: [num_rays, num_samples along ray]. Integration time.
 		rays_d: [num_rays, 3]. Direction of each ray.
 		is_instance_label_logit: export instance label as logit
+		decompose: perform decomposition
+		alpha_th: alpha threshold
+		instance_th: instance confidence (or probability) threshold
+		decompose_target: decompose target ids ex) [1,2,3,4,5]
+		decompose_mode: decompose mode. one of following
+			- "all" : decompose 1, 2, 3, 4, 5 each
+			- "binary" : decompose [1,2,3,4,5] and others
 	Returns:
 		rgb_map: [num_rays, 3]. Estimated RGB color of a ray.
 		disp_map: [num_rays]. Disparity map. Inverse of depth map.
@@ -26,9 +34,13 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
 	# TODO: when instance_num is large, out of memory...
-	instance_list = [0, 1, 2, 3, 4, 5]
-	th = 0.
+	instance_list = []
+	if decompose_mode == "all":
+		instance_list = [(i, True) for i in decompose_target]
+	elif decompose_mode == "binary":
+		instance_list = [(decompose_target, True), (decompose_target, False)]
 
+	alpha_filter = nn.Threshold(alpha_th, 0)
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -46,6 +58,8 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 			noise = torch.Tensor(noise)
 
 	alpha = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
+	alpha = alpha_filter(alpha)
+
 	# weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
 	weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
 
@@ -63,9 +77,21 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	if decompose:
 		decomposed_rgb_map = []
 		decomposed_instance_map = []
-		instance_mask = label_encoder.decode(instance_score, th=th)
-		for i in instance_list:
-			mask_i = instance_mask == i
+		decomposed_disp_map = []
+
+		instance_mask = label_encoder.decode(instance_score, th=instance_th)
+
+		for x in instance_list:
+			target_id, include = x
+
+			if isinstance(target_id, list):
+				mask_i = sum(instance_mask == i for i in target_id).bool()
+			else:
+				mask_i = instance_mask == target_id
+
+			if not include:
+				mask_i = ~mask_i
+
 			alpha_i = torch.zeros_like(alpha)
 			alpha_i[mask_i] = alpha[mask_i]
 			weights_i = alpha_i * torch.cumprod(
@@ -80,11 +106,18 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 			decomposed_instance[mask_i] = instance_score[mask_i]
 			decomposed_instance_map_i = torch.sum(weights_i[..., None] * decomposed_instance, -2)
 			decomposed_instance_map.append(decomposed_instance_map_i)
+
+			depth_map_i = torch.sum(weights_i * z_vals, -1)
+			disp_map_i = 1. / torch.max(1e-10 * torch.ones_like(depth_map_i), depth_map_i / torch.sum(weights_i, -1))
+			decomposed_disp_map.append(disp_map_i)
+
 		decomposed_rgb_map = torch.stack(decomposed_rgb_map, dim=0)
 		decomposed_instance_map = torch.stack(decomposed_instance_map, dim=0)
+		decomposed_disp_map = torch.stack(decomposed_disp_map, dim=0)
 	else:
 		decomposed_rgb_map = None
 		decomposed_instance_map = None
+		decomposed_disp_map = None
 	depth_map = torch.sum(weights * z_vals, -1)
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
 	acc_map = torch.sum(weights, -1)
@@ -92,7 +125,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	if white_bkgd:
 		rgb_map = rgb_map + (1. - acc_map[..., None])
 
-	return rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map, decomposed_instance_map
+	return rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map, decomposed_instance_map, decomposed_disp_map
 
 
 def render_rays(ray_batch,
@@ -109,7 +142,9 @@ def render_rays(ray_batch,
 				verbose=False,
 				pytest=False,
 				is_instance_label_logit=False,
-				decompose=False, label_encoder=None):
+				decompose=False,
+				label_encoder=None,
+				**kwargs):
 	"""Volumetric rendering.
 	Args:
 	  ray_batch: array of shape [batch_size, ...]. All information necessary
@@ -174,14 +209,14 @@ def render_rays(ray_batch,
 
 	#     raw = run_network(pts)
 	raw = network_query_fn(pts, viewdirs, network_fn)
-	rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map, decomposed_instance_map = raw2outputs(
+	rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map, decomposed_instance_map, decomposed_disp_map = raw2outputs(
 		raw, z_vals, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
-		is_instance_label_logit=is_instance_label_logit, decompose=decompose, label_encoder=label_encoder
+		is_instance_label_logit=is_instance_label_logit, decompose=decompose, label_encoder=label_encoder, **kwargs
 	)
 
 	if N_importance > 0:
 		rgb_map_0, disp_map_0, acc_map_0, instance_map_0 = rgb_map, disp_map, acc_map, instance_map
-		decomposed_rgb_map0, decomposed_instance_map0 = decomposed_rgb_map, decomposed_instance_map
+		decomposed_rgb_map0, decomposed_instance_map0, decomposed_disp_map0 = decomposed_rgb_map, decomposed_instance_map, decomposed_disp_map
 
 		z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
 		z_samples = sample_pdf(z_vals_mid, weights[..., 1:-1], N_importance, det=(perturb == 0.), pytest=pytest)
@@ -194,9 +229,9 @@ def render_rays(ray_batch,
 		run_fn = network_fn if network_fine is None else network_fine
 		#         raw = run_network(pts, fn=run_fn)
 		raw = network_query_fn(pts, viewdirs, run_fn)
-		rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map, decomposed_instance_map = raw2outputs(
+		rgb_map, disp_map, acc_map, weights, depth_map, instance_map, decomposed_rgb_map, decomposed_instance_map, decomposed_disp_map = raw2outputs(
 			raw, z_vals, rays_d, run_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
-			is_instance_label_logit=is_instance_label_logit, decompose=decompose, label_encoder=label_encoder
+			is_instance_label_logit=is_instance_label_logit, decompose=decompose, label_encoder=label_encoder, **kwargs
 		)
 
 	ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
@@ -206,6 +241,7 @@ def render_rays(ray_batch,
 	if decompose:
 		ret['decomposed_rgb_map'] = decomposed_rgb_map
 		ret['decomposed_instance_map'] = decomposed_instance_map
+		ret['decomposed_disp_map'] = decomposed_disp_map
 	if retraw:
 		ret['raw'] = raw
 	if N_importance > 0:
@@ -218,6 +254,7 @@ def render_rays(ray_batch,
 		if decompose:
 			ret['decomposed_rgb_map0'] = decomposed_rgb_map0
 			ret['decomposed_instance_map0'] = decomposed_instance_map0
+			ret['decomposed_disp_map0'] = decomposed_disp_map0
 
 	for k in ret:
 		if (torch.isnan(ret[k]).any() or torch.isinf(ret[k]).any()) and DEBUG:
@@ -336,8 +373,10 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs,
 	instance_colors = []
 	decomposed_rgbs = []
 	decomposed_instances = []
+	decomposed_disps = []
 
 	decompose = render_kwargs.get('decompose', False)
+	decompose_threshold = render_kwargs.get('decompose_threshold', 0.0)
 
 	K = np.array([
 		[focal, 0, 0.5 * W],
@@ -355,6 +394,8 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs,
 		instance = results.get("instance_map", None)
 		decomposed_rgb = results.get('decomposed_rgb_map', None)
 		decomposed_instance = results.get('decomposed_instance_map', None)
+		decomposed_disp = results.get('decomposed_disp_map', None)
+
 		rgbs.append(rgb.cpu().numpy())
 		disps.append(disp.cpu().numpy())
 		if instance != None:
@@ -362,6 +403,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs,
 		if decompose:
 			decomposed_rgbs.append(decomposed_rgb.cpu().numpy())
 			decomposed_instances.append(decomposed_instance)
+			decomposed_disps.append(decomposed_disp)
 
 		"""
 		if gt_imgs is not None and render_factor==0:
@@ -381,8 +423,13 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs,
 						decomposed_dir = os.path.join(savedir, 'decomposed_' + str(i))
 						os.makedirs(decomposed_dir, exist_ok=True)
 						filename_decomposed_instance = os.path.join(decomposed_dir, 'instance_{}.png'.format(k))
+						filename_decomposed_disp = os.path.join(decomposed_dir, 'disp_{}.png'.format(k))
 						filename_decomposed_rgb = os.path.join(decomposed_dir, 'rgb_{}.png'.format(k))
-						imageio.imwrite(filename_decomposed_instance, label_encoder.encoded_label_to_colored_label(decomposed_instances[i][k], th=0.).cpu().numpy().astype(np.uint8))
+						imageio.imwrite(filename_decomposed_instance, label_encoder.encoded_label_to_colored_label(
+							decomposed_instances[i][k]).cpu().numpy().astype(np.uint8))
+						disp_k = (decomposed_disps[i][k].cpu().numpy()*256)
+						imageio.imwrite(filename_decomposed_disp, disp_k.astype(np.uint8))
+
 						imageio.imwrite(filename_decomposed_rgb, to8b(decomposed_rgbs[i][k]))
 
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))

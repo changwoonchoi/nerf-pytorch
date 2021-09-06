@@ -1,0 +1,3 @@
+include=common.txt
+expname = onehot_equal_decompose/alpha_th_0.1
+alpha_th=0.1
