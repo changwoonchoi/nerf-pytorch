@@ -1,0 +1,3 @@
+include = common.txt
+expname = scalar
+instance_label_encoding = scalar

@@ -11,3 +11,4 @@ logs/*
 .DS_Store
 *.sh
 /src/trash/
+/clevr_generation/data

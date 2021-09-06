@@ -1,0 +1,9 @@
+{
+  "available_gpus" : [0, 0, 2, 2],
+  "config_lists":[
+    "../configs/mitsuba/bedroom/scalar.txt",
+    "../configs/mitsuba/bedroom/color.txt",
+    "../configs/mitsuba/bedroom/onehot_equal.txt",
+    "../configs/mitsuba/bedroom/onehot_adaptive.txt"
+  ]
+}

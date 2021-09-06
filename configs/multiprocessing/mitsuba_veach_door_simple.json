@@ -1,0 +1,7 @@
+{
+  "available_gpus" : [0, 2],
+  "config_lists":[
+    "../configs/mitsuba/veach_door_simple/onehot_equal.txt",
+    "../configs/mitsuba/veach-ajar/onehot_equal.txt"
+  ]
+}
