@@ -1,2 +1,6 @@
 #!/usr/bin/env bash
-blender --background --python clevr_mv.py -- --use_gpu 1 --height 800 --width 800 --rot_with_xyz --num_view 200 --output_image_dir ./scene_1/test/ --transform_output_file ./scene_1/transforms_test.json --render_from_savedfile --saved_blendfile ./scene_1/train/scene.blend --saved_instance_label ./scene_1/train/instance_label.txt --saved_instance_list ./scene_1/train/instance_list.txt
+blender --background --python clevr_mv.py -- --use_gpu 1 --height 512 --width 512 \
+--saved_blendfile ./scene_2/train/scene.blend --r_camera 10.5 \
+--uniform_sample --num_view 100 --output_image_dir ./scene_2/test/ \
+--transform_output_file ./scene_2/transforms_test.json --render_from_savedfile \
+--saved_instance_color ./scene_2/train/instance_color.json

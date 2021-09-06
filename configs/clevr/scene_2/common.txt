@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/clevr/scene_2
+basedir = ../logs/clevr/scene_2

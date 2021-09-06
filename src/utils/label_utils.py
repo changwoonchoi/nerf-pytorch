@@ -70,10 +70,10 @@ class OneHotLabelEncoder(LabelEncoder):
 
     def encode_np(self, label_np):
         return np.eye(self.label_number)[label_np]
-    
+
     def decode(self, encoded_label):
         return torch.argmax(encoded_label, dim=-1)
-    
+
     def error(self, output_encoded_label, target_label, **kwargs):
         weight_type = kwargs["CE_weight_type"]
         if weight_type == "mse":
@@ -120,20 +120,16 @@ class ColoredLabelEncoder(LabelEncoder):
     def encode_np(self, label_np):
         return self.label_color_list_np[label_np].astype(np.float32) / 255.0
 
-    # directly output color? or decode & select from color list? --> select closest one from color list
-    # def encoded_label_to_colored_label(self, encoded_label):
-    #     return encoded_label * 255.0
-    
+    def encoded_label_to_colored_label(self, encoded_label):
+        return encoded_label * 255.0
+
     def get_dimension(self):
         return 3
 
     def decode(self, encoded_label):
-        encoded_label_unsqueezed = torch.unsqueeze(encoded_label, -2)
-        encoded_label_unsqueezed_repeated = torch.cat(self.label_number * [encoded_label_unsqueezed], dim=-2)
-        diff = encoded_label_unsqueezed_repeated - self.label_color_list.float().cuda() / 255.0
-        encoded_label_distance = torch.linalg.norm(diff, dim=-1)
-        closest_index = torch.argmin(encoded_label_distance, dim=-1)
-        return closest_index
+        # this is useless
+        # let's use random-3D
+        return
 
 
 class RandomLabelEncoder(LabelEncoder):

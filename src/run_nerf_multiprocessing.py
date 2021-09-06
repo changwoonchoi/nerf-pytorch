@@ -74,7 +74,6 @@ class MultiProcessingRenderer:
 			for proc in procs:
 				proc.join()
 		else:
-			print("Single!")
 			run_single_process(gpu_ids[0], queue, lock)
 
 

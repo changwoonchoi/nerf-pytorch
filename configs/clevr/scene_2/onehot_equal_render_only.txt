@@ -1,0 +1,8 @@
+include = common.txt
+expname = onehot_equal_manip
+instance_label_encoding = one_hot
+CE_weight_type = equal
+instance_loss_weight = 0.04
+use_instance_feature_layer
+render_only = True
+render_decompose = True

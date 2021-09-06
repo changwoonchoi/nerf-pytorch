@@ -47,15 +47,18 @@ if INSIDE_BLENDER:
 parser = argparse.ArgumentParser()
 
 # Multiview options
-parser.add_argument('--num_view', default=30, type=int, help="number of view")
+parser.add_argument('--num_view', default=100, type=int, help="number of view")
 parser.add_argument('--upper_only', action='store_true')
-parser.add_argument('--rot_with_xyz', action='store_true')
+parser.add_argument('--uniform_sample', action='store_true')
+parser.add_argument('--uniform_grid', action='store_true')
+parser.add_argument('--r_camera', default=5, type=float)
+parser.add_argument('--num_theta', default=10, type=int)
+parser.add_argument('--num_phi', default=10, type=int)
 
 # Input options
 parser.add_argument('--saved_blendfile', default='../train/scene.blend')
-parser.add_argument('--saved_instance_label', default='../train/instance_label.txt')
-parser.add_argument('--saved_instance_list')
 parser.add_argument('--render_from_savedfile', action='store_true')
+parser.add_argument('--saved_instance_color')
 parser.add_argument('--base_scene_blendfile', default='data/base_scene_centered.blend',
     help="Base blender file on which all scenes are based; includes " +
           "ground plane, lights, and camera.")
@@ -86,7 +89,7 @@ parser.add_argument('--max_objects', default=10, type=int,
     help="The maximum number of objects to place in each scene")
 parser.add_argument('--min_dist', default=0.25, type=float,
     help="The minimum allowed distance between object centers")
-parser.add_argument('--margin', default=0.4, type=float,
+parser.add_argument('--margin', default=0.5, type=float,
     help="Along all cardinal directions (left, right, front, back), all " +
          "objects will be at least this distance apart. This makes resolving " +
          "spatial relationships slightly less ambiguous.")
@@ -121,8 +124,7 @@ parser.add_argument('--output_scene_file', default='../output/CLEVR_scenes.json'
     help="Path to write a single JSON file containing all scene information")
 parser.add_argument('--transform_output_file', default='../output/transforms.json',
     help="path for frame data")
-parser.add_argument('--output_instance_label', default='../train/instance_label.txt')
-parser.add_argument('--output_instance_list', default='../train/instance_list.txt')
+parser.add_argument('--output_instance_color', default='../train/instance_color.json')
 parser.add_argument('--output_blend_dir', default='output/blendfiles',
     help="The directory where blender scene files will be stored, if the " +
          "user requested that these files be saved using the " +
@@ -172,6 +174,7 @@ parser.add_argument('--render_tile_size', default=256, type=int,
          "rendering may achieve better performance using smaller tile sizes " +
          "while larger tile sizes may be optimal for GPU-based rendering.")
 
+
 def main(args):
   num_digits = 6
   prefix = '%s_%s_' % (args.filename_prefix, args.split)
@@ -217,25 +220,7 @@ def main(args):
     output_scene=scene_path,
     output_blendfile=blend_path,
   )
-  """
-  # After rendering all images, combine the JSON files for each scene into a
-  # single JSON file.
-  all_scenes = []
-  for scene_path in all_scene_paths:
-    with open(scene_path, 'r') as f:
-      all_scenes.append(json.load(f))
-  output = {
-    'info': {
-      'date': args.date,
-      'version': args.version,
-      'split': args.split,
-      'license': args.license,
-    },
-    'scenes': all_scenes
-  }
-  with open(args.output_scene_file, 'w') as f:
-    json.dump(output, f)
-  """
+
   with open(args.transform_output_file, 'w') as out_file:
     json.dump(out_data, out_file, indent=4)
 
@@ -354,26 +339,35 @@ def render_scene(args,
   # create random color for instance mask
 
   if not args.render_from_savedfile:
+    object_color = {}
     mask_colors = set()
     for i, obj in enumerate(blender_objects):
       while True:
         r, g, b = [random.random() for _ in range(3)]
         if (r, g, b) not in mask_colors: break
       mask_colors.add((r, g, b))
+
     mask_colors = list(mask_colors)
-    np.savetxt(args.output_instance_label, np.asarray(mask_colors))
-    instance_list = [i.name for i in blender_objects]
-    with open (args.output_instance_list, "w") as f:
-      f.write(str(instance_list))
+    for i, obj in enumerate(blender_objects):
+      object_color[obj.name] = mask_colors[i]
+    with open(args.output_instance_color, 'w', encoding='utf-8') as f:
+      json.dump(object_color, f, indent='\t')
+
   else:
-    with open(args.saved_instance_list, 'r') as f:
-      instance_list = f.read()
-    import ast
-    instance_list = ast.literal_eval(instance_list)
-    mask_colors_shuffled = np.loadtxt(args.saved_instance_label)
-    blender_object_instances = [i.name for i in blender_objects]
-    mask_colors = [mask_colors_shuffled[blender_object_instances.index(instance_list[i])] for i in range(args.num_objects)]
-  
+    with open(args.saved_instance_color, 'r') as f:
+      object_color = json.load(f)
+    mask_colors = []
+    for obj in blender_objects:
+      mask_colors.append(object_color[obj.name])
+
+    # with open(args.saved_instance_list, 'r') as f:
+    #   instance_list = f.read()
+    # import ast
+    # instance_list = ast.literal_eval(instance_list)
+    # mask_colors_shuffled = np.loadtxt(args.saved_instance_label)
+    # blender_object_instances = [i.name for i in blender_objects]
+    # mask_colors = [mask_colors_shuffled[blender_object_instances.index(instance_list[i])] for i in range(args.num_objects)]
+
   # render individual mask png
   """
   index = 0
@@ -402,10 +396,17 @@ def render_scene(args,
       rot = np.random.uniform(0, 1, size=3) * (1, 0, 2 * np.pi)
       rot[0] = np.abs(np.arccos(1 - 2 * rot[0]) - np.pi / 2)
       b_empty.rotation_euler = rot
-    elif args.rot_with_xyz:
-      r = math.sqrt(camera.location[0] ** 2 + camera.location[1] ** 2 + camera.location[2] ** 2)
+    elif args.uniform_sample:
+      r = args.r_camera
       theta = np.random.uniform(0, 0.8) * np.pi / 2
       phi = np.random.uniform(0, 1) * 2 * np.pi
+      camera.location[0] = r * np.sin(theta) * np.cos(phi)
+      camera.location[1] = r * np.sin(theta) * np.sin(phi)
+      camera.location[2] = r * np.cos(theta)
+    elif args.uniform_grid:
+      r = args.r_camera
+      theta = np.linspace(0.8, 0, args.num_theta)[i // args.num_phi] * np.pi / 2
+      phi = np.linspace(0, 1, args.num_phi)[i % args.num_phi] * 2 * np.pi
       camera.location[0] = r * np.sin(theta) * np.cos(phi)
       camera.location[1] = r * np.sin(theta) * np.sin(phi)
       camera.location[2] = r * np.cos(theta)
@@ -416,7 +417,7 @@ def render_scene(args,
       try:
         scene.update()
         frame_data = {
-          'file_path': scene.render.filepath,
+          'file_path': os.path.split(scene.render.filepath)[1],
           'transform_matrix': listify_matrix(camera.matrix_world),
           'camera_location': [camera.location[0], camera.location[1], camera.location[2]]
         }
@@ -449,12 +450,14 @@ def add_random_objects(scene_struct, num_objects, args, camera):
     material_mapping = [(v, k) for k, v in properties['materials'].items()]
     object_mapping = [(v, k) for k, v in properties['shapes'].items()]
     size_mapping = list(properties['sizes'].items())
-
   shape_color_combos = None
   if args.shape_color_combos_json is not None:
     with open(args.shape_color_combos_json, 'r') as f:
       shape_color_combos = list(json.load(f).items())
-
+  if num_objects < 10:
+    for i, (size_name, r) in enumerate(size_mapping):
+      if size_name == 'small':
+        del size_mapping[i]
   positions = []
   objects = []
   blender_objects = []
@@ -474,8 +477,8 @@ def add_random_objects(scene_struct, num_objects, args, camera):
         for obj in blender_objects:
           utils.delete_object(obj)
         return add_random_objects(scene_struct, num_objects, args, camera)
-      x = random.uniform(-3, 3)
-      y = random.uniform(-3, 3)
+      x = random.uniform(-2.75, 2.75)
+      y = random.uniform(-2.75, 2.75)
       # Check to make sure the new object is further than min_dist from all
       # other objects, and further than margin along the four cardinal directions
       dists_good = True

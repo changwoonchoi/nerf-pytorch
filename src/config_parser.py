@@ -1,7 +1,6 @@
 import configargparse
 import os
 from pathlib import Path
-import argparse
 
 
 def load_all_include(config_file):
@@ -96,10 +95,16 @@ def config_parser(default_files=None):
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')
 	parser.add_argument("--precrop_frac", type=float, default=.5, help='fraction of img taken for central crops')
 
+	# test options
+	parser.add_argument("--extract_mesh", action='store_true', help='extract mesh')
+
 	# dataset options
 	parser.add_argument("--dataset_type", type=str, default='llff', help='options: llff / blender / deepvoxels')
 	parser.add_argument("--testskip", type=int, default=8,
 	                    help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
+
+	# clevr options
+	parser.add_argument("--sample_length", type=float, default=8, help='sampling length along ray')
 
 	## deepvoxels flags
 	parser.add_argument("--shape", type=str, default='greek',

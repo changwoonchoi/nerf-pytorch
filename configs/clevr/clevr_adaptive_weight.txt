@@ -1,0 +1,28 @@
+expname = clevr_adaptive_weight
+basedir = ../logs
+datadir = ../data/clevr/scene_1
+dataset_type = clevr
+
+no_batching = True
+
+use_viewdirs = True
+lrate_decay = 500
+
+N_samples = 64
+N_importance = 128
+N_rand = 1024
+
+precrop_iters = 500
+precrop_frac = 0.5
+
+half_res = False
+instance_mask = True
+instance_label_encoding = one_hot
+instance_loss_weight = 0.01
+
+i_video = 10000000000000
+i_testset = 1000
+testskip = 32
+
+render_decompose = False
+fixed_CE_weight = False

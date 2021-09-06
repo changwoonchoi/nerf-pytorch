@@ -1,0 +1,6 @@
+include = common.txt
+expname = onehot_adaptive
+instance_label_encoding = one_hot
+CE_weight_type = adaptive
+instance_loss_weight = 0.04
+use_instance_feature_layer

@@ -1,0 +1,6 @@
+{
+  "available_gpus" : [0, 0, 2, 2],
+  "config_lists":[
+    "../configs/mitsuba/bedroom/randoms"
+  ]
+}

@@ -1,6 +1,6 @@
 expname = clevr_fixed_weight
-basedir = ./logs
-datadir = ./data/clevr/scene_1
+basedir = ../logs
+datadir = ../data/clevr/scene_1
 dataset_type = clevr
 
 no_batching = True
@@ -16,10 +16,11 @@ precrop_iters = 500
 precrop_frac = 0.5
 
 half_res = False
-instance_mask
+instance_mask = True
+instance_label_encoding = one_hot
 
 i_video = 10000000000000
-i_testset = 10000
+i_testset = 1000
 testskip = 32
 
 render_decompose = False
