@@ -27,7 +27,9 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	"""
 	# TODO: when instance_num is large, out of memory...
 	instance_list = [0, 1, 2, 3, 4, 5]
-	th = 0.
+	instance_th = 0.
+	alpha_th = 0.
+	alpha_filter = nn.Threshold(alpha_th, 0)
 
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
@@ -46,7 +48,8 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 			noise = torch.Tensor(noise)
 
 	alpha = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
-	# weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
+	alpha = alpha_filter(alpha)
+
 	weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1. - alpha + 1e-10], -1), -1)[:, :-1]
 
 	rgb = torch.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
@@ -63,7 +66,7 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	if decompose:
 		decomposed_rgb_map = []
 		decomposed_instance_map = []
-		instance_mask = label_encoder.decode(instance_score, th=th)
+		instance_mask = label_encoder.decode(instance_score, th=instance_th)
 		for i in instance_list:
 			mask_i = instance_mask == i
 			alpha_i = torch.zeros_like(alpha)
@@ -188,8 +191,7 @@ def render_rays(ray_batch,
 		z_samples = z_samples.detach()
 
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
-		pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :,
-															None]  # [N_rays, N_samples + N_importance, 3]
+		pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
 
 		run_fn = network_fn if network_fine is None else network_fine
 		#         raw = run_network(pts, fn=run_fn)
@@ -397,3 +399,8 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs,
 		instance_colors = np.stack(instance_colors, 0)
 
 	return rgbs, disps, instances, instance_colors
+
+
+def render_manipulate(render_poses, hwf, K, chunk, render_kwargs, savedir=None, render_factor=1, label_encoder=None, manipulate_config=None):
+
+	raise NotImplementedError
