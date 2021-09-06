@@ -73,8 +73,8 @@ class OneHotLabelEncoder(LabelEncoder):
 
     def decode(self, encoded_label, th=0.):
         if th > 0:
-            label_score = torch.max(encoded_label, dim=-1).values
-            void_label = label_score > th
+            label_score = torch.max(torch.sigmoid(encoded_label), dim=-1).values
+            void_label = label_score < th
             decoded_label = torch.argmax(encoded_label, dim=-1)
             decoded_label[void_label] = encoded_label.shape[-1]
             return decoded_label

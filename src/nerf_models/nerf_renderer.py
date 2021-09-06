@@ -27,8 +27,8 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	"""
 	# TODO: when instance_num is large, out of memory...
 	instance_list = [0, 1, 2, 3, 4, 5]
-	instance_th = 0.
-	alpha_th = 0.
+	instance_th = 0.95
+	alpha_th = 0.0
 	alpha_filter = nn.Threshold(alpha_th, 0)
 
 	raw2alpha = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
@@ -384,7 +384,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs,
 						os.makedirs(decomposed_dir, exist_ok=True)
 						filename_decomposed_instance = os.path.join(decomposed_dir, 'instance_{}.png'.format(k))
 						filename_decomposed_rgb = os.path.join(decomposed_dir, 'rgb_{}.png'.format(k))
-						imageio.imwrite(filename_decomposed_instance, label_encoder.encoded_label_to_colored_label(decomposed_instances[i][k], th=0.).cpu().numpy().astype(np.uint8))
+						imageio.imwrite(filename_decomposed_instance, label_encoder.encoded_label_to_colored_label(decomposed_instances[i][k], th=0.95).cpu().numpy().astype(np.uint8))
 						imageio.imwrite(filename_decomposed_rgb, to8b(decomposed_rgbs[i][k]))
 
 			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
