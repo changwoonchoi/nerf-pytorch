@@ -1,0 +1,28 @@
+basedir = ../logs/clevr_decomp
+dataset_type = clevr
+
+no_batching = True
+lindisp = True
+
+use_viewdirs = True
+lrate_decay = 500
+
+N_samples = 64
+N_importance = 128
+N_rand = 1024
+N_iter = 100000
+
+precrop_iters = 0
+precrop_frac = 0.5
+
+image_scale = 1
+instance_mask
+instance_label_encoding = one_hot
+instance_loss_weight = 0.04
+
+i_video = 100000000
+i_testset = 2000
+i_weight = 1000
+testskip = 32
+
+render_decompose = False

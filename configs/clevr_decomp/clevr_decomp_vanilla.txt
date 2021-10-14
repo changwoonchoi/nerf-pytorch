@@ -1,0 +1,11 @@
+include = common.txt
+datadir = ../data/clevr/clevr_decomp
+basedir = ../logs/clevr_decomp
+expname = clevr_decomp_vanilla
+
+instance_label_encoding = one_hot
+CE_weight_type = equal
+instance_loss_weight = 0.04
+use_instance_feature_layer
+
+sample_length = 6
