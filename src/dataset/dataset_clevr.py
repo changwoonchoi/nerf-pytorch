@@ -8,6 +8,7 @@ import imageio
 import torch
 from utils.label_utils import colored_mask_to_label_map_np
 from utils.math_utils import pose_spherical
+from utils.color_utils import get_basecolor
 
 import matplotlib.pyplot as plt
 from dataset.dataset_interface import NerfDataset
@@ -103,3 +104,12 @@ class ClevrDataset(NerfDataset):
 
 	def get_test_render_poses(self):
 		return torch.stack([pose_spherical(angle, -30.0, 11.0) for angle in np.linspace(-180, 180, 40 + 1)[:-1]], 0)
+
+
+class ClevrDecompDataset(ClevrDataset):
+	def __init__(self, basedir, **kwargs):
+		super.__init__("clevr_decomp", **kwargs)
+		self.num_cluster = kwargs.get("num_cluster", 10)
+		self.cluster_th = kwargs.get("cluster_th", 0.1)
+		self.init_basecolor = get_basecolor(img=, num_cluster=self.num_cluster, th=self.cluster_th)
+
