@@ -71,9 +71,11 @@ def merge_cluster(centers, weights, th):
 
 
 def get_basecolor(img, n_clusters=8):
+    # TODO: convert color to chromaticity
+    chrom = img.float() / torch.linalg.norm(img.float(), dim=-1)
     # make histogram
-    hist = histogram(img, channels=[32, 32, 32])
-    if len(img.shape) > 3:
+    hist = histogram(chrom, channels=[32, 32, 32])
+    if len(chrom.shape) > 3:
         hist = torch.sum(hist, dim=0)
     coords = torch.nonzero(hist)
     weights = [hist[coords[i][0], coords[i][1], coords[i][2]] for i in range(coords.shape[0])]
@@ -85,5 +87,4 @@ def get_basecolor(img, n_clusters=8):
     labels = cluster.labels_  # (n_cluster, )
     centroid_weights = np.array([len(labels[labels==i]) for i in range(n_clusters)])
     centroid, _ = merge_cluster(init_centers, centroid_weights, th=10)
-    # return centroid, label
     return centroid
