@@ -63,11 +63,10 @@ def merge_cluster(centers, weights, th):
             # merge centroids
             new_count = counts[min_idx[0]] + counts[min_idx[1]]
             new_center = (coords[min_idx[0]] * counts[min_idx[0]] + coords[min_idx[1]] * counts[min_idx[1]]) / new_count
-            np.delete(coords, [min_idx[1]])
-            del counts[min_idx[1]]
+            coords = np.delete(coords, [min_idx[1]], axis=0)
+            counts = np.delete(counts, [min_idx[1]])
             coords[min_idx[0]] = new_center
             counts[min_idx[0]] = new_count
-    breakpoint()
     return coords, counts
 
 
