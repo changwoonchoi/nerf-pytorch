@@ -1,7 +1,7 @@
 import torch
 from typing import *
 import numpy as np
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, MiniBatchKMeans
 import matplotlib.pyplot as plt
 
 
@@ -70,21 +70,23 @@ def merge_cluster(centers, weights, th):
     return coords, counts
 
 
-def get_basecolor(img, n_clusters=8):
-    # TODO: convert color to chromaticity
-    chrom = img.float() / torch.linalg.norm(img.float(), dim=-1)
-    # make histogram
-    hist = histogram(chrom, channels=[32, 32, 32])
-    if len(chrom.shape) > 3:
-        hist = torch.sum(hist, dim=0)
-    coords = torch.nonzero(hist)
-    weights = [hist[coords[i][0], coords[i][1], coords[i][2]] for i in range(coords.shape[0])]
-    weights = torch.stack(weights, dim=0)
+def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1):
+    chrom = img.float() / torch.linalg.norm(img.float(), dim=-1, keepdim=True)
+    if not use_hist:
+        cluster = MiniBatchKMeans().fit(chrom.cpu().numpy().reshape(-1, 3))
+    else:
+        # make histogram
+        hist = histogram(chrom, channels=[32, 32, 32])
+        if len(chrom.shape) > 3:
+            hist = torch.sum(hist, dim=0)
+        coords = torch.nonzero(hist)
+        weights = [hist[coords[i][0], coords[i][1], coords[i][2]] for i in range(coords.shape[0])]
+        weights = torch.stack(weights, dim=0)
+        # weighted k-means clustering
+        cluster = KMeans(n_clusters=n_clusters).fit(coords.cpu().numpy(), weights.cpu().numpy())
 
-    # weighted k-means clustering
-    cluster = KMeans(n_clusters=n_clusters).fit(coords.cpu().numpy(), weights.cpu().numpy())
     init_centers = cluster.cluster_centers_  # (n_cluster, 3)
     labels = cluster.labels_  # (n_cluster, )
-    centroid_weights = np.array([len(labels[labels==i]) for i in range(n_clusters)])
-    centroid, _ = merge_cluster(init_centers, centroid_weights, th=10)
+    centroid_weights = np.array([len(labels[labels == i]) for i in range(n_clusters)])
+    centroid, _ = merge_cluster(init_centers, centroid_weights, th=cluster_th)
     return centroid
