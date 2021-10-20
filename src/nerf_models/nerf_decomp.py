@@ -11,9 +11,11 @@ import os
 # Model
 class NeRFDecomp(nn.Module):
     def __init__(
-            self, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4], instance_label_dimension=0,
+            self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
+            instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True, use_indirect_feature_layer=True,
             use_instance_feature_layer=False
     ):
+        # TODO: add albedo_mod
         """
         NeRFDecomp Model
         params:
@@ -23,20 +25,25 @@ class NeRFDecomp(nn.Module):
             input_ch_views: dim of d (direction) (3 for R^3 vector)
             output_ch:
             skips: list of layer numbers that are concatenated with x (position)
+            use_instance_label: use instance label
             instance_label_dimension: dimension of instance_label
+            K: number of base colors
             use_instance_feature_layer: use additional layer following Shuaifeng Zhi et al.
         """
-        super(NeRFDecomp, self).__init__()
+        super().__init__()
         self.D = D
         self.W = W
         self.input_ch = input_ch
         self.input_ch_views = input_ch_views
-        self.output_ch = output_ch
         self.skips = skips
+        self.use_instance_label = use_instance_label
         self.instance_label_dimension = instance_label_dimension
+        self.num_cluster = num_cluster
+        self.use_basecolor_score_feature_layer = use_basecolor_score_feature_layer
+        self.use_indirect_feature_layer = use_indirect_feature_layer
         self.use_instance_feature_layer = use_instance_feature_layer
 
-        self.pts_linears = nn.ModuleList(
+        self.positions_linears = nn.ModuleList(
             [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in range(D - 1)]
         )
 
@@ -44,58 +51,100 @@ class NeRFDecomp(nn.Module):
 
         self.feature_linear = nn.Linear(W, W)
         self.sigma_linear = nn.Linear(W, 1)
-        if self.instance_label_dimension > 0:
-            if self.use_instance_feature_layer:
-                self.instance_feature_linear = nn.Linear(W, W // 2)
-                self.instance_linear = nn.Linear(W // 2, self.instance_label_dimension)
+        for k in range(num_cluster):
+            setattr(self, "albedo_res_linear{}".format(k), nn.Linear(W, 3))
+        if self.use_instance_label:
+            raise NotImplementedError
+        else:
+            if self.use_basecolor_score_feature_layer:
+                self.basecolor_score_feature_linear = nn.Linear(W, W // 2)
+                self.basecolor_score_linear = nn.Linear(W // 2, num_cluster)
             else:
-                self.instance_feature_linear = None
-                self.instance_linear = nn.Linear(W, self.instance_label_dimension)
-        self.rgb_linear = nn.Linear(W // 2, 3)
+                self.basecolor_score_feature_linear = None
+                self.basecolor_score_linear = nn.Linear(W, num_cluster)
+
+        self.direct_linear = nn.Linear(W // 2, 1)
+        for k in range(num_cluster):
+            if self.use_indirect_feature_layer:
+                setattr(self, "indirect_feature_linear{}".format(k), nn.Linear(input_ch_views + W, W // 2))
+                setattr(self, "indirect_linear{}".format(k), nn.Linear(W // 2, 1))
+            else:
+                setattr(self, "indirect_feature_linear{}".format(k), None)
+                setattr(self, "indirect_linear{}".format(k), nn.Linear(input_ch_views + W, 1))
 
     def __str__(self):
         logs = ["[NeRFDecomp"]
         logs += ["\t- depth : {}".format(self.D)]
         logs += ["\t- width : {}".format(self.W)]
         logs += ["\t- input_ch : {}".format(self.input_ch)]
-        logs += ["\t- output_ch : {}".format(self.output_ch)]
+        logs += ["\t- use_instance_label : {}".format(self.use_instance_label)]
         logs += ["\t- instance_label_dimension : {}".format(self.instance_label_dimension)]
         logs += ["\t- use_instance_feature_layer : {}".format(self.use_instance_feature_layer)]
+        logs += ["\t- base_color_num : {}".format(self.num_cluster)]
+        logs += ["\t- use_indirect_feature_layer : {}".format(self.use_indirect_feature_layer)]
         return "\n".join(logs)
 
     def forward(self, x):
         input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
         h = input_pts
-        for i, l in enumerate(self.pts_linears):
-            h = self.pts_linears[i](h)
+        for i, l in enumerate(self.positions_linears):
+            h = self.positions_linears[i](h)
             h = F.relu(h)
             if i in self.skips:
                 h = torch.cat([input_pts, h], dim=-1)
 
         sigma = self.sigma_linear(h)
-        if self.instance_label_dimension > 0:
-            if self.use_instance_feature_layer:
-                instance = self.instance_linear(self.isntance_feature_linear(h))
+        # albedo_res = self.albedo_res_linear(h)
+        albedo_res = {}
+        for k in range(self.num_cluster):
+            albedo_res['albedo_res{}'.format(k)] = getattr(
+                self, 'albedo_res_linear{}'.format(k)
+            )(h)
+
+        if self.use_instance_label:
+            if self.instance_label_dimension > 0:
+                if self.use_instance_feature_layer:
+                    instance = self.instance_linear(self.isntance_feature_linear(h))
+                else:
+                    instance = self.instance_linear(h)
+            raise NotImplementedError
+        else:
+            if self.use_basecolor_score_feature_layer:
+                basecolor_score = self.basecolor_score_linear(self.basecolor_score_feature_linear(h))
             else:
-                instance = self.instance_linear(h)
+                basecolor_score = self.basecolor_score_linear(h)
 
         feature = self.feature_linear(h)
         h = torch.cat([feature, input_views], dim=-1)
+
+        indirect_illuminations = {}
+        for k in range(self.num_cluster):
+            if self.use_indirect_feature_layer:
+                indirect_illuminations['indirect_illumination{}'.format(k)] = getattr(
+                    self, 'indirect_feature_linear{}'.format(k)
+                )(getattr(
+                    self, 'indirect_linear{}'.format(k)
+                )(h))
+            else:
+                indirect_illuminations['indirect_illumination{}'.format(k)] = getattr(
+                    self, 'indirect_linear{}'.format(k)
+                )(h)
 
         for i, l in enumerate(self.views_linears):
             h = self.views_linears[i](h)
             h = F.relu(h)
 
-        rgb = self.rgb_linear(h)
-        if self.instance_label_dimension > 0:
-            outputs = torch.cat([rgb, sigma, instance], -1)
-        else:
-            outputs = torch.cat([rgb, sigma], -1)
+        direct_illumination = self.direct_linear(h)
 
-        return outputs
-
-    def load_weights_from_keras(self, weights):
-        raise NotImplementedError
+        ret = [sigma]
+        for k in range(self.num_cluster):
+            ret.append(albedo_res['albedo_res{}'.format(k)])
+        for k in range(self.num_cluster):
+            ret.append(indirect_illuminations['indirect_illumination{}'.format(k)])
+        ret.append(direct_illumination)
+        ret.append(basecolor_score)
+        ret = torch.cat(ret, dim=-1)
+        return ret
 
 
 def batchify(fn, chunk):
@@ -126,6 +175,7 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024 * 64
     outputs = torch.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])
     return outputs
 
+
 def create_NeRFDecomp(args):
     """
     Instantiate NeRFDecomp Model
@@ -136,12 +186,13 @@ def create_NeRFDecomp(args):
     input_ch_views = 0
     embeddirs_fn = None
     embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args.i_embed)
-    output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
     model = NeRFDecomp(
-        D=args.netdepth, W=args.netwidth, input=input_ch, output_ch=output_ch, skips=skips,
-        input_ch_views=input_ch_views, instance_label_dimension=args.instance_label_dimnension,
-        use_instance_feature_layer=args.use_instance_featuer_layer
+        D=args.netdepth, W=args.netwidth, input_ch=input_ch, input_ch_views=input_ch_views, skips=skips,
+        use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
+        num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
+        use_indirect_feature_layer=args.use_indirect_feature_layer,
+        use_instance_feature_layer=args.use_instance_feature_layer
     ).to(args.device)
     logger.info(model)
 
@@ -150,14 +201,18 @@ def create_NeRFDecomp(args):
     model_fine = None
     if args.N_importance > 0:
         model_fine = NeRFDecomp(
-
+            D=args.netdepth, W=args.netwidth, input_ch=input_ch, input_ch_views=input_ch_views, skips=skips,
+            use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
+            num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
+            use_indirect_feature_layer=args.use_indirect_feature_layer,
+            use_instance_feature_layer=args.use_instance_feature_layer
         ).to(args.device)
         logger.info("NeRFDecomp fine model")
         logger.info(model)
         grad_vars += list(model_fine.parameters())
 
     network_query_fn = lambda inputs, viewdirs, network_fn: run_network(
-        input, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn, netchunk=args.netchunk
+        inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn, netchunk=args.netchunk
     )
 
     optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
@@ -181,3 +236,27 @@ def create_NeRFDecomp(args):
 
         start = ckpt['global_step']
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+
+        model.load_state_dict(ckpt['network_fn_state_dict'])
+        if model_fine is not None:
+            model_fine.load_state_dict(ckpt['network_fine_state_dict'])
+
+    render_kwargs_train = {
+        'network_query_fn': network_query_fn,
+        'perturb': args.perturb,
+        'N_importance': args.N_importance,
+        'network_fine': model_fine,
+        'N_samples': args.N_samples,
+        'network_fn': model,
+        'use_viewdirs': args.use_viewdirs,
+        'white_bkgd': args.white_bkgd,
+        'raw_noise_std': args.raw_noise_std,
+        'ndc': False,
+        'lindisp': args.lindisp
+    }
+
+    render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}
+    render_kwargs_test['perturb'] = False
+    render_kwargs_test['raw_nosie_std'] = 0.
+
+    return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer

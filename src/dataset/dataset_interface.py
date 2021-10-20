@@ -37,6 +37,11 @@ class NerfDataset(Dataset, ABC):
 
 		self.load_instance_label_mask = False
 
+		self.num_init_cluster = 0
+		self.cluster_th = 0
+		self.init_basecolor = None
+		self.num_cluster = 0
+
 	def get_focal_matrix(self):
 		K = np.array([
 			[self.focal, 0, 0.5 * self.width],
@@ -70,6 +75,8 @@ class NerfDataset(Dataset, ABC):
 	def to_tensor(self, device):
 		self.images = torch.stack(self.images, 0).to(device)
 		self.poses = torch.stack(self.poses, 0).to(device)
+		if self.init_basecolor is not None:
+			self.init_basecolor = torch.from_numpy(self.init_basecolor).to(device)
 		if self.load_instance_label_mask:
 			self.masks = torch.stack(self.masks, 0).to(device)
 
@@ -85,6 +92,7 @@ class NerfDataset(Dataset, ABC):
 		logs += ["\t- size : %d x %d" % (self.width, self.height)]
 		logs += ["\t- image number : %d" % len(self)]
 		logs += ["\t- instance number : %d" % self.instance_num]
+		logs += ["\t= cluster number : %d" % self.num_cluster]
 		return "\n".join(logs)
 
 	def __len__(self):

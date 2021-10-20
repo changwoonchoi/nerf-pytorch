@@ -47,6 +47,8 @@ def config_parser(default_files=None):
 	                    help="how to encode instance label. one of single, one_hot, label_color")
 	parser.add_argument("--instance_label_dimension", type=int, default=0, help="instance mask dimension")
 	parser.add_argument("--use_instance_feature_layer", action="store_true", help='NeRF with instance_feature_layer(Zhi, 2021)')
+	parser.add_argument("--use_basecolor_score_feature_layer", action="store_true", help='NeRF with basecolor score feature layer')
+	parser.add_argument("--use_indirect_feature_layer", action="store_true", help='NeRF with indirect_feature_layer(Zhi, 2021)')
 
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
 	parser.add_argument("--netdepth", type=int, default=8, help='layers in network')

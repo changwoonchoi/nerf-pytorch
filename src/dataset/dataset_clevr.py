@@ -48,7 +48,11 @@ class ClevrDataset(NerfDataset):
 		"""
 		# need average from all data
 		poses = []
-		for split in ["train", "val", "test"]:
+		if kwargs.get("use_val", True):
+			splits = ["train", "val", "test"]
+		else:
+			splits = ["train", "test"]
+		for split in splits:
 			with open(os.path.join(self.basedir, 'transforms_{}.json'.format(split)), 'r') as fp:
 				meta = json.load(fp)
 			for frame in meta['frames']:
@@ -108,12 +112,15 @@ class ClevrDataset(NerfDataset):
 
 class ClevrDecompDataset(ClevrDataset):
 	def __init__(self, basedir, **kwargs):
-		super().__init__(basedir, **kwargs)
+		super().__init__(basedir, use_val=False, **kwargs)
 		self.name = "clevr_decomp"
-		self.num_cluster = kwargs.get("num_cluster", 8)
+		self.num_init_cluster = kwargs.get("num_init_cluster", 8)
 		self.cluster_th = kwargs.get("cluster_th", 0.1)
 		# TODO: calculate base color from all images in train set
 		sample_img_path = os.path.join(self.basedir, 'train', os.path.split(self.meta['frames'][0]['file_path'])[1])
 		sample_img = imageio.imread(sample_img_path, pilmode='RGB')
-		self.init_basecolor = get_basecolor(img=sample_img, use_hist=False, n_clusters=self.num_cluster, cluster_th=self.cluster_th)
+		self.init_basecolor = get_basecolor(
+			img=sample_img, use_hist=False, n_clusters=self.num_init_cluster, cluster_th=self.cluster_th
+		)  # (self.num_base, 3)
+		self.num_cluster = self.init_basecolor.shape[0]
 

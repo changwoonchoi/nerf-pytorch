@@ -1,6 +1,6 @@
 include = common.txt
 datadir = ../data/clevr/clevr_decomp
-basedir = ../logs/clevr_decomp
+basedir = ../logs/
 expname = clevr_decomp_vanilla
 
 instance_label_encoding = one_hot

@@ -1,5 +1,5 @@
-basedir = ../logs/clevr_decomp
-dataset_type = clevr
+basedir = ../logs/
+dataset_type = clevr_decomp
 
 no_batching = True
 lindisp = True
@@ -16,7 +16,6 @@ precrop_iters = 0
 precrop_frac = 0.5
 
 image_scale = 1
-instance_mask
 instance_label_encoding = one_hot
 instance_loss_weight = 0.04
 

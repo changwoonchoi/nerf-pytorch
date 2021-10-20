@@ -2,7 +2,6 @@ import torch
 from typing import *
 import numpy as np
 from sklearn.cluster import KMeans, MiniBatchKMeans
-import matplotlib.pyplot as plt
 
 
 def histogram(img: torch.Tensor, channels: List[int]=[32, 32, 32]) -> torch.Tensor:
@@ -71,7 +70,7 @@ def merge_cluster(centers, weights, th):
 
 
 def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1):
-    chrom = img.float() / torch.linalg.norm(img.float(), dim=-1, keepdim=True)
+    chrom = torch.Tensor(img).float() / torch.linalg.norm(torch.Tensor(img).float(), dim=-1, keepdim=True)
     if not use_hist:
         cluster = MiniBatchKMeans().fit(chrom.cpu().numpy().reshape(-1, 3))
     else:
