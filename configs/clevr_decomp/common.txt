@@ -27,10 +27,10 @@ testskip = 20
 
 render_decompose = False
 
-beta_sparse_base = 1
+beta_sparse_base = 0.01
 beta_res = 1
-beta_mod = 1
-beta_indirect = 1
+beta_mod = 100.
+beta_indirect = 100.
 
 beta_smooth_albedo = 1
 beta_smooth_indirect = 1

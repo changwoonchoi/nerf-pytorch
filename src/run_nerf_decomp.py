@@ -276,16 +276,14 @@ def train():
 
             with torch.no_grad():
                 poses = torch.Tensor(dataset_val.poses).to(device)
-                rgbs, disps, instances, instance_colors = render_decomp_path(
-                    poses, hwf, K, args.chunk, render_kwargs_test, gt_imgs=None, savedir=testsavedir,
-                    label_encoder=label_encoder, render_factor=4
+                rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps = render_decomp_path(
+                    poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+                    render_factor=4, init_basecolor=dataset.init_basecolor
                 )
+                # TODO: add image summary for albedo, illumination, ...
                 writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
                 disps = np.expand_dims(disps, -1)
                 writer.add_images('test/inferred_disps', disps.transpose((0, 3, 1, 2)), i)
-
-                if use_instance_mask:
-                    writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
 
             logger_export.info('Saved test set')
 

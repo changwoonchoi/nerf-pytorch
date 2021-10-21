@@ -183,6 +183,8 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		color_map_0, disp_map_0, acc_map_0 = color_map, disp_map, acc_map
 		basecolor_score_0, albedo_res_0, albedo_0, albedo_mod0 = basecolor_score, albedo_res, albedo, albedo_mod
 		indirect_illumination_weight_0 = indirect_illumination_weight
+		albedo_map_0, direct_illumination_map_0, indirect_illumination_map_0 = albedo_map, direct_illumination_map, indirect_illumination_map
+		decomp_indirect_illum_map_0, illumination_map_0 = decomp_indirect_illum_map, illumination_map
 
 		z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
 		z_samples = sample_pdf(z_vals_mid, weights[..., 1:-1], N_importance, det=(perturb == 0.), pytest=pytest)
@@ -210,7 +212,12 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		'albedo_res': albedo_res,
 		'indirect_illumination_weight': indirect_illumination_weight,
 		'disp_map': disp_map,
-		'acc_map': acc_map
+		'acc_map': acc_map,
+		'albedo_map': albedo_map,
+		'direct_illumination_map': direct_illumination_map,
+		'indirect_illumination_map': indirect_illumination_map,
+		'decomp_indirect_illum_map': decomp_indirect_illum_map,
+		'illumination_map': illumination_map
 	}
 
 	if retraw:
@@ -224,6 +231,11 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		ret['indirect_illumination_weight0'] = indirect_illumination_weight_0
 		ret['disp0'] = disp_map_0
 		ret['acc0'] = acc_map_0
+		ret['albedo_map0'] = albedo_map_0
+		ret['direct_illumination_map0'] = direct_illumination_map_0
+		ret['indirect_illumination_map0'] = indirect_illumination_map_0
+		ret['decomp_indirect_illum_map0'] = decomp_indirect_illum_map_0
+		ret['illumination_map0'] = illumination_map_0
 		ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
 	for k in ret:
@@ -319,9 +331,7 @@ def render_decomp(
 # return ret_list + [ret_dict]
 
 
-def render_decomp_path(
-		render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0, label_encoder=None
-):
+def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None, render_factor=0, init_basecolor=None):
 	H, W, focal = hwf
 
 	if render_factor != 0:
@@ -331,13 +341,13 @@ def render_decomp_path(
 		focal = focal / render_factor
 
 	rgbs = []
+	albedos = []
+	direct_illuminations = []
+	indirect_illuminations = []
+	decomp_indirect_illuminations = []
+	illuminations = []
 	disps = []
-	instances = []
-	instance_colors = []
-	decomposed_rgbs = []
-	decomposed_instances = []
 
-	decompose = render_kwargs.get('decompose', False)
 
 	K = np.array([
 		[focal, 0, 0.5 * W],
@@ -347,58 +357,47 @@ def render_decomp_path(
 
 	t = time.time()
 	for i, c2w in enumerate(tqdm(render_poses)):
-		# print(i, time.time() - t)
 		t = time.time()
-		results = render(H, W, K, chunk=chunk, c2w=c2w[:3, :4], label_encoder=label_encoder, **render_kwargs)
-		rgb = results['rgb_map']
+		results = render_decomp(H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, **render_kwargs)
+		rgb = results['color_map']  # (chunk, 3)
+		albedo = results['albedo_map']  # (chunk, 3)
+		direct_illumination = results['direct_illumination_map']  # (chunk, 3)
+		indirect_illumination = results['indirect_illumination_map']  # (chunk, 3)
+		decomp_indirect_illum_map = results['decomp_indirect_illum_map']  # (chunk, num_cluster, 3)
+		illumination_map = results['illumination_map']  # (chunk, 3)
 		disp = results['disp_map']
-		instance = results.get("instance_map", None)
-		decomposed_rgb = results.get('decomposed_rgb_map', None)
-		decomposed_instance = results.get('decomposed_instance_map', None)
-		rgbs.append(rgb.cpu().numpy())
-		disps.append(disp.cpu().numpy())
-		if instance != None:
-			instances.append(instance.cpu().numpy())
-		if decompose:
-			decomposed_rgbs.append(decomposed_rgb.cpu().numpy())
-			decomposed_instances.append(decomposed_instance)
 
-		"""
-		if gt_imgs is not None and render_factor==0:
-			p = -10. * np.log10(np.mean(np.square(rgb.cpu().numpy() - gt_imgs[i])))
-			print(p)
-		"""
+		rgbs.append(rgb.cpu().numpy())
+		albedos.append(albedo.cpu().numpy())
+		direct_illuminations.append(direct_illumination.cpu().numpy())
+		indirect_illuminations.append(indirect_illumination.cpu().numpy())
+		illuminations.append(illumination_map.cpu().numpy())
+		disps.append(disp.cpu().numpy())
 
 		if savedir is not None:
 			rgb8 = to8b(rgbs[-1])
-			if instance != None:
-				instance_color = label_encoder.encoded_label_to_colored_label(instance).cpu().numpy().astype(np.uint8)
-				instance_colors.append(instance_color)
-				filename_instance = os.path.join(savedir, 'mask_{:03d}.png'.format(i))
-				imageio.imwrite(filename_instance, instance_color)
-				if decompose:
-					for k in range(decomposed_rgbs[i].shape[0]):
-						decomposed_dir = os.path.join(savedir, 'decomposed_' + str(i))
-						os.makedirs(decomposed_dir, exist_ok=True)
-						filename_decomposed_instance = os.path.join(decomposed_dir, 'instance_{}.png'.format(k))
-						filename_decomposed_rgb = os.path.join(decomposed_dir, 'rgb_{}.png'.format(k))
-						imageio.imwrite(filename_decomposed_instance, label_encoder.encoded_label_to_colored_label(decomposed_instances[i][k], th=0.95).cpu().numpy().astype(np.uint8))
-						imageio.imwrite(filename_decomposed_rgb, to8b(decomposed_rgbs[i][k]))
+			albedo8 = to8b(albedos[-1])
+			direct_illumination8 = to8b(direct_illuminations[-1])
+			indirect_illumination8 = to8b(indirect_illuminations[-1])
+			illumination8 = to8b(illuminations[-1])
 
-			filename_rgb = os.path.join(savedir, '{:03d}.png'.format(i))
+			filename_rgb = os.path.join(savedir, 'rgb_{:03d}.png'.format(i))
+			filename_albedo = os.path.join(savedir, 'albedo_{:03d}.png'.format(i))
+			filename_direct_illumination = os.path.join(savedir, 'direct_{:03d}.png'.format(i))
+			filename_indirect_illumination = os.path.join(savedir, 'indirect_{:03d}.png'.format(i))
+			filename_illumination = os.path.join(savedir, 'illumination_{:03d}.png'.format(i))
+
 			imageio.imwrite(filename_rgb, rgb8)
+			imageio.imwrite(filename_albedo, albedo8)
+			imageio.imwrite(filename_direct_illumination, direct_illumination8)
+			imageio.imwrite(filename_indirect_illumination, indirect_illumination8)
+			imageio.imwrite(filename_illumination, illumination8)
 
-	# decomposed_instances = torch.stack(decomposed_instances, 0).cpu().numpy()
-	# decomposed_rgbs = np.stack(decomposed_rgbs, 0)
 	rgbs = np.stack(rgbs, 0)
+	albedos = np.stack(albedos, 0)
+	direct_illuminations = np.stack(direct_illuminations, 0)
+	indirect_illuminations = np.stack(indirect_illuminations, 0)
+	illuminations = np.stack(illuminations, 0)
 	disps = np.stack(disps, 0)
-	if len(instances) > 0:
-		instances = np.stack(instances, 0)
-		instance_colors = np.stack(instance_colors, 0)
 
-	return rgbs, disps, instances, instance_colors
-
-
-def render_manipulate(render_poses, hwf, K, chunk, render_kwargs, savedir=None, render_factor=1, label_encoder=None, manipulate_config=None):
-
-	raise NotImplementedError
+	return rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps
