@@ -318,7 +318,7 @@ def render_decomp(
 	# Render and reshape
 	all_ret = batchify_rays(rays, chunk, label_encoder=label_encoder, **kwargs)
 	for k in all_ret:
-		if k == 'albedo_mod' or 'albedo_mod0':
+		if k == 'albedo_mod' or k == 'albedo_mod0':
 			continue
 		k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
 		all_ret[k] = torch.reshape(all_ret[k], k_sh)

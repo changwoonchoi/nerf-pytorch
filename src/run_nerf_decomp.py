@@ -221,7 +221,6 @@ def train():
             l1_indir_illum0 = torch.linalg.norm(indirect_illumination_weight0, ord=1, dim=-1)
             l1_indir_illum0 = l1_indir_illum0.sum() / torch.numel(l1_indir_illum0)
             l1_indir_illum = l1_indir_illum + l1_indir_illum0
-
         loss_reg = args.beta_sparse_base * entropy_score + args.beta_res * l1_albedo_res + \
                    args.beta_indirect * l1_indir_illum + args.beta_mod * l1_albedo_mod
 
@@ -238,10 +237,10 @@ def train():
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
             writer.add_scalar('Loss/Loss_render', loss_render, i)
             writer.add_scalar('Loss/Loss_reg', loss_reg, i)
-            writer.add_scalar('Loss/Loss_entropy', entropy_score, i)
-            writer.add_scalar('Loss/Loss_l1_albedo_mod', l1_albedo_mod, i)
-            writer.add_scalar('Loss/Loss_l1_albedo_res', l1_albedo_res, i)
-            writer.add_scalar('Loss/Loss_l1_indirect_illumination', l1_indir_illum, i)
+            writer.add_scalar('Loss/Loss_entropy', args.beta_sparse_base * entropy_score, i)
+            writer.add_scalar('Loss/Loss_l1_albedo_mod', args.beta_mod * l1_albedo_mod, i)
+            writer.add_scalar('Loss/Loss_l1_albedo_res', args.beta_res * l1_albedo_res, i)
+            writer.add_scalar('Loss/Loss_l1_indirect_illumination', args.beta_indirect * l1_indir_illum, i)
             writer.add_scalar('Loss/Loss_smooth', loss_smooth, i)
             writer.add_scalar('Loss/Loss_smooth_albedo', smooth_prior_albedo, i)
             writer.add_scalar('Loss/Loss_smooth_indirect', smooth_prior_indirect, i)
