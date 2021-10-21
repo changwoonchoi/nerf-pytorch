@@ -199,7 +199,18 @@ def train():
         if 'albedo_res0' in result:
             albedo_res0 = result['albedo_res0']
             l1_albedo_res0 = torch.linalg.norm(albedo_res0, ord=1, dim=-1)
+            l1_albedo_res0 = l1_albedo_res0.sum() / torch.numel(l1_albedo_res0)
             l1_albedo_res = l1_albedo_res + l1_albedo_res0
+
+        albedo_mod = result['albedo_mod']
+        l1_albedo_mod = torch.linalg.norm(albedo_mod, ord=1, dim=-1)
+        l1_albedo_mod = l1_albedo_mod.sum() / torch.numel(l1_albedo_mod)
+
+        if 'albedo_mod0' in result:
+            albedo_mod0 = result['albedo_mod0']
+            l1_albedo_mod0 = torch.linalg.norm(albedo_mod0, ord=1, dim=-1)
+            l1_albedo_mod0 = l1_albedo_mod0.sum() / torch.numel(l1_albedo_mod0)
+            l1_albedo_mod = l1_albedo_mod + l1_albedo_mod0
 
         indirect_illumination_weight = result['indirect_illumination_weight']
         l1_indir_illum = torch.linalg.norm(indirect_illumination_weight, ord=1, dim=-1)
@@ -211,27 +222,29 @@ def train():
             l1_indir_illum0 = l1_indir_illum0.sum() / torch.numel(l1_indir_illum0)
             l1_indir_illum = l1_indir_illum + l1_indir_illum0
 
-        loss_reg = args.beta_sparse_base * entropy_score + args.beta_res * l1_albedo_res + args.beta_indirect * l1_indir_illum
+        loss_reg = args.beta_sparse_base * entropy_score + args.beta_res * l1_albedo_res + \
+                   args.beta_indirect * l1_indir_illum + args.beta_mod * l1_albedo_mod
 
         # 3) smooth prior
         # TODO: implement smooth prior
-        breakpoint()
-        smooth_prior_albedo = None
-        smooth_prior_indirect = None
-
+        smooth_prior_albedo = 0
+        smooth_prior_indirect = 0
 
         loss_smooth = args.beta_smooth_albedo * smooth_prior_albedo + args.beta_smooth_indirect * smooth_prior_indirect
 
         total_loss = loss_render + loss_reg + loss_smooth
 
-        if i % 100 == 0:
-            # error in decoded space (0, 1, 2, ..., N-1) where N is number of instance
-            instance_loss_decoded = label_encoder.error_in_decoded_space(output_encoded_label=result['instance_map'], target_label=target_label)
-            writer.add_scalar('Loss/rgb_MSE', loss_render, i)
-            if use_instance_mask:
-                writer.add_scalar('Loss/instance_loss', instance_loss, i)
-            writer.add_scalar('Loss/total_loss', loss, i)
-            writer.add_scalar('Loss/instance_loss_decoded', instance_loss_decoded, i)
+        if i % args.summary_step == 0:
+            writer.add_scalar('Loss/Total_Loss', total_loss, i)
+            writer.add_scalar('Loss/Loss_render', loss_render, i)
+            writer.add_scalar('Loss/Loss_reg', loss_reg, i)
+            writer.add_scalar('Loss/Loss_entropy', entropy_score, i)
+            writer.add_scalar('Loss/Loss_l1_albedo_mod', l1_albedo_mod, i)
+            writer.add_scalar('Loss/Loss_l1_albedo_res', l1_albedo_res, i)
+            writer.add_scalar('Loss/Loss_l1_indirect_illumination', l1_indir_illum, i)
+            writer.add_scalar('Loss/Loss_smooth', loss_smooth, i)
+            writer.add_scalar('Loss/Loss_smooth_albedo', smooth_prior_albedo, i)
+            writer.add_scalar('Loss/Loss_smooth_indirect', smooth_prior_indirect, i)
 
         total_loss.backward()
         optimizer.step()

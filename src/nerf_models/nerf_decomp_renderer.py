@@ -9,7 +9,7 @@ DEBUG = False
 
 
 def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False,
-				is_instance_label_logit=True, label_encoder=None, init_basecolor=None):
+				is_instance_label_logit=True, label_encoder=None, init_basecolor=None, albedo_mod=None):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
 		raw: [num_rays, num_samples along ray, 4]. Prediction from model.
@@ -27,8 +27,6 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	"""
 	# sigma_th = 0.0
 	# sigma_filter = nn.Threshold(sigma_th, 0)
-
-	# TODO: add albedo_mod
 
 	num_cluster = init_basecolor.shape[0]
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
@@ -54,24 +52,43 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 
 	albedo_res = torch.tanh(raw[..., 1:1 + 3 * num_cluster])  # [N_rays, N_samples, 3 * num_cluster]
 	albedo_res = albedo_res.reshape((*albedo_res.shape[:-1], num_cluster, -1))  # [N_rays, n_samples, num_cluster, 3]
-	albedo = 0.1 * albedo_res + init_basecolor  # [N_rays, n_samples, num_cluster, 3]
-	# TODO: need weight for albedo_res? (albedo_res + init_basecolor is bigger than 1)
+	albedo_mod_act = torch.tanh(albedo_mod)
+	# albedo = init_basecolor + 0.1 * albedo_res + 0.1 * albedo_mod  # [N_rays, n_samples, num_cluster, 3]
+	# albedo = init_basecolor + 0.1 * albedo_res + 0.1 * albedo_mod_act  # [N_rays, n_samples, num_cluster, 3]
+	albedo_base = init_basecolor + 0.1 * albedo_mod_act
+	albedo_base = torch.clamp(albedo_base, min=0, max=1).float()
+	albedo = albedo_base + 0.1 * albedo_res
 	albedo = torch.clamp(albedo, min=0, max=1).float()
+	# TODO: need weight for albedo_res, albedo_mod? (albedo_res + init_basecolor is bigger than 1)
 
 	indirect_illumination_weight = torch.sigmoid(raw[..., 1 + 3 * num_cluster:1 + 4 * num_cluster])  # [N_rays, N_sample, num_cluster]
 	direct_illumination = torch.sigmoid(raw[..., 1 + 4 * num_cluster])  # [N_rays, N_sample,]
+	direct_illumination_extend = direct_illumination.reshape(*direct_illumination.shape, 1)
+	direct_illumination_extend = direct_illumination_extend.expand(*direct_illumination_extend.shape[:-1], 3)
+	direct_illumination_map = torch.sum(weights[..., None] * direct_illumination_extend, -2)
+
 	basecolor_score = torch.sigmoid(raw[..., 2 + 4 * num_cluster:])
 	basecolor_score = F.softmax(basecolor_score, dim=-1).float()  # [N_rays, N_samples, num_cluster]
 
 	expected_albedo = torch.matmul(basecolor_score.reshape((*basecolor_score.shape[:-1], 1, num_cluster)), albedo)
 	expected_albedo = expected_albedo.reshape((*expected_albedo.shape[:2], 3))
+	expected_albedo_map = torch.sum(weights[..., None] * expected_albedo, -2)
 
-	indirect_illumination = torch.matmul(
-		indirect_illumination_weight.reshape((*indirect_illumination_weight.shape[:-1], 1, num_cluster)),
-		albedo
-	)
-	indirect_illumination = indirect_illumination.reshape((*indirect_illumination.shape[:2], 3))  # [N_rays, N_samples, num_cluster]
+	decomp_indirect_illum = indirect_illumination_weight.reshape((*indirect_illumination_weight.shape, 1))
+	decomp_indirect_illum = decomp_indirect_illum.expand(*decomp_indirect_illum.shape[:-1], 3)
+	decomp_indirect_illum = decomp_indirect_illum * albedo_base[None, None, ...]
+	decomp_indirect_illum_map = torch.sum(weights[..., None, None] * decomp_indirect_illum, 1)
+
+	indirect_illumination = torch.sum(decomp_indirect_illum, dim=-2)
+	indirect_illumination_map = torch.sum(weights[..., None] * indirect_illumination, -2)
+
+	# indirect_illumination = torch.matmul(
+	# 	indirect_illumination_weight.reshape((*indirect_illumination_weight.shape[:-1], 1, num_cluster)),
+	# 	albedo_base
+	# )
+	# indirect_illumination = indirect_illumination.reshape((*indirect_illumination.shape[:2], 3))  # [N_rays, N_samples, 3]
 	illumination = indirect_illumination + direct_illumination.reshape((*direct_illumination.shape, 1))  # [N_rays, N_samples, 3]
+	illumination_map = torch.sum(weights[..., None] * illumination, -2)
 
 	color = expected_albedo * illumination  # [N_rays, N_samples, 3]
 	color_map = torch.sum(weights[..., None] * color, -2)  # [N_rays, 3]
@@ -83,7 +100,9 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
 	acc_map = torch.sum(weights, -1)
 
-	return color_map, basecolor_score, albedo, albedo_res, indirect_illumination_weight, disp_map, acc_map, weights, depth_map
+	return color_map, basecolor_score, albedo, albedo_mod_act, albedo_res, indirect_illumination_weight,\
+		disp_map, acc_map, weights, depth_map, expected_albedo_map, direct_illumination_map,\
+		indirect_illumination_map, decomp_indirect_illum_map, illumination_map
 
 
 def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecolor, retraw=False, lindisp=False,
@@ -148,20 +167,21 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 			t_rand = torch.Tensor(t_rand)
 
 		z_vals = lower + (upper - lower) * t_rand
-
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
 
-	#     raw = run_network(pts)
-	raw = network_query_fn(pts, viewdirs, network_fn)  # raw = [sigma, albedo_res, indirect_illumination, direct_illumination, basecolor_score]
-	color_map, basecolor_score, albedo, albedo_res, indirect_illumination_weight, disp_map, acc_map,weights, \
-	depth_map = raw2outputs(
+	raw, raw_albedo_mod = network_query_fn(pts, viewdirs, network_fn)  # raw = [sigma, albedo_res, indirect_illumination, direct_illumination, basecolor_score]
+
+	color_map, basecolor_score, albedo, albedo_mod, albedo_res, indirect_illumination_weight, disp_map, acc_map, weights, \
+	depth_map, albedo_map, direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map,\
+	illumination_map = raw2outputs(
 		raw, z_vals, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
-		is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor
+		is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
+		albedo_mod=raw_albedo_mod
 	)
 
 	if N_importance > 0:
 		color_map_0, disp_map_0, acc_map_0 = color_map, disp_map, acc_map
-		basecolor_score_0, albedo_res_0, albedo_0 = basecolor_score, albedo_res, albedo
+		basecolor_score_0, albedo_res_0, albedo_0, albedo_mod0 = basecolor_score, albedo_res, albedo, albedo_mod
 		indirect_illumination_weight_0 = indirect_illumination_weight
 
 		z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
@@ -173,17 +193,20 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 		run_fn = network_fn if network_fine is None else network_fine
 		#         raw = run_network(pts, fn=run_fn)
-		raw = network_query_fn(pts, viewdirs, run_fn)
-		color_map, basecolor_score, albedo, albedo_res, indirect_illumination_weight, disp_map, acc_map, weights, \
-		depth_map = raw2outputs(
+		raw, raw_albedo_mod = network_query_fn(pts, viewdirs, run_fn)
+		color_map, basecolor_score, albedo, albedo_mod, albedo_res, indirect_illumination_weight, disp_map, acc_map, weights, \
+		depth_map, albedo_map, direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map,\
+		illumination_map = raw2outputs(
 			raw, z_vals, rays_d, run_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
-			is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor
+			is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
+			albedo_mod=raw_albedo_mod
 		)
 
 	ret = {
 		'color_map': color_map,
 		'basecolor_score': basecolor_score,
 		'albedo': albedo,
+		'albedo_mod': albedo_mod,
 		'albedo_res': albedo_res,
 		'indirect_illumination_weight': indirect_illumination_weight,
 		'disp_map': disp_map,
@@ -196,6 +219,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		ret['color_map0'] = color_map_0
 		ret['basecolor_score0'] = basecolor_score_0
 		ret['albedo0'] = albedo_0
+		ret['albedo_mod0'] = albedo_mod0
 		ret['albedo_res0'] = albedo_res_0
 		ret['indirect_illumination_weight0'] = indirect_illumination_weight_0
 		ret['disp0'] = disp_map_0
@@ -282,6 +306,8 @@ def render_decomp(
 	# Render and reshape
 	all_ret = batchify_rays(rays, chunk, label_encoder=label_encoder, **kwargs)
 	for k in all_ret:
+		if k == 'albedo_mod' or 'albedo_mod0':
+			continue
 		k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
 		all_ret[k] = torch.reshape(all_ret[k], k_sh)
 	return all_ret
@@ -296,7 +322,6 @@ def render_decomp(
 def render_decomp_path(
 		render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0, label_encoder=None
 ):
-	raise NotImplementedError
 	H, W, focal = hwf
 
 	if render_factor != 0:

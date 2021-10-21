@@ -59,6 +59,13 @@ def config_parser(default_files=None):
 	                    help='batch size (number of random rays per gradient step)')
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
 
+	parser.add_argument("--beta_sparse_base", type=float, default=1., help="")
+	parser.add_argument("--beta_res", type=float, default=1., help="")
+	parser.add_argument("--beta_mod", type=float, default=1., help="")
+	parser.add_argument("--beta_indirect", type=float, default=1., help="")
+	parser.add_argument("--beta_smooth_albedo", type=float, default=1., help="")
+	parser.add_argument("--beta_smooth_indirect", type=float, default=1., help="")
+
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_decay", type=int, default=250,
 	                    help='exponential learning rate decay (in 1000 steps)')
@@ -129,6 +136,7 @@ def config_parser(default_files=None):
 	                    help='will take every 1/N images as LLFF test set, paper uses 8')
 
 	# logging/saving options
+	parser.add_argument("--summary_step", type=int, default=100)
 	parser.add_argument("--i_print", type=int, default=100,
 	                    help='frequency of console printout and metric loggin')
 	parser.add_argument("--i_img", type=int, default=500, help='frequency of tensorboard image logging')

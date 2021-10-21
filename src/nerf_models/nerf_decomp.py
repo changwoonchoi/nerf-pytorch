@@ -15,7 +15,6 @@ class NeRFDecomp(nn.Module):
             instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True, use_indirect_feature_layer=True,
             use_instance_feature_layer=False
     ):
-        # TODO: add albedo_mod
         """
         NeRFDecomp Model
         params:
@@ -42,6 +41,8 @@ class NeRFDecomp(nn.Module):
         self.use_basecolor_score_feature_layer = use_basecolor_score_feature_layer
         self.use_indirect_feature_layer = use_indirect_feature_layer
         self.use_instance_feature_layer = use_instance_feature_layer
+
+        self.register_parameter(name='albedo_mod', param=torch.nn.Parameter(torch.zeros([self.num_cluster, 3])))
 
         self.positions_linears = nn.ModuleList(
             [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in range(D - 1)]
@@ -85,6 +86,7 @@ class NeRFDecomp(nn.Module):
         return "\n".join(logs)
 
     def forward(self, x):
+        albedo_mod = self.albedo_mod
         input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
         h = input_pts
         for i, l in enumerate(self.positions_linears):
@@ -144,7 +146,8 @@ class NeRFDecomp(nn.Module):
         ret.append(direct_illumination)
         ret.append(basecolor_score)
         ret = torch.cat(ret, dim=-1)
-        return ret
+
+        return ret, albedo_mod
 
 
 def batchify(fn, chunk):
@@ -155,7 +158,12 @@ def batchify(fn, chunk):
         return fn
 
     def ret(inputs):
-        return torch.cat([fn(inputs[i:i + chunk]) for i in range(0, inputs.shape[0], chunk)], dim=0)
+        output = []
+        for i in range(0, inputs.shape[0], chunk):
+            output_chunk, albedo_mod = fn(inputs[i:i + chunk])
+            output.append(output_chunk)
+        output = torch.cat(output, dim=0)
+        return output, albedo_mod
     return ret
 
 
@@ -170,10 +178,9 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024 * 64
     input_dirs_flat = torch.reshape(input_dirs, [-1, input_dirs.shape[-1]])
     embedded_dirs = embeddirs_fn(input_dirs_flat)
     embedded = torch.cat([embedded, embedded_dirs], dim=-1)
-
-    outputs_flat = batchify(fn, netchunk)(embedded)
+    outputs_flat, albedo_mod = batchify(fn, netchunk)(embedded)
     outputs = torch.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])
-    return outputs
+    return outputs, albedo_mod
 
 
 def create_NeRFDecomp(args):
