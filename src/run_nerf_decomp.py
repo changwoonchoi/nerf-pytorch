@@ -182,6 +182,7 @@ def train():
         loss_render = loss_render + instance_loss_weight * instance_loss
 
         # 2) regularization loss
+        # TODO: sigma weighted loss, pretrain sigma?
         basecolor_score = result['basecolor_score']
         entropy_score = Categorical(probs=basecolor_score).entropy()
         entropy_score = entropy_score.sum() / torch.numel(entropy_score)
@@ -248,14 +249,11 @@ def train():
         total_loss.backward()
         optimizer.step()
 
-        # NOTE: IMPORTANT!
-        ###   update learning rate   ###
         decay_rate = 0.1
         decay_steps = args.lrate_decay * 1000
         new_lrate = args.lrate * (decay_rate ** (global_step / decay_steps))
         for param_group in optimizer.param_groups:
             param_group['lr'] = new_lrate
-        ################################
 
         # Export weight
         if i % args.i_weights == 0:

@@ -228,11 +228,12 @@ def train():
         loss = img_loss + alpha * instance_loss
         if i % 100 == 0:
             # error in decoded space (0, 1, 2, ..., N-1) where N is number of instance
-            instance_loss_decoded = label_encoder.error_in_decoded_space(output_encoded_label=result['instance_map'], target_label=target_label)
+            if use_instance_mask:
+                instance_loss_decoded = label_encoder.error_in_decoded_space(output_encoded_label=result['instance_map'], target_label=target_label)
+                writer.add_scalar('Loss/instance_loss_decoded', instance_loss_decoded, i)
+                writer.add_scalar('Loss/instance_loss', instance_loss, i)
             writer.add_scalar('Loss/rgb_MSE', img_loss, i)
-            writer.add_scalar('Loss/instance_loss', instance_loss, i)
             writer.add_scalar('Loss/total_loss', loss, i)
-            writer.add_scalar('Loss/instance_loss_decoded', instance_loss_decoded, i)
 
         loss.backward()
         optimizer.step()
