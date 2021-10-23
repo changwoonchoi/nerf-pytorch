@@ -182,36 +182,12 @@ def train():
         loss_render = loss_render + instance_loss_weight * instance_loss
 
         # 2) regularization loss
-        # TODO: sigma weighted loss, pretrain sigma?
-        basecolor_score = result['basecolor_score']
-        entropy_score = Categorical(probs=basecolor_score).entropy()
-        entropy_score = entropy_score.sum() / torch.numel(entropy_score)
-
-        if 'basecolor_score0' in result:
-            basecolor_score0 = result['basecolor_score0']
-            entropy_score0 = Categorical(probs=basecolor_score0).entropy()
-            entropy_score0 = entropy_score0.sum() / torch.numel(entropy_score0)
-            entropy_score = entropy_score + entropy_score0
-
-        albedo_res = result['albedo_res']
-        l1_albedo_res = torch.linalg.norm(albedo_res, ord=1, dim=-1)  # L1 norm of albedo residue
-        l1_albedo_res = l1_albedo_res.sum() / torch.numel(l1_albedo_res)
-
-        if 'albedo_res0' in result:
-            albedo_res0 = result['albedo_res0']
-            l1_albedo_res0 = torch.linalg.norm(albedo_res0, ord=1, dim=-1)
-            l1_albedo_res0 = l1_albedo_res0.sum() / torch.numel(l1_albedo_res0)
-            l1_albedo_res = l1_albedo_res + l1_albedo_res0
-
-        albedo_mod = result['albedo_mod']
-        l1_albedo_mod = torch.linalg.norm(albedo_mod, ord=1, dim=-1)
-        l1_albedo_mod = l1_albedo_mod.sum() / torch.numel(l1_albedo_mod)
-
-        if 'albedo_mod0' in result:
-            albedo_mod0 = result['albedo_mod0']
-            l1_albedo_mod0 = torch.linalg.norm(albedo_mod0, ord=1, dim=-1)
-            l1_albedo_mod0 = l1_albedo_mod0.sum() / torch.numel(l1_albedo_mod0)
-            l1_albedo_mod = l1_albedo_mod + l1_albedo_mod0
+        albedo = result['albedo']  # (N_rays, N_samples + N_importance, 3)
+        log_albedo = torch.log(albedo)
+        log_init_basecolor = torch.log(dataset.init_basecolor)
+        diff_albedo_cluster = log_albedo[..., None, :] - log_init_basecolor[None, None, ...]  # (N_rays, N_samples, n_cluster, 3)
+        diff_albedo_cluster = torch.linalg.norm(diff_albedo_cluster, dim=-1).min(dim=-1).values
+        loss_albedo_cluster = diff_albedo_cluster.sum() / torch.numel(diff_albedo_cluster)
 
         indirect_illumination_weight = result['indirect_illumination_weight']
         l1_indir_illum = torch.linalg.norm(indirect_illumination_weight, ord=1, dim=-1)
@@ -222,8 +198,8 @@ def train():
             l1_indir_illum0 = torch.linalg.norm(indirect_illumination_weight0, ord=1, dim=-1)
             l1_indir_illum0 = l1_indir_illum0.sum() / torch.numel(l1_indir_illum0)
             l1_indir_illum = l1_indir_illum + l1_indir_illum0
-        loss_reg = args.beta_sparse_base * entropy_score + args.beta_res * l1_albedo_res + \
-                   args.beta_indirect * l1_indir_illum + args.beta_mod * l1_albedo_mod
+
+        loss_reg = args.beta_albedo_cluster * loss_albedo_cluster + args.beta_indirect_sparse * l1_indir_illum
 
         # 3) smooth prior
         # TODO: implement smooth prior
@@ -232,19 +208,14 @@ def train():
 
         loss_smooth = args.beta_smooth_albedo * smooth_prior_albedo + args.beta_smooth_indirect * smooth_prior_indirect
 
-        total_loss = loss_render + loss_reg + loss_smooth
+        total_loss = args.beta_render * loss_render + loss_reg + loss_smooth
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
-            writer.add_scalar('Loss/Loss_render', loss_render, i)
+            writer.add_scalar('Loss/Loss_render', args.beta_render * loss_render, i)
             writer.add_scalar('Loss/Loss_reg', loss_reg, i)
-            writer.add_scalar('Loss/Loss_entropy', args.beta_sparse_base * entropy_score, i)
-            writer.add_scalar('Loss/Loss_l1_albedo_mod', args.beta_mod * l1_albedo_mod, i)
-            writer.add_scalar('Loss/Loss_l1_albedo_res', args.beta_res * l1_albedo_res, i)
-            writer.add_scalar('Loss/Loss_l1_indirect_illumination', args.beta_indirect * l1_indir_illum, i)
-            writer.add_scalar('Loss/Loss_smooth', loss_smooth, i)
-            writer.add_scalar('Loss/Loss_smooth_albedo', smooth_prior_albedo, i)
-            writer.add_scalar('Loss/Loss_smooth_indirect', smooth_prior_indirect, i)
+            writer.add_scalar('Loss/Loss_reg/albedo_cluster', loss_albedo_cluster * args.beta_albedo_cluster, i)
+            writer.add_scalar('Loss/Loss_reg/indirect_sparsity', args.beta_indirect_sparse * l1_indir_illum, i)
 
         total_loss.backward()
         optimizer.step()
@@ -277,10 +248,13 @@ def train():
                     poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
                     render_factor=4, init_basecolor=dataset.init_basecolor
                 )
-                # TODO: add image summary for albedo, illumination, ...
-                writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
                 disps = np.expand_dims(disps, -1)
-                writer.add_images('test/inferred_disps', disps.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
 
             logger_export.info('Saved test set')
 
