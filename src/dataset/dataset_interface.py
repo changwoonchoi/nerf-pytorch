@@ -37,6 +37,11 @@ class NerfDataset(Dataset, ABC):
 
 		self.load_instance_label_mask = False
 
+		self.num_init_cluster = 0
+		self.cluster_th = 0
+		self.init_basecolor = None
+		self.num_cluster = 0
+
 	def get_focal_matrix(self):
 		K = np.array([
 			[self.focal, 0, 0.5 * self.width],
@@ -70,6 +75,8 @@ class NerfDataset(Dataset, ABC):
 	def to_tensor(self, device):
 		self.images = torch.stack(self.images, 0).to(device)
 		self.poses = torch.stack(self.poses, 0).to(device)
+		if self.init_basecolor is not None:
+			self.init_basecolor = torch.from_numpy(self.init_basecolor).to(device)
 		if self.load_instance_label_mask:
 			self.masks = torch.stack(self.masks, 0).to(device)
 
@@ -85,6 +92,7 @@ class NerfDataset(Dataset, ABC):
 		logs += ["\t- size : %d x %d" % (self.width, self.height)]
 		logs += ["\t- image number : %d" % len(self)]
 		logs += ["\t- instance number : %d" % self.instance_num]
+		logs += ["\t= cluster number : %d" % self.num_cluster]
 		return "\n".join(logs)
 
 	def __len__(self):
@@ -92,25 +100,11 @@ class NerfDataset(Dataset, ABC):
 
 
 def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
-	from dataset.dataset_clevr import ClevrDataset
+	from dataset.dataset_clevr import ClevrDataset, ClevrDecompDataset
 	from dataset.dataset_mitsuba import MitsubaDataset
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
 	elif dataset_type == "mitsuba":
 		return MitsubaDataset(basedir, **kwargs)
-
-
-def load_dataset_split(args, split="train", skip=1):
-	# create dataset config
-	configs = {
-		"sample_length": args.sample_length,
-		"image_scale": args.image_scale,
-		"skip": skip
-	}
-	target_dataset = load_dataset(args.dataset_type, args.datadir, split=split, **configs)
-	target_dataset.load_instance_label_mask = args.instance_mask
-
-	# real data load using multiprocessing(torch DataLoader) --> load all at once
-	# TODO : if dataset is too large, it may not be loaded at once.
-	target_dataset.load_all_data(num_of_workers=10)
-	return target_dataset
+	elif dataset_type == "clevr_decomp":
+		return ClevrDecompDataset(basedir, **kwargs)

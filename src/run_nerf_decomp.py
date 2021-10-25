@@ -1,23 +1,20 @@
 import numpy as np
 import torch
-
-#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-#os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+from torch.distributions.categorical import Categorical
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
 DEBUG = False
 
 from config_parser import export_config
-from nerf_models.nerf_renderer import render, render_path
-from nerf_models.nerf import create_nerf
+from nerf_models.nerf_decomp_renderer import render_decomp, render_decomp_path
+from nerf_models.nerf_decomp import create_NeRFDecomp
 
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 from utils.label_utils import *
 from config_parser import recursive_config_parser
 from dataset.dataset_interface import load_dataset
-from utils.mesh_utils import *
 from miscellaneous.test_dataset_speed import *
 
 from utils.generator_utils import *
@@ -25,59 +22,7 @@ from utils.timing_utils import *
 
 
 def test():
-    parser = recursive_config_parser()
-    args = parser.parse_args()
-    args.device = device
-
-    dataset = load_dataset(args.dataset_type, args.datadir, split='test', skip=args.testskip, sample_length=args.sample_length)
-    dataset.load_instance_label_mask = args.instance_mask
-    dataset.load_all_data(num_of_workers=8)
-
-    hwf = [dataset.height, dataset.width, dataset.focal]
-    K = dataset.get_focal_matrix()
-
-    torch.set_default_tensor_type('torch.cuda.FloatTensor')
-    dataset.to_tensor(args.device)
-
-    basedir = args.basedir
-    expname = args.expname
-
-    # writer = SummaryWriter(log_dir=os.path.join(basedir, expname))
-
-    if args.instance_mask:
-        label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding, args.instance_label_dimension)
-        args.instance_label_dimension = label_encoder.get_dimension()
-    else:
-        args.instance_label_dimension = 0
-
-    _, render_kwargs_test, start, _, _ = create_nerf(args)
-    bds_dict = dataset.get_near_far_plane()
-    render_kwargs_test.update(bds_dict)
-
-    if args.instance_mask:
-        is_instance_label_logit = isinstance(label_encoder, OneHotLabelEncoder) and (args.CE_weight_type != "mse")
-        render_kwargs_test["is_instance_label_logit"] = is_instance_label_logit
-    testsavedir = os.path.join(basedir, expname, 'render_only_{:06d}'.format(start))
-    os.makedirs(testsavedir, exist_ok=True)
-
-    with torch.no_grad():
-        _, _, _, _ = render_path(
-            torch.Tensor(dataset.poses).to(device), hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-            label_encoder=label_encoder, render_factor=1
-        )
-
-    if args.extract_mesh:
-        ###################
-        # TODO: move parameter to config file
-        N_grid = 256
-        threshold = 0.001
-        bound = 4.5
-        ###################
-        net_query_fn = render_kwargs_test['network_query_fn']
-        net_fn = render_kwargs_test['network_fine']
-        sigma = query(N_grid, bound, args.chunk, net_query_fn, net_fn)
-        mesh = march_cubes(sigma.cpu().numpy(), grid_num=N_grid, th=threshold)
-        mesh.export(os.path.join(testsavedir, 'mesh_bound={}_th={}.obj'.format(bound, threshold)))
+    raise NotImplementedError
 
 
 def train():
@@ -112,8 +57,15 @@ def train():
 
         # load train and validation dataset
         dataset = load_dataset_split("train", sample_length=args.sample_length, image_scale=args.image_scale)
-        dataset_val = load_dataset_split("val", skip=5, sample_length=args.sample_length)
+        dataset_val = load_dataset_split("test", skip=10, sample_length=args.sample_length)
 
+        os.makedirs(os.path.join(args.basedir, args.expname), exist_ok=True)
+        if os.path.isfile(os.path.join(args.basedir, args.expname, 'init_basecolor.txt')):
+            dataset.init_basecolor = np.loadtxt(os.path.join(args.basedir, args.expname, 'init_basecolor.txt'))
+        else:
+            np.savetxt(os.path.join(args.basedir, args.expname, 'init_basecolor.txt'), dataset.init_basecolor)
+        init_basecolor = dataset.init_basecolor
+        dataset_val.init_basecolor = init_basecolor
         hwf = [dataset.height, dataset.width, dataset.focal]
 
         # move data to GPU side
@@ -132,7 +84,7 @@ def train():
         writer = SummaryWriter(log_dir=os.path.join(basedir, expname))
 
     # (3) Create nerf model
-    with time_measure("[3] NeRF load"):
+    with time_measure("[3] NeRFDecomp load"):
         # set instance label dimension
         label_encoder = None
         if use_instance_mask:
@@ -142,7 +94,8 @@ def train():
             args.instance_label_dimension = 0
 
         # create nerf model
-        render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
+        args.num_cluster = dataset.num_cluster
+        render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_NeRFDecomp(args)
         global_step = start
 
         # update near / far plane
@@ -191,14 +144,19 @@ def train():
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
 
         #####  Core optimization loop  #####
-        result = render(dataset.height, dataset.width, K,
-                                                  chunk=args.chunk, rays=batch_rays,
-                                                  verbose=i < 10, retraw=True,
-                                                  **render_kwargs_train)
+
+        # 1. render sample
+        result = render_decomp(
+            dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True,
+            init_basecolor=dataset.init_basecolor, **render_kwargs_train
+        )
 
         optimizer.zero_grad()
-        rgb = result['rgb_map']
-        img_loss = img2mse(rgb, target_rgb)
+
+        # 2. calculate loss
+        # 1) rendering loss
+        rgb = result['color_map']
+        loss_render = img2mse(rgb, target_rgb)
         if use_instance_mask:
             instance_loss = label_encoder.error(
                 output_encoded_label=result['instance_map'],
@@ -208,13 +166,9 @@ def train():
         else:
             instance_loss = 0
 
-        trans = result['raw'][..., -1]
-        psnr = mse2psnr(img_loss)
-
-        if 'rgb0' in result:
-            img_loss0 = img2mse(result['rgb0'], target_rgb)
-            img_loss = img_loss + img_loss0
-            psnr0 = mse2psnr(img_loss0)
+        if 'color_map0' in result:
+            loss_render0 = img2mse(result['color_map0'], target_rgb)
+            loss_render = loss_render + loss_render0
 
         if 'instance0' in result and use_instance_mask:
             instance_loss0 = label_encoder.error(
@@ -224,28 +178,53 @@ def train():
             )
             instance_loss = instance_loss + instance_loss0
 
-        alpha = args.instance_loss_weight
-        loss = img_loss + alpha * instance_loss
-        if i % 100 == 0:
-            # error in decoded space (0, 1, 2, ..., N-1) where N is number of instance
-            if use_instance_mask:
-                instance_loss_decoded = label_encoder.error_in_decoded_space(output_encoded_label=result['instance_map'], target_label=target_label)
-                writer.add_scalar('Loss/instance_loss_decoded', instance_loss_decoded, i)
-                writer.add_scalar('Loss/instance_loss', instance_loss, i)
-            writer.add_scalar('Loss/rgb_MSE', img_loss, i)
-            writer.add_scalar('Loss/total_loss', loss, i)
+        instance_loss_weight = args.instance_loss_weight
+        loss_render = loss_render + instance_loss_weight * instance_loss
 
-        loss.backward()
+        # 2) regularization loss
+        albedo = result['albedo']  # (N_rays, N_samples + N_importance, 3)
+        log_albedo = torch.log(albedo)
+        log_init_basecolor = torch.log(dataset.init_basecolor)
+        diff_albedo_cluster = log_albedo[..., None, :] - log_init_basecolor[None, None, ...]  # (N_rays, N_samples, n_cluster, 3)
+        diff_albedo_cluster = torch.linalg.norm(diff_albedo_cluster, dim=-1).min(dim=-1).values
+        loss_albedo_cluster = diff_albedo_cluster.sum() / torch.numel(diff_albedo_cluster)
+
+        indirect_illumination_weight = result['indirect_illumination_weight']
+        l1_indir_illum = torch.linalg.norm(indirect_illumination_weight, ord=1, dim=-1)
+        l1_indir_illum = l1_indir_illum.sum() / torch.numel(l1_indir_illum)
+
+        if 'indirect_illumination_weight0' in result:
+            indirect_illumination_weight0 = result['indirect_illumination_weight0']
+            l1_indir_illum0 = torch.linalg.norm(indirect_illumination_weight0, ord=1, dim=-1)
+            l1_indir_illum0 = l1_indir_illum0.sum() / torch.numel(l1_indir_illum0)
+            l1_indir_illum = l1_indir_illum + l1_indir_illum0
+
+        loss_reg = args.beta_albedo_cluster * loss_albedo_cluster + args.beta_indirect_sparse * l1_indir_illum
+
+        # 3) smooth prior
+        # TODO: implement smooth prior
+        smooth_prior_albedo = 0
+        smooth_prior_indirect = 0
+
+        loss_smooth = args.beta_smooth_albedo * smooth_prior_albedo + args.beta_smooth_indirect * smooth_prior_indirect
+
+        total_loss = args.beta_render * loss_render + loss_reg + loss_smooth
+
+        if i % args.summary_step == 0:
+            writer.add_scalar('Loss/Total_Loss', total_loss, i)
+            writer.add_scalar('Loss/Loss_render', args.beta_render * loss_render, i)
+            writer.add_scalar('Loss/Loss_reg', loss_reg, i)
+            writer.add_scalar('Loss/Loss_reg/albedo_cluster', loss_albedo_cluster * args.beta_albedo_cluster, i)
+            writer.add_scalar('Loss/Loss_reg/indirect_sparsity', args.beta_indirect_sparse * l1_indir_illum, i)
+
+        total_loss.backward()
         optimizer.step()
 
-        # NOTE: IMPORTANT!
-        ###   update learning rate   ###
         decay_rate = 0.1
         decay_steps = args.lrate_decay * 1000
         new_lrate = args.lrate * (decay_rate ** (global_step / decay_steps))
         for param_group in optimizer.param_groups:
             param_group['lr'] = new_lrate
-        ################################
 
         # Export weight
         if i % args.i_weights == 0:
@@ -265,16 +244,17 @@ def train():
 
             with torch.no_grad():
                 poses = torch.Tensor(dataset_val.poses).to(device)
-                rgbs, disps, instances, instance_colors = render_path(poses,
-                                                                      hwf, K, args.chunk, render_kwargs_test,
-                                                                      gt_imgs=None, savedir=testsavedir,
-                                                                      label_encoder=label_encoder, render_factor=4)
-                writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
+                rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps = render_decomp_path(
+                    poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+                    render_factor=4, init_basecolor=dataset.init_basecolor
+                )
+                writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
                 disps = np.expand_dims(disps, -1)
-                writer.add_images('test/inferred_disps', disps.transpose((0, 3, 1, 2)), i)
-
-                if use_instance_mask:
-                    writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
+                writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
 
             logger_export.info('Saved test set')
 

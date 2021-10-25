@@ -73,10 +73,8 @@ class OneHotLabelEncoder(LabelEncoder):
 
     def decode(self, encoded_label, th=0.):
         if th > 0:
-            m = nn.Softmax(dim=-1)
-            label_prob = m(encoded_label)
-            label_prob_max = torch.amax(label_prob, dim=-1)
-            void_label = label_prob_max < th
+            label_score = torch.max(torch.sigmoid(encoded_label), dim=-1).values
+            void_label = label_score < th
             decoded_label = torch.argmax(encoded_label, dim=-1)
             decoded_label[void_label] = encoded_label.shape[-1]
             return decoded_label
@@ -137,12 +135,9 @@ class ColoredLabelEncoder(LabelEncoder):
         return 3
 
     def decode(self, encoded_label, th=0.):
-        encoded_label_unsqueezed = torch.unsqueeze(encoded_label, -2)
-        encoded_label_unsqueezed_repeated = torch.cat(self.label_number * [encoded_label_unsqueezed], dim=-2)
-        diff = encoded_label_unsqueezed_repeated - (self.label_color_list.float().cuda()) / 255.0
-        encoded_label_distance = torch.linalg.norm(diff, dim=-1)
-        closest_index = torch.argmin(encoded_label_distance, dim=-1)
-        return closest_index
+        # this is useless
+        # let's use random-3D
+        return
 
 
 class RandomLabelEncoder(LabelEncoder):

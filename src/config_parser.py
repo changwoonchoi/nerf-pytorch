@@ -47,6 +47,8 @@ def config_parser(default_files=None):
 	                    help="how to encode instance label. one of single, one_hot, label_color")
 	parser.add_argument("--instance_label_dimension", type=int, default=0, help="instance mask dimension")
 	parser.add_argument("--use_instance_feature_layer", action="store_true", help='NeRF with instance_feature_layer(Zhi, 2021)')
+	parser.add_argument("--use_basecolor_score_feature_layer", action="store_true", help='NeRF with basecolor score feature layer')
+	parser.add_argument("--use_indirect_feature_layer", action="store_true", help='NeRF with indirect_feature_layer(Zhi, 2021)')
 
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
 	parser.add_argument("--netdepth", type=int, default=8, help='layers in network')
@@ -56,6 +58,16 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_rand", type=int, default=32 * 32 * 4,
 	                    help='batch size (number of random rays per gradient step)')
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
+
+	parser.add_argument("--beta_sparse_base", type=float, default=1., help="")
+	parser.add_argument("--beta_res", type=float, default=1., help="")
+	parser.add_argument("--beta_mod", type=float, default=1., help="")
+	parser.add_argument("--beta_indirect", type=float, default=1., help="")
+	parser.add_argument("--beta_smooth_albedo", type=float, default=1., help="")
+	parser.add_argument("--beta_smooth_indirect", type=float, default=1., help="")
+	parser.add_argument("--beta_render", type=float, default=1.)
+	parser.add_argument("--beta_albedo_cluster", type=float, default=1.)
+	parser.add_argument("--beta_indirect_sparse", type=float, default=1.)
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_decay", type=int, default=250,
@@ -132,6 +144,7 @@ def config_parser(default_files=None):
 	                    help='will take every 1/N images as LLFF test set, paper uses 8')
 
 	# logging/saving options
+	parser.add_argument("--summary_step", type=int, default=100)
 	parser.add_argument("--i_print", type=int, default=100,
 	                    help='frequency of console printout and metric loggin')
 	parser.add_argument("--i_img", type=int, default=500, help='frequency of tensorboard image logging')
