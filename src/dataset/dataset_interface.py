@@ -5,6 +5,8 @@ from torch.utils.data import Dataset, DataLoader
 from abc import ABC
 from utils.logging_utils import load_logger
 import torch
+from utils.color_utils import get_basecolor
+from torchvision import transforms
 
 
 class NerfDataset(Dataset, ABC):
@@ -37,7 +39,10 @@ class NerfDataset(Dataset, ABC):
 
 		self.load_instance_label_mask = False
 
-		self.num_init_cluster = 0
+		# base color clustering related
+		self.cluster_image_resize = 0.5
+		self.cluster_image_number = 10
+		self.num_init_cluster = 10
 		self.cluster_th = 0
 		self.init_basecolor = None
 		self.num_cluster = 0
@@ -98,13 +103,46 @@ class NerfDataset(Dataset, ABC):
 	def __len__(self):
 		pass
 
+	def get_base_color(
+			self,
+			cluster_image_number=50,
+			cluster_image_resize=0.5,
+			cluster_init_number=20,
+			cluster_merge_threshold=0.1,
+			cluster_number_lower_bound=8,
+			visualize=False
+	):
+		if cluster_image_number == -1:
+			random_indices = np.arange(len(self.images))
+		else:
+			random_indices = np.random.permutation(len(self.images))[0:cluster_image_number]
+		new_width = int(self.width * cluster_image_resize)
+		new_height = int(self.height * cluster_image_resize)
+		p = transforms.Compose([transforms.Resize((new_height, new_width))])
+		sampled_imgs = []
+		for i in random_indices:
+			sampled_imgs.append(self.images[i])
+		sampled_imgs = torch.stack(sampled_imgs, 0)
+		sampled_imgs = sampled_imgs.permute((0, 3, 1, 2))
+		sampled_imgs = p(sampled_imgs)
+		sampled_imgs = sampled_imgs.permute((0, 2, 3, 1))
+
+		self.init_basecolor = get_basecolor(
+			img=sampled_imgs,
+			n_clusters=cluster_init_number,
+			cluster_th=cluster_merge_threshold,
+			n_clusters_minimum=cluster_number_lower_bound,
+			visualize=visualize,
+		)
+		self.num_cluster = self.init_basecolor.shape[0]
+
 
 def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
-	from dataset.dataset_clevr import ClevrDataset, ClevrDecompDataset
+	from dataset.dataset_clevr import ClevrDataset
 	from dataset.dataset_mitsuba import MitsubaDataset
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
 	elif dataset_type == "mitsuba":
 		return MitsubaDataset(basedir, **kwargs)
-	elif dataset_type == "clevr_decomp":
-		return ClevrDecompDataset(basedir, **kwargs)
+	#elif dataset_type == "clevr_decomp":
+	#	return ClevrDecompDataset(basedir, **kwargs)

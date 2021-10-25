@@ -120,8 +120,15 @@ def config_parser(default_files=None):
 	parser.add_argument("--testskip", type=int, default=8,
 	                    help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
 
+	# clustering options
+	parser.add_argument("--cluster_image_number", type=int, default=-1, help='how many images will be used for clustering? -1 to use all')
+	parser.add_argument("--cluster_image_resize", type=float, default=0.5, help='resize image for clustering?')
+	parser.add_argument("--cluster_init_number", type=int, default=8, help='initial cluster size')
+	parser.add_argument("--cluster_number_lower_bound", type=int, default=4, help='minimum number of cluster')
+	parser.add_argument("--cluster_merge_threshold", type=float, default=0.1, help='cluster merge threshold')
+
 	# clevr options
-	parser.add_argument("--sample_length", type=float, default=8, help='sampling length along ray')
+	parser.add_argument("--cluster_image_number", type=float, default=8, help='sampling length along ray')
 
 	## deepvoxels flags
 	parser.add_argument("--shape", type=str, default='greek',

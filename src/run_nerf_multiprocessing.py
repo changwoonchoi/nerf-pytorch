@@ -34,7 +34,7 @@ def run_single_process(gpu_id, queue, lock):
 			else:
 				config_file = queue.get()
 
-		command = "python run_nerf.py --config %s" % config_file
+		command = "python run_nerf_decomp.py --config %s" % config_file
 
 		print("----------------GPU ID-----------", gpu_id)
 		print(command)

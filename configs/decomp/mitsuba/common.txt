@@ -1,0 +1,49 @@
+basedir = ../logs/mitsuba
+dataset_type = mitsuba
+
+no_batching = True
+lindisp = True
+
+use_viewdirs = True
+lrate_decay = 500
+
+N_samples = 64
+N_importance = 128
+N_rand = 1024
+N_iter = 100000
+
+precrop_iters = 0
+precrop_frac = 0.5
+
+image_scale = 0.5
+#instance_mask
+#instance_label_encoding = scalar
+#instance_loss_weight = 0.5
+
+
+i_video = 10000000000000
+i_testset = 2000
+testskip = 32
+
+render_decompose = False
+
+#instance_label_encoding = one_hot
+#CE_weight_type = equal
+#instance_loss_weight = 0.04
+#use_instance_feature_layer
+
+sample_length = 6
+
+beta_albedo_cluster = 40
+beta_indirect_sparse = 1
+beta_render = 1000
+
+beta_smooth_albedo = 1
+beta_smooth_indirect = 1
+
+# clustering related
+cluster_image_number = -1
+cluster_image_resize = 0.5
+cluster_init_number = 15
+cluster_number_lower_bound = 7
+cluster_merge_threshold = 0.1

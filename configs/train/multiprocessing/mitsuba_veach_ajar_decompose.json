@@ -1,6 +1,7 @@
 {
-  "available_gpus" : [1,2,3,4],
+  "available_gpus" : [0, 2],
   "config_lists":[
-    "../configs/mitsuba/veach-ajar/onehot_equal_decompose"
+    "../configs/train/mitsuba/veach-ajar/onehot_equal.txt",
+    "../configs/train/mitsuba/veach-ajar/color.txt"
   ]
 }

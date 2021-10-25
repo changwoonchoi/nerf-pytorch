@@ -1,0 +1,4 @@
+include=common.txt
+expname = onehot_equal_decompose/instance_th_0.9
+instance_th=0.9
+
