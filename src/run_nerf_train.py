@@ -28,7 +28,7 @@ def train(args):
     with time_measure("[1] Data load"):
         # load train and validation dataset
         dataset = load_dataset_split(args, "train")
-        dataset_val = load_dataset_split(args, "val", skip=25)
+        dataset_val = load_dataset_split(args, "val", skip=5)
 
         hwf = [dataset.height, dataset.width, dataset.focal]
 
@@ -98,25 +98,6 @@ def train(args):
     K = dataset.get_focal_matrix()
     N_iters = args.N_iter + 1
 
-    if args.render_only:
-        testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(0))
-        os.makedirs(testsavedir, exist_ok=True)
-
-        with torch.no_grad():
-            poses = torch.Tensor(dataset_val.poses).to(device)
-            rgbs, disps, instances, instance_colors = render_path(poses,
-                                                                  hwf, K, args.chunk, render_kwargs_test,
-                                                                  gt_imgs=None, savedir=testsavedir,
-                                                                  label_encoder=label_encoder, render_factor=1)
-            writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), 0)
-            disps = np.expand_dims(disps, -1)
-            writer.add_images('test/inferred_disps', disps.transpose((0, 3, 1, 2)), 0)
-
-            if use_instance_mask:
-                writer.add_images('test/inferred_mask', instance_colors.transpose((0, 3, 1, 2)), 0)
-
-        logger_export.info('Saved test set')
-        return
 
     # export ground truth image
     img_gt = dataset_val.images.permute((0, 3, 1, 2))
@@ -208,7 +189,7 @@ def train(args):
                 rgbs, disps, instances, instance_colors = render_path(poses,
                                                                       hwf, K, args.chunk, render_kwargs_test,
                                                                       gt_imgs=None, savedir=testsavedir,
-                                                                      label_encoder=label_encoder, render_factor=4)
+                                                                      label_encoder=label_encoder, render_factor=2)
                 writer.add_images('test/inferred_rgb', rgbs.transpose((0, 3, 1, 2)), i)
                 disps = np.expand_dims(disps, -1)
                 writer.add_images('test/inferred_disps', disps.transpose((0, 3, 1, 2)), i)
