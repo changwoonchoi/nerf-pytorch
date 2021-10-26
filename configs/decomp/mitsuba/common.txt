@@ -22,7 +22,7 @@ image_scale = 0.5
 
 
 i_video = 10000000000000
-i_testset = 2000
+i_testset = 10000
 testskip = 32
 
 render_decompose = False

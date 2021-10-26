@@ -25,6 +25,11 @@ def test():
     raise NotImplementedError
 
 
+def test_parser():
+    parser = recursive_config_parser()
+    args = parser.parse_args()
+
+
 def test_base_color():
     parser = recursive_config_parser()
     args = parser.parse_args()
@@ -296,3 +301,4 @@ def train():
 if __name__ == '__main__':
     train()
     #test_base_color()
+    #test_parser()

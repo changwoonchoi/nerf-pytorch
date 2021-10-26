@@ -20,8 +20,8 @@ def recursive_config_parser():
 	parser = config_parser()
 	args = parser.parse_args()
 	include_files = load_all_include(args.config)
+
 	include_files = list(reversed(include_files))
-	print("Include files :", include_files)
 	parser = config_parser(default_files=include_files)
 	return parser
 
@@ -128,7 +128,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--cluster_merge_threshold", type=float, default=0.1, help='cluster merge threshold')
 
 	# clevr options
-	parser.add_argument("--cluster_image_number", type=float, default=8, help='sampling length along ray')
+	parser.add_argument("--sample_length", type=float, default=8, help='sampling length along ray')
 
 	## deepvoxels flags
 	parser.add_argument("--shape", type=str, default='greek',

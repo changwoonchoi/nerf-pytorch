@@ -108,7 +108,12 @@ class NeRFDecomp(nn.Module):
 
         feature = self.feature_linear(h)
         h = torch.cat([feature, input_views], dim=-1)
+        
+        for i, l in enumerate(self.views_linears):
+            h = self.views_linears[i](h)
+            h = F.relu(h)
 
+        # (1)direct illumination
         indirect_illuminations = {}
         for k in range(self.num_cluster):
             if self.use_indirect_feature_layer:
@@ -122,11 +127,8 @@ class NeRFDecomp(nn.Module):
                     self, 'indirect_linear{}'.format(k)
                 )(h))
 
-        for i, l in enumerate(self.views_linears):
-            h = self.views_linears[i](h)
-            h = F.relu(h)
+        direct_illumination = F.relu(self.direct_linear(h))
 
-        direct_illumination = self.direct_linear(h)
 
         ret = [sigma, albedo]
         for k in range(self.num_cluster):
