@@ -12,7 +12,7 @@ import os
 class NeRFDecomp(nn.Module):
     def __init__(
             self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
-            instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True, use_indirect_feature_layer=True,
+            instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True, use_indirect_feature_layer=False,
             use_instance_feature_layer=False
     ):
         """
