@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba/kitchen
+basedir = ../logs/mitsuba/kitchen

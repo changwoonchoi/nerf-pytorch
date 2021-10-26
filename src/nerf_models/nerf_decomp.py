@@ -12,7 +12,8 @@ import os
 class NeRFDecomp(nn.Module):
     def __init__(
             self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
-            instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True, use_indirect_feature_layer=False,
+            instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True,
+            use_illumination_feature_layer=False,
             use_instance_feature_layer=False
     ):
         """
@@ -27,7 +28,7 @@ class NeRFDecomp(nn.Module):
             use_instance_label: use instance label
             instance_label_dimension: dimension of instance_label
             K: number of base colors
-            use_instance_feature_layer: use additional layer following Shuaifeng Zhi et al.
+            use_illumination_feature_layer: use additional layer following Shuaifeng Zhi et al.
         """
         super().__init__()
         self.D = D
@@ -39,14 +40,14 @@ class NeRFDecomp(nn.Module):
         self.instance_label_dimension = instance_label_dimension
         self.num_cluster = num_cluster
         self.use_basecolor_score_feature_layer = use_basecolor_score_feature_layer
-        self.use_indirect_feature_layer = use_indirect_feature_layer
+        self.use_illumination_feature_layer = use_illumination_feature_layer
         self.use_instance_feature_layer = use_instance_feature_layer
 
         self.positions_linears = nn.ModuleList(
             [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in range(D - 1)]
         )
 
-        self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W // 2)])
+        self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W)])
 
         self.feature_linear = nn.Linear(W, W)
         self.sigma_linear = nn.Linear(W, 1)
@@ -54,24 +55,19 @@ class NeRFDecomp(nn.Module):
         self.albedo_feature_linear = nn.Linear(W, W // 2)
         self.albedo_linear = nn.Linear(W // 2, 3)
 
-        if self.use_instance_label:
-            raise NotImplementedError
+        if use_illumination_feature_layer:
+            self.direct_feature_linear = nn.Linear(W, W // 2)
+            self.direct_linear = nn.Linear(W // 2, 1)
         else:
-            if self.use_basecolor_score_feature_layer:
-                self.basecolor_score_feature_linear = nn.Linear(W, W // 2)
-                self.basecolor_score_linear = nn.Linear(W // 2, num_cluster)
-            else:
-                self.basecolor_score_feature_linear = None
-                self.basecolor_score_linear = nn.Linear(W, num_cluster)
+            self.direct_linear = nn.Linear(W, 1)
 
-        self.direct_linear = nn.Linear(W // 2, 1)
         for k in range(num_cluster):
-            if self.use_indirect_feature_layer:
-                setattr(self, "indirect_feature_linear{}".format(k), nn.Linear(input_ch_views + W, W // 2))
+            if self.use_illumination_feature_layer:
+                setattr(self, "indirect_feature_linear{}".format(k), nn.Linear(W, W // 2))
                 setattr(self, "indirect_linear{}".format(k), nn.Linear(W // 2, 1))
             else:
                 setattr(self, "indirect_feature_linear{}".format(k), None)
-                setattr(self, "indirect_linear{}".format(k), nn.Linear(input_ch_views + W, 1))
+                setattr(self, "indirect_linear{}".format(k), nn.Linear(W, 1))
 
     def __str__(self):
         logs = ["[NeRFDecomp"]
@@ -80,53 +76,56 @@ class NeRFDecomp(nn.Module):
         logs += ["\t- input_ch : {}".format(self.input_ch)]
         logs += ["\t- use_instance_label : {}".format(self.use_instance_label)]
         logs += ["\t- instance_label_dimension : {}".format(self.instance_label_dimension)]
-        logs += ["\t- use_instance_feature_layer : {}".format(self.use_instance_feature_layer)]
         logs += ["\t- base_color_num : {}".format(self.num_cluster)]
-        logs += ["\t- use_indirect_feature_layer : {}".format(self.use_indirect_feature_layer)]
+        logs += ["\t- use_illumination_feature_layer : {}".format(self.use_illumination_feature_layer)]
         return "\n".join(logs)
 
     def forward(self, x):
         input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
         h = input_pts
+
+        # (1) position
         for i, l in enumerate(self.positions_linears):
             h = self.positions_linears[i](h)
             h = F.relu(h)
             if i in self.skips:
                 h = torch.cat([input_pts, h], dim=-1)
 
+        # (2) dependent only to position
+        # sigma(x), albedo(x)
         sigma = self.sigma_linear(h)
         albedo_feature = self.albedo_feature_linear(h)
+        albedo_feature = F.relu(albedo_feature)
         albedo = self.albedo_linear(albedo_feature)
 
-        if self.use_instance_label:
-            if self.instance_label_dimension > 0:
-                if self.use_instance_feature_layer:
-                    instance = self.instance_linear(self.isntance_feature_linear(h))
-                else:
-                    instance = self.instance_linear(h)
-            raise NotImplementedError
-
+        # (3) position + direction
         feature = self.feature_linear(h)
         h = torch.cat([feature, input_views], dim=-1)
-
         for i, l in enumerate(self.views_linears):
             h = self.views_linears[i](h)
             h = F.relu(h)
 
+        # (3) dependent to position, direction
+        # (3)-1 Direct illumination I(x, d)
+        if self.use_illumination_feature_layer:
+            direct_illumination_feature = self.direct_feature_linear(h)
+            direct_illumination_feature = F.relu(direct_illumination_feature)
+            direct_illumination = self.direct_linear(direct_illumination_feature)
+        else:
+            direct_illumination = self.direct_linear(h)
+        direct_illumination = F.relu(direct_illumination)
+
+        # (3)-2 Indirect illumination from kth base color w_k(x, d)
         indirect_illuminations = {}
         for k in range(self.num_cluster):
-            if self.use_indirect_feature_layer:
-                indirect_illuminations['indirect_illumination{}'.format(k)] = F.relu(getattr(
-                    self, 'indirect_feature_linear{}'.format(k)
-                )(getattr(
-                    self, 'indirect_linear{}'.format(k)
-                )(h)))
+            if self.use_illumination_feature_layer:
+                indirect_illumination_feature = getattr(self, 'indirect_feature_linear{}'.format(k))(h)
+                indirect_illumination_feature = F.relu(indirect_illumination_feature)
+                indirect_illumination = getattr(self,'indirect_linear{}'.format(k))(indirect_illumination_feature)
             else:
-                indirect_illuminations['indirect_illumination{}'.format(k)] = F.relu(getattr(
-                    self, 'indirect_linear{}'.format(k)
-                )(h))
-
-        direct_illumination = F.relu(self.direct_linear(h))
+                indirect_illumination = getattr(self, 'indirect_linear{}'.format(k))(h)
+            indirect_illumination = F.relu(indirect_illumination)
+            indirect_illuminations['indirect_illumination{}'.format(k)] = indirect_illumination
 
         ret = [sigma, albedo]
         for k in range(self.num_cluster):
@@ -185,7 +184,7 @@ def create_NeRFDecomp(args):
         D=args.netdepth, W=args.netwidth, input_ch=input_ch, input_ch_views=input_ch_views, skips=skips,
         use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
         num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
-        use_indirect_feature_layer=args.use_indirect_feature_layer,
+        use_illumination_feature_layer=args.use_illumination_feature_layer,
         use_instance_feature_layer=args.use_instance_feature_layer
     ).to(args.device)
     logger.info(model)
@@ -198,7 +197,7 @@ def create_NeRFDecomp(args):
             D=args.netdepth, W=args.netwidth, input_ch=input_ch, input_ch_views=input_ch_views, skips=skips,
             use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
             num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
-            use_indirect_feature_layer=args.use_indirect_feature_layer,
+            use_illumination_feature_layer=args.use_illumination_feature_layer,
             use_instance_feature_layer=args.use_instance_feature_layer
         ).to(args.device)
         logger.info("NeRFDecomp fine model")

@@ -1,0 +1,3 @@
+include = common.txt
+expname = color
+instance_label_encoding = color

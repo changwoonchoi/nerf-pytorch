@@ -110,17 +110,16 @@ class ClevrDataset(NerfDataset):
 		return torch.stack([pose_spherical(angle, -30.0, 11.0) for angle in np.linspace(-180, 180, 40 + 1)[:-1]], 0)
 
 
-class ClevrDecompDataset(ClevrDataset):
-	def __init__(self, basedir, **kwargs):
-		super().__init__(basedir, use_val=False, **kwargs)
-		self.name = "clevr_decomp"
-		self.num_init_cluster = kwargs.get("num_init_cluster", 8)
-		self.cluster_th = kwargs.get("cluster_th", 0.1)
-		# TODO: calculate base color from all images in train set
-		sample_img_path = os.path.join(self.basedir, 'train', os.path.split(self.meta['frames'][0]['file_path'])[1])
-		sample_img = imageio.imread(sample_img_path, pilmode='RGB')
-		self.init_basecolor = get_basecolor(
-			img=sample_img, use_hist=False, n_clusters=self.num_init_cluster, cluster_th=self.cluster_th
-		)  # (self.num_base, 3)
-		self.num_cluster = self.init_basecolor.shape[0]
-
+# class ClevrDecompDataset(ClevrDataset):
+# 	def __init__(self, basedir, **kwargs):
+# 		super().__init__(basedir, use_val=False, **kwargs)
+# 		self.name = "clevr_decomp"
+# 		self.num_init_cluster = kwargs.get("num_init_cluster", 8)
+# 		self.cluster_th = kwargs.get("cluster_th", 0.1)
+# 		# TODO: calculate base color from all images in train set
+# 		sample_img_path = os.path.join(self.basedir, 'train', os.path.split(self.meta['frames'][0]['file_path'])[1])
+# 		sample_img = imageio.imread(sample_img_path, pilmode='RGB')
+# 		self.init_basecolor = get_basecolor(
+# 			img=sample_img, use_hist=False, n_clusters=self.num_init_cluster, cluster_th=self.cluster_th
+# 		)  # (self.num_base, 3)
+# 		self.num_cluster = self.init_basecolor.shape[0]

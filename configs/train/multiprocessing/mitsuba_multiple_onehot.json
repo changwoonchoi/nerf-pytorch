@@ -1,0 +1,11 @@
+{
+  "available_gpus" : [0,0,2,2],
+  "config_lists":[
+    "../configs/mitsuba/veach-ajar/onehot_equal.txt",
+    "../configs/mitsuba/kitchen/onehot_equal.txt",
+    "../configs/mitsuba/living-room-2/onehot_equal.txt",
+    "../configs/mitsuba/living-room-3/onehot_equal.txt",
+    "../configs/mitsuba/staircase/onehot_equal.txt",
+    "../configs/mitsuba/bedroom/onehot_equal.txt"
+  ]
+}

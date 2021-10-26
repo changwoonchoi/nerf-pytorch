@@ -20,8 +20,8 @@ def recursive_config_parser():
 	parser = config_parser()
 	args = parser.parse_args()
 	include_files = load_all_include(args.config)
+
 	include_files = list(reversed(include_files))
-	print("Include files :", include_files)
 	parser = config_parser(default_files=include_files)
 	return parser
 
@@ -48,7 +48,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--instance_label_dimension", type=int, default=0, help="instance mask dimension")
 	parser.add_argument("--use_instance_feature_layer", action="store_true", help='NeRF with instance_feature_layer(Zhi, 2021)')
 	parser.add_argument("--use_basecolor_score_feature_layer", action="store_true", help='NeRF with basecolor score feature layer')
-	parser.add_argument("--use_indirect_feature_layer", action="store_true", help='NeRF with indirect_feature_layer(Zhi, 2021)')
+	parser.add_argument("--use_illumination_feature_layer", action="store_true", help='NeRF with illumination feature_layer(Zhi, 2021)')
 
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
 	parser.add_argument("--netdepth", type=int, default=8, help='layers in network')
@@ -102,6 +102,11 @@ def config_parser(default_files=None):
 	parser.add_argument("--render_factor", type=int, default=0,
 	                    help='downsampling factor to speed up rendering, set 4 or 8 for fast preview')
 	parser.add_argument("--render_decompose", action='store_true', help="render decomposed instance in test phase")
+	parser.add_argument("--alpha_th", type=float, default=.0, help='decompose alpha thredhold')
+	parser.add_argument("--instance_th", type=float, default=.0, help='decompose instance thredhold')
+
+	parser.add_argument("--decompose_target", type=str, default="0", help='decompose target instance ids')
+	parser.add_argument("--decompose_mode", type=str, default="binary", help='decompose mode one of all or binary')
 
 	# training options
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')
@@ -114,6 +119,13 @@ def config_parser(default_files=None):
 	parser.add_argument("--dataset_type", type=str, default='llff', help='options: llff / blender / deepvoxels')
 	parser.add_argument("--testskip", type=int, default=8,
 	                    help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
+
+	# clustering options
+	parser.add_argument("--cluster_image_number", type=int, default=-1, help='how many images will be used for clustering? -1 to use all')
+	parser.add_argument("--cluster_image_resize", type=float, default=0.5, help='resize image for clustering?')
+	parser.add_argument("--cluster_init_number", type=int, default=8, help='initial cluster size')
+	parser.add_argument("--cluster_number_lower_bound", type=int, default=4, help='minimum number of cluster')
+	parser.add_argument("--cluster_merge_threshold", type=float, default=0.1, help='cluster merge threshold')
 
 	# clevr options
 	parser.add_argument("--sample_length", type=float, default=8, help='sampling length along ray')

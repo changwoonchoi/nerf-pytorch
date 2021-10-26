@@ -1,0 +1,7 @@
+{
+  "available_gpus" : [0, 2],
+  "config_lists":[
+    "../configs/mitsuba/kitchen/onehot_adaptive.txt",
+    "../configs/mitsuba/kitchen/onehot_equal.txt"
+  ]
+}

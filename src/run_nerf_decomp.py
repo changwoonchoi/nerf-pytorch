@@ -25,6 +25,33 @@ def test():
     raise NotImplementedError
 
 
+def test_parser():
+    parser = recursive_config_parser()
+    args = parser.parse_args()
+
+
+def test_base_color():
+    parser = recursive_config_parser()
+    args = parser.parse_args()
+    args.device = device
+    # (1) Load dataset
+    with time_measure("[1] Data load"):
+        def load_dataset_split(split="train", do_logging=True, **kwargs):
+            # create dataset config
+            target_dataset = load_dataset(args.dataset_type, args.datadir, split=split, **kwargs)
+            # real data load using multiprocessing(torch DataLoader) --> load all at once
+            # TODO : if dataset is too large, it may not be loaded at once.
+            target_dataset.load_all_data(num_of_workers=10)
+            return target_dataset
+
+        # load train and validation dataset
+        dataset = load_dataset_split("train", sample_length=args.sample_length, image_scale=args.image_scale)
+
+    # (2) Load dataset
+    with time_measure("[2] Base color evaluation"):
+        dataset.get_base_color(visualize=True)
+
+
 def train():
     parser = recursive_config_parser()
     args = parser.parse_args()
@@ -59,6 +86,15 @@ def train():
         dataset = load_dataset_split("train", sample_length=args.sample_length, image_scale=args.image_scale)
         dataset_val = load_dataset_split("test", skip=10, sample_length=args.sample_length)
 
+        # calculate base color
+        dataset.get_base_color(
+            cluster_image_number=args.cluster_image_number,
+            cluster_image_resize=args.cluster_image_resize,
+            cluster_init_number=args.cluster_init_number,
+            cluster_merge_threshold=args.cluster_merge_threshold,
+            cluster_number_lower_bound=args.cluster_number_lower_bound
+        )
+
         os.makedirs(os.path.join(args.basedir, args.expname), exist_ok=True)
         if os.path.isfile(os.path.join(args.basedir, args.expname, 'init_basecolor.txt')):
             dataset.init_basecolor = np.loadtxt(os.path.join(args.basedir, args.expname, 'init_basecolor.txt'))
@@ -66,6 +102,7 @@ def train():
             np.savetxt(os.path.join(args.basedir, args.expname, 'init_basecolor.txt'), dataset.init_basecolor)
         init_basecolor = dataset.init_basecolor
         dataset_val.init_basecolor = init_basecolor
+
         hwf = [dataset.height, dataset.width, dataset.focal]
 
         # move data to GPU side
@@ -263,3 +300,5 @@ def train():
 
 if __name__ == '__main__':
     train()
+    #test_base_color()
+    #test_parser()

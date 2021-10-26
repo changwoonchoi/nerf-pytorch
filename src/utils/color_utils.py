@@ -41,13 +41,22 @@ def histogram(img: torch.Tensor, channels: List[int]=[32, 32, 32]) -> torch.Tens
     return hist
 
 
-def merge_cluster(centers, weights, th):
+def merge_cluster(centers, weights, th, minimum=4):
     """
     merge clusters closer than threshold
     """
     coords = centers.copy()
+    new_label_map = np.arange(len(centers))
+    left_ids = [i for i in range(len(centers))]
+
+    def get_parent_id(label_map, idx):
+        while True:
+            idx = label_map[idx]
+            if idx == label_map[idx]:
+                return idx
+
     counts = weights.copy()
-    while True:
+    while len(left_ids) > minimum:
         # make distance matrix
         dist_matrix = np.linalg.norm(coords[:, None] - coords[None, :], axis=-1)
         np.fill_diagonal(dist_matrix, 1e6)
@@ -66,13 +75,37 @@ def merge_cluster(centers, weights, th):
             counts = np.delete(counts, [min_idx[1]])
             coords[min_idx[0]] = new_center
             counts[min_idx[0]] = new_count
-    return coords, counts
+            print(min_idx)
+
+            original_idx0 = left_ids[min_idx[0]]
+            original_idx1 = left_ids[min_idx[1]]
+
+            parent0 = get_parent_id(new_label_map, original_idx0)
+            parent1 = get_parent_id(new_label_map, original_idx1)
+
+            parent_id = min(parent0, parent1)
+            for i in range(len(new_label_map)):
+                parent_i = get_parent_id(new_label_map, i)
+                if parent_i == parent0 or parent_i == parent1:
+                    new_label_map[i] = parent_id
+
+            del left_ids[min_idx[1]]
+
+    new_indices = [i for i in range(len(centers))]
+    new_indices = np.asarray(new_indices)
+
+    for i in range(len(new_label_map)):
+        parent_id_i = get_parent_id(new_label_map, i)
+        for new_index, parent_id in enumerate(left_ids):
+            if parent_id_i == parent_id:
+                new_indices[i] = new_index
+    return coords, new_indices, counts
 
 
-def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1):
-    chrom = torch.Tensor(img).float() / torch.linalg.norm(torch.Tensor(img).float(), dim=-1, keepdim=True)
+def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1, n_clusters_minimum=4, visualize=False):
+    chrom = torch.Tensor(img).float() / (torch.linalg.norm(torch.Tensor(img).float(), dim=-1, keepdim=True) + 1e-10)
     if not use_hist:
-        cluster = MiniBatchKMeans().fit(chrom.cpu().numpy().reshape(-1, 3))
+        cluster = MiniBatchKMeans(n_clusters=n_clusters).fit(chrom.cpu().numpy().reshape(-1, 3))
     else:
         # make histogram
         hist = histogram(chrom, channels=[32, 32, 32])
@@ -86,6 +119,29 @@ def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1):
 
     init_centers = cluster.cluster_centers_  # (n_cluster, 3)
     labels = cluster.labels_  # (n_cluster, )
+    print("Cluster centers (before merge)", cluster.cluster_centers_)
+
     centroid_weights = np.array([len(labels[labels == i]) for i in range(n_clusters)])
-    centroid, _ = merge_cluster(init_centers, centroid_weights, th=cluster_th)
-    return centroid
+    new_centroid, new_indices, _ = merge_cluster(init_centers, centroid_weights, th=cluster_th, minimum=n_clusters_minimum)
+    print("Cluster centers (after merge)", new_centroid)
+    print("New label map", new_indices)
+    if visualize:
+        import matplotlib.pyplot as plt
+        predicted_label = labels.reshape((img.shape[0], img.shape[1], img.shape[2]))
+        predicted_image = cluster.cluster_centers_[labels].reshape(img.shape)
+        merged_label = new_indices[predicted_label]
+        merged_image = new_centroid[merged_label]
+
+        for i in range(4):
+            fig = plt.figure()
+            ax1 = fig.add_subplot(2, 2, 1)
+            ax1.imshow(predicted_label[i])
+            ax2 = fig.add_subplot(2, 2, 2)
+            ax2.imshow(merged_label[i])
+            ax3 = fig.add_subplot(2, 2, 3)
+            ax3.imshow(predicted_image[i])
+            ax4 = fig.add_subplot(2, 2, 4)
+            ax4.imshow(merged_image[i])
+        plt.show()
+
+    return new_centroid
