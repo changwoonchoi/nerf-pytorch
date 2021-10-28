@@ -29,6 +29,26 @@ def test_parser():
     parser = recursive_config_parser()
     args = parser.parse_args()
 
+def test_autograd():
+    a = torch.tensor([[2., 3.], [4., 5.]])
+    b = torch.tensor([[1., 1.], [1., 1.]])
+    L = nn.Linear(2, 1)
+    L.weight.data.fill_(1)
+    L.bias.data.fill_(0)
+
+    a.requires_grad = True
+    Q = L(a*b)**2
+    print("Q", Q)
+    Q.backward(torch.ones_like(Q))
+    print(a.grad)
+
+    a = torch.tensor([[2., 5.], [3., 4.]])
+    a.requires_grad = True
+    Q = L(a*b) ** 2
+    print("Q", Q)
+    Q.backward(torch.ones_like(Q))
+    print(a.grad)
+    #print(b.grad)
 
 def test_base_color():
     parser = recursive_config_parser()
@@ -238,21 +258,35 @@ def train():
 
         loss_reg = args.beta_albedo_cluster * loss_albedo_cluster + args.beta_indirect_sparse * l1_indir_illum
 
-        # 3) smooth prior
+        # 3) Normal loss
+        loss_inferred_normal = 0
+        if args.infer_normal:
+            normal = result['normal']
+            inferred_normal = result['inferred_normal']
+            weights = result['weights']
+            detached_weights = weights.clone().detach()
+            normal_map = torch.sum(detached_weights[..., None] * normal, -2)
+            inferred_normal_map = torch.sum(detached_weights[..., None] * inferred_normal, -2)
+            loss_inferred_normal = torch.nn.MSELoss()(inferred_normal_map, normal_map)
+            #torch.mean(detached_weights[..., None] * (normal - inferred_normal) ** 2)
+
+        # 4) smooth prior
         # TODO: implement smooth prior
         smooth_prior_albedo = 0
         smooth_prior_indirect = 0
 
         loss_smooth = args.beta_smooth_albedo * smooth_prior_albedo + args.beta_smooth_indirect * smooth_prior_indirect
 
-        total_loss = args.beta_render * loss_render + loss_reg + loss_smooth
+        total_loss = args.beta_render * loss_render + loss_reg + loss_smooth + args.beta_inferred_normal * loss_inferred_normal
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
-            writer.add_scalar('Loss/Loss_render', args.beta_render * loss_render, i)
+            writer.add_scalar('Loss/Loss_render', loss_render, i)
             writer.add_scalar('Loss/Loss_reg', loss_reg, i)
             writer.add_scalar('Loss/Loss_reg/albedo_cluster', loss_albedo_cluster * args.beta_albedo_cluster, i)
             writer.add_scalar('Loss/Loss_reg/indirect_sparsity', args.beta_indirect_sparse * l1_indir_illum, i)
+            if args.infer_normal:
+                writer.add_scalar('Loss/Loss_normal/inferred_normal', loss_inferred_normal, i)
 
         total_loss.backward()
         optimizer.step()
@@ -279,19 +313,28 @@ def train():
             testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(i))
             os.makedirs(testsavedir, exist_ok=True)
 
-            with torch.no_grad():
-                poses = torch.Tensor(dataset_val.poses).to(device)
-                rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps = render_decomp_path(
-                    poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-                    render_factor=4, init_basecolor=dataset.init_basecolor
-                )
-                writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
-                disps = np.expand_dims(disps, -1)
-                writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
+            for var in grad_vars:
+                var.requires_grad = False
+            #with torch.no_grad():
+            poses = torch.Tensor(dataset_val.poses).to(device)
+            rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps, normals, inferred_normals \
+            = render_decomp_path(
+                poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+                render_factor=4, init_basecolor=dataset.init_basecolor
+            )
+            writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
+            disps = np.expand_dims(disps, -1)
+            writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/normals', normals.transpose((0, 3, 1, 2)), i)
+            if args.infer_normal:
+                writer.add_images('test/inferred/inferred_normals', inferred_normals.transpose((0, 3, 1, 2)), i)
+
+            for var in grad_vars:
+                var.requires_grad = True
 
             logger_export.info('Saved test set')
 
@@ -300,5 +343,6 @@ def train():
 
 if __name__ == '__main__':
     train()
+    #test_autograd()
     #test_base_color()
     #test_parser()

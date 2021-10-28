@@ -14,7 +14,8 @@ class NeRFDecomp(nn.Module):
             self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
             instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True,
             use_illumination_feature_layer=False,
-            use_instance_feature_layer=False
+            use_instance_feature_layer=False,
+            infer_normal=True
     ):
         """
         NeRFDecomp Model
@@ -55,10 +56,18 @@ class NeRFDecomp(nn.Module):
         self.albedo_feature_linear = nn.Linear(W, W // 2)
         self.albedo_linear = nn.Linear(W // 2, 3)
 
+        self.infer_normal = infer_normal
+        if infer_normal:
+            self.normal_feature_linear1 = nn.Linear(W, W)
+            self.normal_feature_linear2 = nn.Linear(W, W)
+            self.normal_feature_linear3 = nn.Linear(W, W // 2)
+            self.normal_linear = nn.Linear(W // 2, 3)
+
         if use_illumination_feature_layer:
             self.direct_feature_linear = nn.Linear(W, W // 2)
             self.direct_linear = nn.Linear(W // 2, 1)
         else:
+            self.direct_feature_linear = None
             self.direct_linear = nn.Linear(W, 1)
 
         for k in range(num_cluster):
@@ -69,6 +78,9 @@ class NeRFDecomp(nn.Module):
                 setattr(self, "indirect_feature_linear{}".format(k), None)
                 setattr(self, "indirect_linear{}".format(k), nn.Linear(W, 1))
 
+        self.illumination_activation = torch.nn.ReLU()
+        self.illumination_constant = 1
+
     def __str__(self):
         logs = ["[NeRFDecomp"]
         logs += ["\t- depth : {}".format(self.D)]
@@ -78,10 +90,15 @@ class NeRFDecomp(nn.Module):
         logs += ["\t- instance_label_dimension : {}".format(self.instance_label_dimension)]
         logs += ["\t- base_color_num : {}".format(self.num_cluster)]
         logs += ["\t- use_illumination_feature_layer : {}".format(self.use_illumination_feature_layer)]
+        logs += ["\t- infer normal : {}".format(self.infer_normal)]
         return "\n".join(logs)
 
     def forward(self, x):
-        input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
+        if x.shape[-1] == self.input_ch + self.input_ch_views:
+            input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
+        else:
+            input_pts = x
+            input_views = None
         h = input_pts
 
         # (1) position
@@ -94,9 +111,23 @@ class NeRFDecomp(nn.Module):
         # (2) dependent only to position
         # sigma(x), albedo(x)
         sigma = self.sigma_linear(h)
+
+        if input_views is None:
+            return sigma
+
         albedo_feature = self.albedo_feature_linear(h)
         albedo_feature = F.relu(albedo_feature)
         albedo = self.albedo_linear(albedo_feature)
+
+        if self.infer_normal:
+            n = self.normal_feature_linear1(h)
+            n = F.relu(n)
+            n = self.normal_feature_linear2(n)
+            n = F.relu(n)
+            n = self.normal_feature_linear3(n)
+            n = F.relu(n)
+            normal = self.normal_linear(n)
+            normal = torch.tanh(normal)
 
         # (3) position + direction
         feature = self.feature_linear(h)
@@ -113,7 +144,7 @@ class NeRFDecomp(nn.Module):
             direct_illumination = self.direct_linear(direct_illumination_feature)
         else:
             direct_illumination = self.direct_linear(h)
-        direct_illumination = F.relu(direct_illumination)
+        direct_illumination = self.illumination_constant * self.illumination_activation(direct_illumination)
 
         # (3)-2 Indirect illumination from kth base color w_k(x, d)
         indirect_illuminations = {}
@@ -124,13 +155,17 @@ class NeRFDecomp(nn.Module):
                 indirect_illumination = getattr(self,'indirect_linear{}'.format(k))(indirect_illumination_feature)
             else:
                 indirect_illumination = getattr(self, 'indirect_linear{}'.format(k))(h)
-            indirect_illumination = F.relu(indirect_illumination)
+            indirect_illumination = self.illumination_constant * self.illumination_activation(indirect_illumination)
             indirect_illuminations['indirect_illumination{}'.format(k)] = indirect_illumination
 
         ret = [sigma, albedo]
         for k in range(self.num_cluster):
             ret.append(indirect_illuminations['indirect_illumination{}'.format(k)])
         ret.append(direct_illumination)
+
+        if self.infer_normal:
+            ret.append(normal)
+
         ret = torch.cat(ret, dim=-1)
 
         return ret
@@ -157,13 +192,16 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024 * 64
     """
     Prepares inputs and applies network 'fn'.
     """
+    #inputs.requires_grad = True
     inputs_flat = torch.reshape(inputs, [-1, inputs.shape[-1]])
     embedded = embed_fn(inputs_flat)
 
-    input_dirs = viewdirs[:, None].expand(inputs.shape)
-    input_dirs_flat = torch.reshape(input_dirs, [-1, input_dirs.shape[-1]])
-    embedded_dirs = embeddirs_fn(input_dirs_flat)
-    embedded = torch.cat([embedded, embedded_dirs], dim=-1)
+    if viewdirs is not None:
+        input_dirs = viewdirs[:, None].expand(inputs.shape)
+        input_dirs_flat = torch.reshape(input_dirs, [-1, input_dirs.shape[-1]])
+        embedded_dirs = embeddirs_fn(input_dirs_flat)
+        embedded = torch.cat([embedded, embedded_dirs], -1)
+
     outputs_flat = batchify(fn, netchunk)(embedded)
     outputs = torch.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])
     return outputs
@@ -185,7 +223,8 @@ def create_NeRFDecomp(args):
         use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
         num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
         use_illumination_feature_layer=args.use_illumination_feature_layer,
-        use_instance_feature_layer=args.use_instance_feature_layer
+        use_instance_feature_layer=args.use_instance_feature_layer,
+        infer_normal=args.infer_normal
     ).to(args.device)
     logger.info(model)
 
@@ -198,7 +237,8 @@ def create_NeRFDecomp(args):
             use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
             num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
             use_illumination_feature_layer=args.use_illumination_feature_layer,
-            use_instance_feature_layer=args.use_instance_feature_layer
+            use_instance_feature_layer=args.use_instance_feature_layer,
+            infer_normal=args.infer_normal
         ).to(args.device)
         logger.info("NeRFDecomp fine model")
         logger.info(model)

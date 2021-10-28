@@ -1,0 +1,3 @@
+include = common.txt
+expname = infer_normal
+infer_normal
