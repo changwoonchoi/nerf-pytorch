@@ -67,6 +67,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_smooth_indirect", type=float, default=1., help="")
 	parser.add_argument("--beta_render", type=float, default=1.)
 	parser.add_argument("--beta_albedo_cluster", type=float, default=1.)
+	parser.add_argument("--beta_albedo_render", type=float, default=1.)
 	parser.add_argument("--beta_indirect_sparse", type=float, default=1.)
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')

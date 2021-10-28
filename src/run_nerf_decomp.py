@@ -178,6 +178,7 @@ def train():
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
         target_rgb, target_label, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
+        target_chromaticity = target_rgb / (torch.linalg.norm(target_rgb, dim=-1, keepdim=True) + 1e-10)
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
 
         #####  Core optimization loop  #####
@@ -218,7 +219,7 @@ def train():
         instance_loss_weight = args.instance_loss_weight
         loss_render = loss_render + instance_loss_weight * instance_loss
 
-        # 2) regularization loss
+        # 2) albedo cluster loss
         albedo = result['albedo']  # (N_rays, N_samples + N_importance, 3)
         log_albedo = torch.log(albedo)
         log_init_basecolor = torch.log(dataset.init_basecolor)
@@ -226,6 +227,13 @@ def train():
         diff_albedo_cluster = torch.linalg.norm(diff_albedo_cluster, dim=-1).min(dim=-1).values
         loss_albedo_cluster = diff_albedo_cluster.sum() / torch.numel(diff_albedo_cluster)
 
+        # 3) albedo render loss
+        loss_albedo_render = img2mse(result['albedo_map'], target_chromaticity)
+        if 'albedo_map0' in result:
+            loss_albedo_render0 = img2mse(result['albedo_map0'], target_chromaticity)
+            loss_albedo_render = loss_albedo_render + loss_albedo_render0
+
+        # 4) indirect illumination regularization loss
         indirect_illumination_weight = result['indirect_illumination_weight']
         l1_indir_illum = torch.linalg.norm(indirect_illumination_weight, ord=1, dim=-1)
         l1_indir_illum = l1_indir_illum.sum() / torch.numel(l1_indir_illum)
@@ -236,9 +244,10 @@ def train():
             l1_indir_illum0 = l1_indir_illum0.sum() / torch.numel(l1_indir_illum0)
             l1_indir_illum = l1_indir_illum + l1_indir_illum0
 
-        loss_reg = args.beta_albedo_cluster * loss_albedo_cluster + args.beta_indirect_sparse * l1_indir_illum
+        # loss_reg = args.beta_albedo_cluster * loss_albedo_cluster + args.beta_indirect_sparse * l1_indir_illum
+        loss_reg = args.beta_albedo_cluster + loss_albedo_cluster + args.beta_albedo_render * loss_albedo_render + args.beta_indirect_sparse * l1_indir_illum
 
-        # 3) smooth prior
+        # 5) smooth prior
         # TODO: implement smooth prior
         smooth_prior_albedo = 0
         smooth_prior_indirect = 0
@@ -250,6 +259,7 @@ def train():
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
             writer.add_scalar('Loss/Loss_render', args.beta_render * loss_render, i)
+            writer.add_scalar('Loss/Loss_albedo_render', args.beta_albedo_render * loss_albedo_render, i)
             writer.add_scalar('Loss/Loss_reg', loss_reg, i)
             writer.add_scalar('Loss/Loss_reg/albedo_cluster', loss_albedo_cluster * args.beta_albedo_cluster, i)
             writer.add_scalar('Loss/Loss_reg/indirect_sparsity', args.beta_indirect_sparse * l1_indir_illum, i)
