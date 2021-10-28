@@ -6,6 +6,7 @@ import imageio
 from utils.label_utils import *
 from torch.nn.functional import normalize
 from torch.autograd import Variable
+from nerf_models.microfacet import *
 
 DEBUG = False
 
@@ -16,8 +17,10 @@ DEBUG = False
 # 	sigma = raw2sigma(, dists)
 
 
+
 def raw2outputs(raw, z_vals, normal, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False,
-				is_instance_label_logit=True, label_encoder=None, init_basecolor=None, albedo_mod=None, calculate_normal=False, infer_normal=False):
+				is_instance_label_logit=True, label_encoder=None, init_basecolor=None, albedo_mod=None,
+				calculate_normal=False, infer_normal=False, brdf_lut=None):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
 		raw: [num_rays, num_samples along ray, 4]. Prediction from model.
@@ -61,8 +64,11 @@ def raw2outputs(raw, z_vals, normal, rays_d, instance_label_dimension=0, raw_noi
 	albedo = torch.sigmoid(raw[..., 1:4])
 	albedo_map = torch.sum(weights[..., None] * albedo, -2)
 
-	indirect_illumination_weight = raw[..., 4:4 + num_cluster]  # [N_rays, N_sample, num_cluster]
-	direct_illumination = raw[..., 4 + num_cluster]  # [N_rays, N_sample,]
+	roughness = torch.sigmoid(raw[..., 4])
+	roughness_map = torch.sum(weights * roughness, -2)
+
+	indirect_illumination_weight = raw[..., 5:5 + num_cluster]  # [N_rays, N_sample, num_cluster]
+	direct_illumination = raw[..., 5 + num_cluster]  # [N_rays, N_sample,]
 
 	direct_illumination_extend = direct_illumination.reshape(*direct_illumination.shape, 1)
 	direct_illumination_extend = direct_illumination_extend.expand(*direct_illumination_extend.shape[:-1], 3)
@@ -79,22 +85,44 @@ def raw2outputs(raw, z_vals, normal, rays_d, instance_label_dimension=0, raw_noi
 	illumination = indirect_illumination + direct_illumination.reshape((*direct_illumination.shape, 1))  # [N_rays, N_samples, 3]
 	illumination_map = torch.sum(weights[..., None] * illumination, -2)
 
-	color = albedo * illumination  # [N_rays, N_samples, 3]
-	color_map = torch.sum(weights[..., None] * color, -2)  # [N_rays, 3]
-
-	depth_map = torch.sum(weights * z_vals, -1)
-	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
-	acc_map = torch.sum(weights, -1)
-
 	normal_map = torch.sum(weights[..., None] * normal, -2)  # [N_rays, 3]
+	target_normal = normal
 	if infer_normal:
 		inferred_normal = raw[..., 4 + num_cluster: 7 + num_cluster]
+		target_normal = inferred_normal.clone().detach()
 		# (TODO) do normalize..?
 		# inferred_normal = normalize(inferred_normal, dim=-1)
 		inferred_normal_map = torch.sum(weights[..., None] * inferred_normal, -2)  # [N_rays, 3]
 	else:
 		inferred_normal = None
 		inferred_normal_map = None
+
+	n_dot_v = torch.sum(rays_d.unsqueeze(1) * target_normal, -1)
+	n_dot_v = F.relu(n_dot_v)
+
+	BRDF_2D_LUT_uv = torch.stack([n_dot_v, roughness], -1)
+	envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None,...], align_corners=True)
+	envBRDF = envBRDF.permute((0, 2, 3, 1))
+	envBRDF = envBRDF.squeeze(0)
+
+	F0 = torch.tensor([0.04, 0.04, 0.04])
+	F0 = F0.repeat(*sigma.shape, 1)
+	envBRDF_coefficient1 = envBRDF[..., 0]
+	envBRDF_coefficient0 = envBRDF[..., 1]
+	envBRDF_coefficient1 = torch.stack(3*[envBRDF_coefficient1], -1)
+	specular = F0 * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+	fresnel = fresnel_schlick_roughness(n_dot_v, F0, roughness)
+	# print(fresnel.shape, "fresnel")
+	# rint(specular.shape, "specular")
+	K_d = 1 - fresnel
+	color = (K_d * albedo + specular) * illumination  # [N_rays, N_samples, 3]
+	color_map = torch.sum(weights[..., None] * color, -2)  # [N_rays, 3]
+
+	depth_map = torch.sum(weights * z_vals, -1)
+	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
+	acc_map = torch.sum(weights, -1)
+
+
 
 	return color_map, albedo, albedo_map, indirect_illumination_weight, disp_map, acc_map, weights, depth_map, \
 		direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map, illumination_map, normal_map, \
@@ -103,7 +131,8 @@ def raw2outputs(raw, z_vals, normal, rays_d, instance_label_dimension=0, raw_noi
 
 def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecolor, retraw=False, lindisp=False,
 				perturb=0., N_importance=0, network_fine=None, white_bkgd=False, raw_noise_std=0., verbose=False,
-				pytest=False, is_instance_label_logit=False, decompose=False, label_encoder=None, use_viewdirs=None):
+				pytest=False, is_instance_label_logit=False, decompose=False, label_encoder=None, use_viewdirs=None
+				,brdf_lut=None):
 	"""Volumetric rendering.
 	Args:
 	  ray_batch: array of shape [batch_size, ...]. All information necessary
@@ -184,7 +213,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 	inferred_normal, inferred_normal_map = raw2outputs(
 		raw, z_vals, normal, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
 		is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
-		infer_normal=network_fn.infer_normal
+		infer_normal=network_fn.infer_normal, brdf_lut=brdf_lut
 	)
 
 	if N_importance > 0:
@@ -223,7 +252,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		inferred_normal, inferred_normal_map = raw2outputs(
 			raw, z_vals, normal, rays_d, run_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
 			is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
-			infer_normal=network_fn.infer_normal
+			infer_normal=network_fn.infer_normal, brdf_lut=brdf_lut
 		)
 
 	ret = {
@@ -292,7 +321,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, **kwargs):
 
 def render_decomp(
 		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1.,
-		c2w_staticcam=None, label_encoder=None,**kwargs
+		c2w_staticcam=None, label_encoder=None, **kwargs
 ):
 	"""Render rays
 	Args:
@@ -357,7 +386,8 @@ def render_decomp(
 # return ret_list + [ret_dict]
 
 
-def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None, render_factor=0, init_basecolor=None):
+def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
+					   savedir=None, render_factor=0, init_basecolor=None):
 	H, W, focal = hwf
 
 	if render_factor != 0:

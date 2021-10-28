@@ -19,7 +19,7 @@ from miscellaneous.test_dataset_speed import *
 
 from utils.generator_utils import *
 from utils.timing_utils import *
-
+import cv2
 
 def test():
     raise NotImplementedError
@@ -130,6 +130,15 @@ def train():
         dataset.to_tensor(args.device)
         dataset_val.to_tensor(args.device)
 
+        # Load BRDF LUT
+        brdf_lut_path = "../data/ibl_brdf_lut.png"
+        brdf_lut = cv2.imread(brdf_lut_path)
+        brdf_lut = cv2.cvtColor(brdf_lut, cv2.COLOR_BGR2RGB)
+        brdf_lut = brdf_lut.astype(np.float32)
+        brdf_lut /= 255.0
+        brdf_lut = torch.tensor(brdf_lut).to(args.device)
+        brdf_lut = brdf_lut.permute((2, 0, 1))
+
     # (2) Create log file / folder
     with time_measure("[2] Log file create"):
         # Create log dir and copy the config file
@@ -159,6 +168,9 @@ def train():
         bds_dict = dataset.get_near_far_plane()
         render_kwargs_train.update(bds_dict)
         render_kwargs_test.update(bds_dict)
+
+        render_kwargs_train['brdf_lut'] = brdf_lut
+        render_kwargs_test['brdf_lut'] = brdf_lut
 
         if use_instance_mask:
             is_instance_label_logit = isinstance(label_encoder, OneHotLabelEncoder) and (args.CE_weight_type != "mse")
@@ -205,7 +217,8 @@ def train():
         # 1. render sample
         result = render_decomp(
             dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True,
-            init_basecolor=dataset.init_basecolor, **render_kwargs_train
+            init_basecolor=dataset.init_basecolor,
+            **render_kwargs_train
         )
 
         optimizer.zero_grad()

@@ -1,0 +1,7 @@
+{
+  "available_gpus" : [0,2,5,6],
+  "config_lists":[
+    "../configs/decomp/specular_ibl/kitchen",
+    "../configs/decomp/specular_ibl/living-room-2"
+  ]
+}
