@@ -14,6 +14,7 @@ from dataset.dataset_interface import NerfDataset
 from torchvision import transforms
 import cv2
 import math
+from utils.image_utils import load_image_from_path
 
 
 class MitsubaDataset(NerfDataset):
@@ -55,6 +56,8 @@ class MitsubaDataset(NerfDataset):
 		return len(self.meta['frames'][::self.skip])
 
 	def __getitem__(self, index):
+		sample = {}
+
 		"""
 		Load single data corresponding to specific index
 		:param index: data index
@@ -62,15 +65,17 @@ class MitsubaDataset(NerfDataset):
 		frame = self.meta['frames'][::self.skip][index]
 		image_file_path = os.path.join(self.basedir, self.split, "%d.png" % (self.skip * index + 1))
 		mask_file_path = os.path.join(self.basedir, self.split, "%d_mask.png" % (self.skip * index + 1))
+		normal_file_path = os.path.join(self.basedir, self.split, "%d_normal.png" % (self.skip * index + 1))
+		albedo_file_path = os.path.join(self.basedir, self.split, "%d_albedo.png" % (self.skip * index + 1))
 
 		# (1) load RGB Image
-		image = cv2.imread(image_file_path)
-		image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-		if self.scale != 1:
-			image = cv2.resize(image, None, fx=self.scale, fy=self.scale)
+		sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
+		if self.load_normal:
+			sample["normal"] = load_image_from_path(normal_file_path, scale=self.scale)
+		if self.load_albedo:
+			sample["albedo"] = load_image_from_path(albedo_file_path, scale=self.scale)
 
 		# (2) load instance_label_mask
-		instance_label_mask = None
 		if self.load_instance_label_mask:
 			mask = cv2.imread(mask_file_path)
 			mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
@@ -80,20 +85,15 @@ class MitsubaDataset(NerfDataset):
 
 			mask = mask[:, :, 0] + 256 * mask[:, :, 1] + 256 * 256 * mask[:, :, 2]
 			instance_label_mask = mask.astype(np.int32)
+			sample["mask"] = instance_label_mask
 
 		# (3) load pose information
 		pose = np.array(frame['transform']).astype(np.float32)
 		# Mitsuba --> camera forward is +Z !!
 		pose[:3, 0] *= -1
 		pose[:3, 2] *= -1
-		image = image.astype(np.float32)
-		image /= 255.0
-
-		sample = {}
-		sample["image"] = image
-		if self.load_instance_label_mask:
-			sample["mask"] = instance_label_mask
 		sample["pose"] = pose
+
 		return sample
 
 	def get_test_render_poses(self):

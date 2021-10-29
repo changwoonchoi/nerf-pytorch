@@ -13,10 +13,13 @@ def find_all_configs(directory):
 		for single_directory in directory:
 			configs += find_all_configs(single_directory)
 	else:
-		if os.path.isfile(directory):
-			configs.append(directory)
-		else:
+		if os.path.isdir(directory):
 			for path in Path(directory).rglob('*.txt'):
+				path = str(path)
+				if 'common' not in path and 'default' not in path:
+					configs.append(path)
+		else:
+			for path in Path().rglob(directory):
 				path = str(path)
 				if 'common' not in path and 'default' not in path:
 					configs.append(path)

@@ -69,6 +69,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_albedo_cluster", type=float, default=1.)
 	parser.add_argument("--beta_indirect_sparse", type=float, default=1.)
 	parser.add_argument("--beta_inferred_normal", type=float, default=0.1)
+	parser.add_argument("--beta_albedo_render", type=float, default=1.)
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_decay", type=int, default=250,
@@ -110,6 +111,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--decompose_mode", type=str, default="binary", help='decompose mode one of all or binary')
 
 	parser.add_argument("--infer_normal", action='store_true', help='infer normal from NeRF')
+	parser.add_argument("--learn_normal_from_oracle", action='store_true', help='learn_normal_from_oracle')
+	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')
 
 
 	# training options
