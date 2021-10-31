@@ -97,25 +97,25 @@ def sample_generator_single_image(
         random_v = np.random.randint(sH, eH, batch_size)
         random_uv = np.stack([random_u, random_v], 1)
 
-        pose = dataset.poses[random_image_index]
-        image = dataset.images[random_image_index]
-        pixel_rgb = image[random_v, random_u, :]    # height is first!!!
+        pixel_info = dataset.get_info(random_image_index, random_u, random_v)
 
-        pixel_label = None
-        if dataset.load_instance_label_mask:
-            mask = dataset.masks[random_image_index]
-            pixel_label = mask[random_v, random_u]  # height is first!!!
+        pose = dataset.poses[random_image_index]
+        # image = dataset.images[random_image_index]
+        # pixel_rgb = image[random_v, random_u, :]    # height is first!!!
+        # pixel_label = None
+        # if dataset.load_instance_label_mask:
+        #     mask = dataset.masks[random_image_index]
+        #     pixel_label = mask[random_v, random_u]  # height is first!!!
 
         uv_t = torch.Tensor(random_uv)
-
         ray_o, ray_d = get_rays_few(uv_t, dataset.get_focal_matrix(), pose[:3, :4])
 
         if visualize:
-            image[random_v, random_u, 0] = 255
-            image[random_v, random_u, 1] = 0
-            image[random_v, random_u, 2] = 0
-            plt.imshow(image)
+            pixel_info["rgb"][random_v, random_u, 0] = 255
+            pixel_info["rgb"][random_v, random_u, 1] = 0
+            pixel_info["rgb"][random_v, random_u, 2] = 0
+            plt.imshow(pixel_info["rgb"])
             plt.show()
 
         n_iters += 1
-        yield pixel_rgb, pixel_label, ray_o, ray_d
+        yield pixel_info, ray_o, ray_d

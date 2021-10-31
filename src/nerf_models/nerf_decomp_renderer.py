@@ -4,12 +4,23 @@ from tqdm import tqdm, trange
 import os
 import imageio
 from utils.label_utils import *
+from torch.nn.functional import normalize
+from torch.autograd import Variable
+from nerf_models.microfacet import *
 
 DEBUG = False
 
 
-def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False,
-				is_instance_label_logit=True, label_encoder=None, init_basecolor=None, albedo_mod=None):
+# def calculate_normal(network_fn, network_query_fn, pts):
+# 	raw = network_query_fn(pts, None, network_fn)
+# 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
+# 	sigma = raw2sigma(, dists)
+
+
+
+def raw2outputs(raw, z_vals, normal, rays_d, instance_label_dimension=0, raw_noise_std=0.0, white_bkgd=False, pytest=False,
+				is_instance_label_logit=True, label_encoder=None, init_basecolor=None, albedo_mod=None,
+				calculate_normal=False, infer_normal=False, brdf_lut=None):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
 		raw: [num_rays, num_samples along ray, 4]. Prediction from model.
@@ -53,8 +64,12 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	albedo = torch.sigmoid(raw[..., 1:4])
 	albedo_map = torch.sum(weights[..., None] * albedo, -2)
 
-	indirect_illumination_weight = raw[..., 4:4 + num_cluster]  # [N_rays, N_sample, num_cluster]
-	direct_illumination = raw[..., 4 + num_cluster]  # [N_rays, N_sample,]
+	roughness = torch.sigmoid(raw[..., 4])
+	roughness_map = torch.sum(weights * roughness, -1)
+
+	indirect_illumination_weight = raw[..., 5:5 + num_cluster]  # [N_rays, N_sample, num_cluster]
+	direct_illumination = raw[..., 5 + num_cluster]  # [N_rays, N_sample,]
+
 	direct_illumination_extend = direct_illumination.reshape(*direct_illumination.shape, 1)
 	direct_illumination_extend = direct_illumination_extend.expand(*direct_illumination_extend.shape[:-1], 3)
 	direct_illumination_map = torch.sum(weights[..., None] * direct_illumination_extend, -2)
@@ -70,20 +85,57 @@ def raw2outputs(raw, z_vals, rays_d, instance_label_dimension=0, raw_noise_std=0
 	illumination = indirect_illumination + direct_illumination.reshape((*direct_illumination.shape, 1))  # [N_rays, N_samples, 3]
 	illumination_map = torch.sum(weights[..., None] * illumination, -2)
 
-	color = albedo * illumination  # [N_rays, N_samples, 3]
+	normal_map = torch.sum(weights[..., None] * normal, -2)  # [N_rays, 3]
+	target_normal = normal
+	if infer_normal:
+		inferred_normal = raw[..., 4 + num_cluster: 7 + num_cluster]
+		target_normal = inferred_normal.clone().detach()
+		# (TODO) do normalize..?
+		# inferred_normal = normalize(inferred_normal, dim=-1)
+		inferred_normal_map = torch.sum(weights[..., None] * inferred_normal, -2)  # [N_rays, 3]
+	else:
+		inferred_normal = None
+		inferred_normal_map = None
+
+	n_dot_v = torch.sum(rays_d.unsqueeze(1) * target_normal, -1)
+	n_dot_v = F.relu(n_dot_v)
+
+	BRDF_2D_LUT_uv = torch.stack([n_dot_v, roughness], -1)
+	envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None,...], align_corners=True)
+	envBRDF = envBRDF.permute((0, 2, 3, 1))
+	envBRDF = envBRDF.squeeze(0)
+
+	F0 = torch.tensor([0.04, 0.04, 0.04])
+	F0 = F0.repeat(*sigma.shape, 1)
+	envBRDF_coefficient1 = envBRDF[..., 0]
+	envBRDF_coefficient0 = envBRDF[..., 1]
+	envBRDF_coefficient1 = torch.stack(3*[envBRDF_coefficient1], -1)
+	fresnel = fresnel_schlick_roughness(n_dot_v, F0, roughness)
+	specular = fresnel * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+	specular_map = torch.sum(weights[..., None] * specular, -2)
+
+	# print(fresnel.shape, "fresnel")
+	# rint(specular.shape, "specular")
+	K_d = 1 - fresnel
+	color = (K_d * albedo + specular) * illumination  # [N_rays, N_samples, 3]
 	color_map = torch.sum(weights[..., None] * color, -2)  # [N_rays, 3]
 
 	depth_map = torch.sum(weights * z_vals, -1)
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
 	acc_map = torch.sum(weights, -1)
+	#print(disp_map.shape, "disp map")
+	#print(specular_map.shape, "specular_map")
+	#print(roughness_map.shape, "roughness_map")
 
 	return color_map, albedo, albedo_map, indirect_illumination_weight, disp_map, acc_map, weights, depth_map, \
-		direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map, illumination_map
+		direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map, illumination_map, normal_map, \
+		inferred_normal, inferred_normal_map, roughness_map, specular_map
 
 
 def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecolor, retraw=False, lindisp=False,
 				perturb=0., N_importance=0, network_fine=None, white_bkgd=False, raw_noise_std=0., verbose=False,
-				pytest=False, is_instance_label_logit=False, decompose=False, label_encoder=None, use_viewdirs=None):
+				pytest=False, is_instance_label_logit=False, decompose=False, label_encoder=None, use_viewdirs=None
+				,brdf_lut=None):
 	"""Volumetric rendering.
 	Args:
 	  ray_batch: array of shape [batch_size, ...]. All information necessary
@@ -144,22 +196,40 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 		z_vals = lower + (upper - lower) * t_rand
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
+	#pts = pts.detach()
+	#pts = Variable(pts.data, requires_grad=True)
+	#pts.requires_grad = True
 
 	raw = network_query_fn(pts, viewdirs, network_fn)  # raw = [sigma, albedo_res, indirect_illumination, direct_illumination, basecolor_score]
 
+	# Calculate normal
+	pts.requires_grad = True
+	sigma_x = network_query_fn(pts, None, network_fn)
+	sigma_x = F.relu(sigma_x)
+	sigma_x.backward(torch.ones_like(sigma_x))
+	normal = -normalize(pts.grad, dim=-1)
+	normal = normal.detach()
+	pts.requires_grad = False
+
 	color_map, albedo, albedo_map, indirect_illumination_weight, disp_map, acc_map, weights, depth_map, \
-	direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map, illumination_map = raw2outputs(
-		raw, z_vals, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
-		is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor
+	direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map, illumination_map, normal_map,\
+	inferred_normal, inferred_normal_map, roughness_map, specular_map = raw2outputs(
+		raw, z_vals, normal, rays_d, network_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
+		is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
+		infer_normal=network_fn.infer_normal, brdf_lut=brdf_lut
 	)
 
 	if N_importance > 0:
 		color_map_0, disp_map_0, acc_map_0 = color_map, disp_map, acc_map
 		albedo_0 = albedo
+		roughness_map_0 = roughness_map
+		specular_map_0 = specular_map
 		weights_0 = weights
 		indirect_illumination_weight_0 = indirect_illumination_weight
 		albedo_map_0, direct_illumination_map_0, indirect_illumination_map_0 = albedo_map, direct_illumination_map, indirect_illumination_map
 		decomp_indirect_illum_map_0, illumination_map_0 = decomp_indirect_illum_map, illumination_map
+		normal_0, normal_map_0 = normal, normal_map
+		inferred_normal_0, inferred_normal_map_0 = inferred_normal, inferred_normal_map
 
 		z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
 		z_samples = sample_pdf(z_vals_mid, weights[..., 1:-1], N_importance, det=(perturb == 0.), pytest=pytest)
@@ -167,20 +237,35 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
 		pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
+		#pts = Variable(pts.data, requires_grad=True)
 
 		run_fn = network_fn if network_fine is None else network_fine
 		#         raw = run_network(pts, fn=run_fn)
 		raw = network_query_fn(pts, viewdirs, run_fn)
+
+		# Calculate normal
+		pts.requires_grad = True
+		sigma_x = network_query_fn(pts, None, run_fn)
+		sigma_x = F.relu(sigma_x)
+		sigma_x.backward(torch.ones_like(sigma_x))
+		normal = -normalize(pts.grad, dim=-1)
+		normal = normal.detach()
+		pts.requires_grad = False
+
 		color_map, albedo, albedo_map, indirect_illumination_weight, disp_map, acc_map, weights, depth_map, \
-		direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map, illumination_map = raw2outputs(
-			raw, z_vals, rays_d, run_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
-			is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor
+		direct_illumination_map, indirect_illumination_map, decomp_indirect_illum_map, illumination_map, normal_map,\
+		inferred_normal, inferred_normal_map, roughness_map, specular_map = raw2outputs(
+			raw, z_vals, normal, rays_d, run_fn.instance_label_dimension, raw_noise_std, white_bkgd, pytest=pytest,
+			is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
+			infer_normal=network_fn.infer_normal, brdf_lut=brdf_lut
 		)
 
 	ret = {
 		'color_map': color_map,
 		'albedo': albedo,
 		'albedo_map': albedo_map,
+		'roughness_map': roughness_map,
+		'specular_map': specular_map,
 		'indirect_illumination_weight': indirect_illumination_weight,
 		'disp_map': disp_map,
 		'acc_map': acc_map,
@@ -188,11 +273,18 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		'direct_illumination_map': direct_illumination_map,
 		'indirect_illumination_map': indirect_illumination_map,
 		'decomp_indirect_illum_map': decomp_indirect_illum_map,
-		'illumination_map': illumination_map
+		'illumination_map': illumination_map,
+		'normal' : normal,
+		'normal_map': normal_map
 	}
-
 	if retraw:
 		ret['raw'] = raw
+	if network_fn.infer_normal:
+		ret['inferred_normal'] = inferred_normal
+		ret['inferred_normal_map'] = inferred_normal_map
+		if N_importance > 0:
+			ret['inferred_normal_0'] = inferred_normal_0
+			ret['inferred_normal_map_0'] = inferred_normal_map_0
 	if N_importance > 0:
 		ret['color_map0'] = color_map_0
 		ret['albedo0'] = albedo_0
@@ -200,11 +292,14 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		ret['indirect_illumination_weight0'] = indirect_illumination_weight_0
 		ret['disp0'] = disp_map_0
 		ret['acc0'] = acc_map_0
-		ret['weights0'] = weights
+		ret['weights0'] = weights_0
 		ret['direct_illumination_map0'] = direct_illumination_map_0
 		ret['indirect_illumination_map0'] = indirect_illumination_map_0
 		ret['decomp_indirect_illum_map0'] = decomp_indirect_illum_map_0
 		ret['illumination_map0'] = illumination_map_0
+		ret['normal_0'] = normal_0
+		ret['normal_map_0'] = normal_map_0
+
 		ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
 	for k in ret:
@@ -233,7 +328,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, **kwargs):
 
 def render_decomp(
 		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1.,
-		c2w_staticcam=None, label_encoder=None,**kwargs
+		c2w_staticcam=None, label_encoder=None, **kwargs
 ):
 	"""Render rays
 	Args:
@@ -298,7 +393,8 @@ def render_decomp(
 # return ret_list + [ret_dict]
 
 
-def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None, render_factor=0, init_basecolor=None):
+def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
+					   savedir=None, render_factor=0, init_basecolor=None):
 	H, W, focal = hwf
 
 	if render_factor != 0:
@@ -314,7 +410,10 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None,
 	decomp_indirect_illuminations = []
 	illuminations = []
 	disps = []
-
+	normals = []
+	inferred_normals = []
+	roughnesss = []
+	speculars = []
 
 	K = np.array([
 		[focal, 0, 0.5 * W],
@@ -333,6 +432,12 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None,
 		decomp_indirect_illum_map = results['decomp_indirect_illum_map']  # (chunk, num_cluster, 3)
 		illumination_map = results['illumination_map']  # (chunk, 3)
 		disp = results['disp_map']
+		normal = (results['normal_map'] + 1) * 0.5
+		if 'inferred_normal_map' in results:
+			inferred_normal = (results['inferred_normal_map'] + 1) * 0.5
+			inferred_normals.append(inferred_normal.cpu().numpy())
+		roughness = results['roughness_map']
+		specular = results['specular_map']
 
 		rgbs.append(rgb.cpu().numpy())
 		albedos.append(albedo.cpu().numpy())
@@ -340,6 +445,9 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None,
 		indirect_illuminations.append(indirect_illumination.cpu().numpy())
 		illuminations.append(illumination_map.cpu().numpy())
 		disps.append(disp.cpu().numpy())
+		normals.append(normal.cpu().numpy())
+		roughnesss.append(roughness.cpu().numpy())
+		speculars.append(specular.cpu().numpy())
 
 		if savedir is not None:
 			rgb8 = to8b(rgbs[-1])
@@ -347,18 +455,35 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None,
 			direct_illumination8 = to8b(direct_illuminations[-1])
 			indirect_illumination8 = to8b(indirect_illuminations[-1])
 			illumination8 = to8b(illuminations[-1])
+			normal8 = to8b(normals[-1])
+			roughness8 = to8b(roughnesss[-1])
+			disp8 = to8b(disps[-1])
+			specular8 = to8b(speculars[-1])
 
 			filename_rgb = os.path.join(savedir, 'rgb_{:03d}.png'.format(i))
 			filename_albedo = os.path.join(savedir, 'albedo_{:03d}.png'.format(i))
 			filename_direct_illumination = os.path.join(savedir, 'direct_{:03d}.png'.format(i))
 			filename_indirect_illumination = os.path.join(savedir, 'indirect_{:03d}.png'.format(i))
 			filename_illumination = os.path.join(savedir, 'illumination_{:03d}.png'.format(i))
+			filename_normal = os.path.join(savedir, 'normal_{:03d}.png'.format(i))
+			filename_roughness = os.path.join(savedir, 'roughness_{:03d}.png'.format(i))
+			filename_disp = os.path.join(savedir, 'disp_{:03d}.png'.format(i))
+			filename_specular = os.path.join(savedir, 'specular_{:03d}.png'.format(i))
 
 			imageio.imwrite(filename_rgb, rgb8)
 			imageio.imwrite(filename_albedo, albedo8)
 			imageio.imwrite(filename_direct_illumination, direct_illumination8)
 			imageio.imwrite(filename_indirect_illumination, indirect_illumination8)
 			imageio.imwrite(filename_illumination, illumination8)
+			imageio.imwrite(filename_normal, normal8)
+			imageio.imwrite(filename_roughness, roughness8)
+			imageio.imwrite(filename_disp, disp8)
+			imageio.imwrite(filename_specular, specular8)
+
+			if 'inferred_normal_map' in results:
+				inferred_normal8 = to8b(inferred_normals[-1])
+				filename_inferred_normal = os.path.join(savedir, 'inferred_normal_{:03d}.png'.format(i))
+				imageio.imwrite(filename_inferred_normal, inferred_normal8)
 
 	rgbs = np.stack(rgbs, 0)
 	albedos = np.stack(albedos, 0)
@@ -366,5 +491,12 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs, savedir=None,
 	indirect_illuminations = np.stack(indirect_illuminations, 0)
 	illuminations = np.stack(illuminations, 0)
 	disps = np.stack(disps, 0)
+	normals = np.stack(normals, 0)
+	if len(inferred_normals) > 0:
+		inferred_normals = np.stack(inferred_normals, 0)
+	roughnesss = np.stack(roughnesss, 0)
+	speculars = np.stack(speculars, 0)
 
-	return rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps
+	return rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps, \
+		   normals, inferred_normals, roughnesss, speculars
+

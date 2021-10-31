@@ -75,7 +75,6 @@ def merge_cluster(centers, weights, th, minimum=4):
             counts = np.delete(counts, [min_idx[1]])
             coords[min_idx[0]] = new_center
             counts[min_idx[0]] = new_count
-            print(min_idx)
 
             original_idx0 = left_ids[min_idx[0]]
             original_idx1 = left_ids[min_idx[1]]
@@ -102,8 +101,11 @@ def merge_cluster(centers, weights, th, minimum=4):
     return coords, new_indices, counts
 
 
-def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1, n_clusters_minimum=4, visualize=False):
-    chrom = torch.Tensor(img).float() / (torch.linalg.norm(torch.Tensor(img).float(), dim=-1, keepdim=True) + 1e-10)
+def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1, n_clusters_minimum=4, visualize=False, normalize=True):
+    if normalize:
+        chrom = torch.Tensor(img).float() / (torch.linalg.norm(torch.Tensor(img).float(), dim=-1, keepdim=True) + 1e-10)
+    else:
+        chrom = torch.Tensor(img).float()
     if not use_hist:
         cluster = MiniBatchKMeans(n_clusters=n_clusters).fit(chrom.cpu().numpy().reshape(-1, 3))
     else:
@@ -119,12 +121,12 @@ def get_basecolor(img, use_hist=False, n_clusters=8, cluster_th=0.1, n_clusters_
 
     init_centers = cluster.cluster_centers_  # (n_cluster, 3)
     labels = cluster.labels_  # (n_cluster, )
-    print("Cluster centers (before merge)", cluster.cluster_centers_)
+    #print("Cluster centers (before merge)", cluster.cluster_centers_)
 
     centroid_weights = np.array([len(labels[labels == i]) for i in range(n_clusters)])
     new_centroid, new_indices, _ = merge_cluster(init_centers, centroid_weights, th=cluster_th, minimum=n_clusters_minimum)
-    print("Cluster centers (after merge)", new_centroid)
-    print("New label map", new_indices)
+    #print("Cluster centers (after merge)", new_centroid)
+    #print("New label map", new_indices)
     if visualize:
         import matplotlib.pyplot as plt
         predicted_label = labels.reshape((img.shape[0], img.shape[1], img.shape[2]))

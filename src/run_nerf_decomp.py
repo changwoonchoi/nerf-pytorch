@@ -19,7 +19,8 @@ from miscellaneous.test_dataset_speed import *
 
 from utils.generator_utils import *
 from utils.timing_utils import *
-
+import cv2
+from torch.nn.functional import normalize
 
 def test():
     raise NotImplementedError
@@ -29,6 +30,26 @@ def test_parser():
     parser = recursive_config_parser()
     args = parser.parse_args()
 
+def test_autograd():
+    a = torch.tensor([[2., 3.], [4., 5.]])
+    b = torch.tensor([[1., 1.], [1., 1.]])
+    L = nn.Linear(2, 1)
+    L.weight.data.fill_(1)
+    L.bias.data.fill_(0)
+
+    a.requires_grad = True
+    Q = L(a*b)**2
+    print("Q", Q)
+    Q.backward(torch.ones_like(Q))
+    print(a.grad)
+
+    a = torch.tensor([[2., 5.], [3., 4.]])
+    a.requires_grad = True
+    Q = L(a*b) ** 2
+    print("Q", Q)
+    Q.backward(torch.ones_like(Q))
+    print(a.grad)
+    #print(b.grad)
 
 def test_base_color():
     parser = recursive_config_parser()
@@ -67,6 +88,10 @@ def train():
     use_instance_mask = args.instance_mask
     logger_dataset.info("Instance mask: " + str(use_instance_mask))
     logger_dataset.info("Instance mask encoding: " + str(args.instance_label_encoding))
+    logger_dataset.info("Infer normal: " + str(args.infer_normal))
+    logger_dataset.info("Learn normal from oracle: " + str(args.learn_normal_from_oracle))
+    logger_dataset.info("Learn albedo from oracle: " + str(args.learn_albedo_from_oracle))
+
 
     # (1) Load dataset
     with time_measure("[1] Data load"):
@@ -83,11 +108,18 @@ def train():
             return target_dataset
 
         # load train and validation dataset
-        dataset = load_dataset_split("train", sample_length=args.sample_length, image_scale=args.image_scale)
-        dataset_val = load_dataset_split("test", skip=10, sample_length=args.sample_length)
+        load_params = {
+            "image_scale": args.image_scale,
+            "load_normal": args.learn_normal_from_oracle,
+            "load_albedo": args.learn_albedo_from_oracle,
+            "sample_length": args.sample_length
+        }
+        dataset = load_dataset_split("train", **load_params)
+        dataset_val = load_dataset_split("test", skip=10, **load_params)
 
         # calculate base color
         dataset.get_base_color(
+            learn_from_gt_albedo_map=args.learn_albedo_from_oracle,
             cluster_image_number=args.cluster_image_number,
             cluster_image_resize=args.cluster_image_resize,
             cluster_init_number=args.cluster_init_number,
@@ -109,6 +141,15 @@ def train():
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
         dataset.to_tensor(args.device)
         dataset_val.to_tensor(args.device)
+
+        # Load BRDF LUT
+        brdf_lut_path = "../data/ibl_brdf_lut.png"
+        brdf_lut = cv2.imread(brdf_lut_path)
+        brdf_lut = cv2.cvtColor(brdf_lut, cv2.COLOR_BGR2RGB)
+        brdf_lut = brdf_lut.astype(np.float32)
+        brdf_lut /= 255.0
+        brdf_lut = torch.tensor(brdf_lut).to(args.device)
+        brdf_lut = brdf_lut.permute((2, 0, 1))
 
     # (2) Create log file / folder
     with time_measure("[2] Log file create"):
@@ -140,6 +181,9 @@ def train():
         render_kwargs_train.update(bds_dict)
         render_kwargs_test.update(bds_dict)
 
+        render_kwargs_train['brdf_lut'] = brdf_lut
+        render_kwargs_test['brdf_lut'] = brdf_lut
+
         if use_instance_mask:
             is_instance_label_logit = isinstance(label_encoder, OneHotLabelEncoder) and (args.CE_weight_type != "mse")
             render_kwargs_train["is_instance_label_logit"] = is_instance_label_logit
@@ -170,15 +214,27 @@ def train():
     # export ground truth image
     img_gt = dataset_val.images.permute((0, 3, 1, 2))
     writer.add_images('test/gt_rgb', img_gt, 0)
+
     if use_instance_mask:
         colored_label_gt = label_to_colored_label(dataset_val.masks, label_encoder.label_color_list)
         colored_label_gt = colored_label_gt.permute((0, 3, 1, 2))
         writer.add_images('test/gt_instance_colored', colored_label_gt, 0)
 
+    if args.learn_normal_from_oracle:
+        normal_gt = dataset_val.normals.permute((0, 3, 1, 2))
+        writer.add_images('test/gt_normal', normal_gt, 0)
+    if args.learn_albedo_from_oracle:
+        albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
+        writer.add_images('test/gt_albedo', albedo_gt, 0)
+
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
-        target_rgb, target_label, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
-        target_chromaticity = target_rgb / (torch.linalg.norm(target_rgb, dim=-1, keepdim=True) + 1e-10)
+        target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
+        target_rgb = target_info["rgb"]
+        if args.learn_albedo_from_oracle:
+            target_chromaticity = target_info["albedo"]
+        else:
+            target_chromaticity = target_rgb / (torch.linalg.norm(target_rgb, dim=-1, keepdim=True) + 1e-10)
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
 
         #####  Core optimization loop  #####
@@ -186,7 +242,8 @@ def train():
         # 1. render sample
         result = render_decomp(
             dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True,
-            init_basecolor=dataset.init_basecolor, **render_kwargs_train
+            init_basecolor=dataset.init_basecolor,
+            **render_kwargs_train
         )
 
         optimizer.zero_grad()
@@ -198,7 +255,7 @@ def train():
         if use_instance_mask:
             instance_loss = label_encoder.error(
                 output_encoded_label=result['instance_map'],
-                target_label=target_label,
+                target_label=target_info["label"],
                 CE_weight_type=args.CE_weight_type
             )
         else:
@@ -211,7 +268,7 @@ def train():
         if 'instance0' in result and use_instance_mask:
             instance_loss0 = label_encoder.error(
                 output_encoded_label=result['instance0'],
-                target_label=target_label,
+                target_label=target_info["label"],
                 CE_weight_type=args.CE_weight_type
             )
             instance_loss = instance_loss + instance_loss0
@@ -244,17 +301,33 @@ def train():
             l1_indir_illum0 = l1_indir_illum0.sum() / torch.numel(l1_indir_illum0)
             l1_indir_illum = l1_indir_illum + l1_indir_illum0
 
-        # loss_reg = args.beta_albedo_cluster * loss_albedo_cluster + args.beta_indirect_sparse * l1_indir_illum
-        loss_reg = args.beta_albedo_cluster + loss_albedo_cluster + args.beta_albedo_render * loss_albedo_render + args.beta_indirect_sparse * l1_indir_illum
+        loss_reg = args.beta_albedo_cluster * loss_albedo_cluster \
+                    + args.beta_albedo_render * loss_albedo_render\
+                    + args.beta_indirect_sparse * l1_indir_illum
 
-        # 5) smooth prior
+        # 3) Normal loss
+        loss_inferred_normal = 0
+        if args.infer_normal:
+            inferred_normal = result['inferred_normal']
+            weights = result['weights']
+            detached_weights = weights.clone().detach()
+            inferred_normal_map = torch.sum(detached_weights[..., None] * inferred_normal, -2)
+            if args.learn_normal_from_oracle:
+                target_normal_map = normalize(target_info["normal"], dim=-1)
+            else:
+                normal = result['normal']
+                target_normal_map = torch.sum(detached_weights[..., None] * normal, -2)
+            loss_inferred_normal = torch.nn.MSELoss()(inferred_normal_map, target_normal_map)
+            #torch.mean(detached_weights[..., None] * (normal - inferred_normal) ** 2)
+
+        # 4) smooth prior
         # TODO: implement smooth prior
         smooth_prior_albedo = 0
         smooth_prior_indirect = 0
 
         loss_smooth = args.beta_smooth_albedo * smooth_prior_albedo + args.beta_smooth_indirect * smooth_prior_indirect
 
-        total_loss = args.beta_render * loss_render + loss_reg + loss_smooth
+        total_loss = args.beta_render * loss_render + loss_reg + loss_smooth + args.beta_inferred_normal * loss_inferred_normal
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
@@ -263,6 +336,8 @@ def train():
             writer.add_scalar('Loss/Loss_reg', loss_reg, i)
             writer.add_scalar('Loss/Loss_reg/albedo_cluster', loss_albedo_cluster * args.beta_albedo_cluster, i)
             writer.add_scalar('Loss/Loss_reg/indirect_sparsity', args.beta_indirect_sparse * l1_indir_illum, i)
+            if args.infer_normal:
+                writer.add_scalar('Loss/Loss_normal/inferred_normal', loss_inferred_normal, i)
 
         total_loss.backward()
         optimizer.step()
@@ -289,19 +364,31 @@ def train():
             testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(i))
             os.makedirs(testsavedir, exist_ok=True)
 
-            with torch.no_grad():
-                poses = torch.Tensor(dataset_val.poses).to(device)
-                rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps = render_decomp_path(
-                    poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-                    render_factor=4, init_basecolor=dataset.init_basecolor
-                )
-                writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
-                disps = np.expand_dims(disps, -1)
-                writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
-                writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
+            for var in grad_vars:
+                var.requires_grad = False
+            # with torch.no_grad():
+            poses = torch.Tensor(dataset_val.poses).to(device)
+            rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps,\
+            normals, inferred_normals, roughness, speculars = render_decomp_path(
+                poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+                render_factor=4, init_basecolor=dataset.init_basecolor
+            )
+            writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
+            disps = np.expand_dims(disps, -1)
+            writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/normals', normals.transpose((0, 3, 1, 2)), i)
+            roughness = np.expand_dims(roughness, -1)
+            writer.add_images('test/inferred/roughness', roughness.transpose((0, 3, 1, 2)), i)
+            writer.add_images('test/inferred/speculars', speculars.transpose((0, 3, 1, 2)), i)
+            if args.infer_normal:
+                writer.add_images('test/inferred/inferred_normals', inferred_normals.transpose((0, 3, 1, 2)), i)
+
+            for var in grad_vars:
+                var.requires_grad = True
 
             logger_export.info('Saved test set')
 
@@ -310,5 +397,6 @@ def train():
 
 if __name__ == '__main__':
     train()
+    #test_autograd()
     #test_base_color()
     #test_parser()

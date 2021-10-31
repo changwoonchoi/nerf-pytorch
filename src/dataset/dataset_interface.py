@@ -28,6 +28,11 @@ class NerfDataset(Dataset, ABC):
 		self.images = []
 		self.poses = []
 		self.masks = []
+		self.normals = []
+		self.albedos = []
+
+		self.load_normal = kwargs.get("load_normal", False)
+		self.load_albedo = kwargs.get("load_albedo", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -55,6 +60,18 @@ class NerfDataset(Dataset, ABC):
 		]).astype(np.float32)
 		return K
 
+	def get_info(self, image_index, u, v):
+		pixel_info = {}
+
+		pixel_info["rgb"] = self.images[image_index][v, u, :]
+		if self.load_albedo:
+			pixel_info["albedo"] = self.albedos[image_index][v, u, :]
+		if self.load_normal:
+			pixel_info["normal"] = self.normals[image_index][v, u, :]
+		if self.load_instance_label_mask:
+			pixel_info["label"] = self.masks[image_index][v, u]
+		return pixel_info
+
 	def get_near_far_plane(self):
 		return {'near': self.near, 'far': self.far}
 
@@ -75,6 +92,10 @@ class NerfDataset(Dataset, ABC):
 			self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
 				self.masks.append(data["mask"][0])
+			if self.load_normal:
+				self.normals.append(data["normal"][0])
+			if self.load_albedo:
+				self.albedos.append(data["albedo"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -84,6 +105,10 @@ class NerfDataset(Dataset, ABC):
 			self.init_basecolor = torch.from_numpy(self.init_basecolor).to(device)
 		if self.load_instance_label_mask:
 			self.masks = torch.stack(self.masks, 0).to(device)
+		if self.load_normal:
+			self.normals = torch.stack(self.normals, 0).to(device)
+		if self.load_albedo:
+			self.albedos = torch.stack(self.albedos, 0).to(device)
 
 	def __getitem__(self, item):
 		pass
@@ -105,6 +130,7 @@ class NerfDataset(Dataset, ABC):
 
 	def get_base_color(
 			self,
+			learn_from_gt_albedo_map=False,
 			cluster_image_number=50,
 			cluster_image_resize=0.5,
 			cluster_init_number=20,
@@ -112,16 +138,23 @@ class NerfDataset(Dataset, ABC):
 			cluster_number_lower_bound=8,
 			visualize=False
 	):
-		if cluster_image_number == -1:
-			random_indices = np.arange(len(self.images))
+		if learn_from_gt_albedo_map:
+			target_images = self.albedos
+			normalize = False
 		else:
-			random_indices = np.random.permutation(len(self.images))[0:cluster_image_number]
+			target_images = self.images
+			normalize = True
+
+		if cluster_image_number == -1:
+			random_indices = np.arange(len(target_images))
+		else:
+			random_indices = np.random.permutation(len(target_images))[0:cluster_image_number]
 		new_width = int(self.width * cluster_image_resize)
 		new_height = int(self.height * cluster_image_resize)
 		p = transforms.Compose([transforms.Resize((new_height, new_width))])
 		sampled_imgs = []
 		for i in random_indices:
-			sampled_imgs.append(self.images[i])
+			sampled_imgs.append(target_images[i])
 		sampled_imgs = torch.stack(sampled_imgs, 0)
 		sampled_imgs = sampled_imgs.permute((0, 3, 1, 2))
 		sampled_imgs = p(sampled_imgs)
@@ -133,6 +166,7 @@ class NerfDataset(Dataset, ABC):
 			cluster_th=cluster_merge_threshold,
 			n_clusters_minimum=cluster_number_lower_bound,
 			visualize=visualize,
+			normalize=normalize
 		)
 		self.num_cluster = self.init_basecolor.shape[0]
 

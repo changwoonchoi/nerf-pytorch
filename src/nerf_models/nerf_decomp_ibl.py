@@ -9,7 +9,7 @@ import os
 
 
 # Model
-class NeRFDecomp(nn.Module):
+class NeRFDecompIBL(nn.Module):
     def __init__(
             self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
             instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True,
@@ -48,21 +48,19 @@ class NeRFDecomp(nn.Module):
             [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in range(D - 1)]
         )
 
-        # self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W)])
+        self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W)])
 
         self.feature_linear = nn.Linear(W, W)
         self.sigma_linear = nn.Linear(W, 1)
 
         self.albedo_feature_linear = nn.Linear(W, W // 2)
-        self.albedo_linear = nn.Linear(W // 2, 4)
+        self.albedo_linear = nn.Linear(W // 2, 3)
 
         self.infer_normal = infer_normal
         if infer_normal:
-            # self.positions_linears_normal = nn.ModuleList(
-            #     [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i
-            #                                 in range(D - 1)]
-            # )
-            self.normal_feature_linear = nn.Linear(W, W // 2)
+            self.normal_feature_linear1 = nn.Linear(W, W)
+            self.normal_feature_linear2 = nn.Linear(W, W)
+            self.normal_feature_linear3 = nn.Linear(W, W // 2)
             self.normal_linear = nn.Linear(W // 2, 3)
 
         if use_illumination_feature_layer:
@@ -80,7 +78,7 @@ class NeRFDecomp(nn.Module):
                 setattr(self, "indirect_feature_linear{}".format(k), None)
                 setattr(self, "indirect_linear{}".format(k), nn.Linear(W, 1))
 
-        self.illumination_activation = torch.nn.Sigmoid() #torch.nn.ReLU()
+        self.illumination_activation = torch.nn.ReLU()
         self.illumination_constant = 1
 
     def __str__(self):
@@ -122,25 +120,21 @@ class NeRFDecomp(nn.Module):
         albedo = self.albedo_linear(albedo_feature)
 
         if self.infer_normal:
-            # n = input_pts
-            # for i, l in enumerate(self.positions_linears_normal):
-            #     n = self.positions_linears_normal[i](n)
-            #     n = F.relu(n)
-            #     if i in self.skips:
-            #         n = torch.cat([input_pts, n], dim=-1)
-
-            n = self.normal_feature_linear(h)
+            n = self.normal_feature_linear1(h)
             n = F.relu(n)
-            n = self.normal_linear(n)
-            normal = torch.tanh(n)
+            n = self.normal_feature_linear2(n)
+            n = F.relu(n)
+            n = self.normal_feature_linear3(n)
+            n = F.relu(n)
+            normal = self.normal_linear(n)
+            normal = torch.tanh(normal)
 
         # (3) position + direction
-        h = self.feature_linear(h)
-        h = F.relu(h)
-        # h = torch.cat([feature, input_views], dim=-1)
-        # for i, l in enumerate(self.views_linears):
-        #     h = self.views_linears[i](h)
-        #     h = F.relu(h)
+        feature = self.feature_linear(h)
+        h = torch.cat([feature, input_views], dim=-1)
+        for i, l in enumerate(self.views_linears):
+            h = self.views_linears[i](h)
+            h = F.relu(h)
 
         # (3) dependent to position, direction
         # (3)-1 Direct illumination I(x, d)
@@ -158,7 +152,7 @@ class NeRFDecomp(nn.Module):
             if self.use_illumination_feature_layer:
                 indirect_illumination_feature = getattr(self, 'indirect_feature_linear{}'.format(k))(h)
                 indirect_illumination_feature = F.relu(indirect_illumination_feature)
-                indirect_illumination = getattr(self, 'indirect_linear{}'.format(k))(indirect_illumination_feature)
+                indirect_illumination = getattr(self,'indirect_linear{}'.format(k))(indirect_illumination_feature)
             else:
                 indirect_illumination = getattr(self, 'indirect_linear{}'.format(k))(h)
             indirect_illumination = self.illumination_constant * self.illumination_activation(indirect_illumination)

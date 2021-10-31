@@ -9,7 +9,7 @@ import os
 
 
 # Model
-class NeRFDecomp(nn.Module):
+class NeRFSpecularIBL(nn.Module):
     def __init__(
             self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
             instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True,
@@ -48,43 +48,25 @@ class NeRFDecomp(nn.Module):
             [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in range(D - 1)]
         )
 
-        # self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W)])
-
-        self.feature_linear = nn.Linear(W, W)
+        # (1) Sigma
         self.sigma_linear = nn.Linear(W, 1)
 
-        self.albedo_feature_linear = nn.Linear(W, W // 2)
-        self.albedo_linear = nn.Linear(W // 2, 4)
+        # (2) Albedo & Roughness
+        self.albedo_roughness_feature_linear = nn.Linear(W, W // 2)
+        self.albedo_roughness_linear = nn.Linear(W // 2, 4)
 
+        # (3) Normal (Optional)
         self.infer_normal = infer_normal
         if infer_normal:
-            # self.positions_linears_normal = nn.ModuleList(
-            #     [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i
-            #                                 in range(D - 1)]
-            # )
             self.normal_feature_linear = nn.Linear(W, W // 2)
             self.normal_linear = nn.Linear(W // 2, 3)
 
-        if use_illumination_feature_layer:
-            self.direct_feature_linear = nn.Linear(W, W // 2)
-            self.direct_linear = nn.Linear(W // 2, 1)
-        else:
-            self.direct_feature_linear = None
-            self.direct_linear = nn.Linear(W, 1)
-
-        for k in range(num_cluster):
-            if self.use_illumination_feature_layer:
-                setattr(self, "indirect_feature_linear{}".format(k), nn.Linear(W, W // 2))
-                setattr(self, "indirect_linear{}".format(k), nn.Linear(W // 2, 1))
-            else:
-                setattr(self, "indirect_feature_linear{}".format(k), None)
-                setattr(self, "indirect_linear{}".format(k), nn.Linear(W, 1))
-
-        self.illumination_activation = torch.nn.Sigmoid() #torch.nn.ReLU()
-        self.illumination_constant = 1
+        # (4) Irradiance
+        self.irradiance_feature_layer = nn.Linear(W, W // 2)
+        self.irradiance_layer = nn.Linear(W // 2, 3)
 
     def __str__(self):
-        logs = ["[NeRFDecomp"]
+        logs = ["[NeRF"]
         logs += ["\t- depth : {}".format(self.D)]
         logs += ["\t- width : {}".format(self.W)]
         logs += ["\t- input_ch : {}".format(self.input_ch)]
@@ -96,11 +78,7 @@ class NeRFDecomp(nn.Module):
         return "\n".join(logs)
 
     def forward(self, x):
-        if x.shape[-1] == self.input_ch + self.input_ch_views:
-            input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
-        else:
-            input_pts = x
-            input_views = None
+        input_pts = x
         h = input_pts
 
         # (1) position
@@ -110,64 +88,27 @@ class NeRFDecomp(nn.Module):
             if i in self.skips:
                 h = torch.cat([input_pts, h], dim=-1)
 
-        # (2) dependent only to position
-        # sigma(x), albedo(x)
+        # (1) sigma(x)
         sigma = self.sigma_linear(h)
 
-        if input_views is None:
-            return sigma
+        # (2) Albedo & roughness
+        albedo_roughness_feature = self.albedo_roughness_feature_linear(h)
+        albedo_roughness_feature = F.relu(albedo_roughness_feature)
+        albedo_roughness = self.albedo_linear(albedo_roughness_feature)
 
-        albedo_feature = self.albedo_feature_linear(h)
-        albedo_feature = F.relu(albedo_feature)
-        albedo = self.albedo_linear(albedo_feature)
-
+        # (3) Normal (Optional)
         if self.infer_normal:
-            # n = input_pts
-            # for i, l in enumerate(self.positions_linears_normal):
-            #     n = self.positions_linears_normal[i](n)
-            #     n = F.relu(n)
-            #     if i in self.skips:
-            #         n = torch.cat([input_pts, n], dim=-1)
-
             n = self.normal_feature_linear(h)
             n = F.relu(n)
-            n = self.normal_linear(n)
-            normal = torch.tanh(n)
+            normal = self.normal_linear(n)
+            normal = torch.tanh(normal)
 
-        # (3) position + direction
-        h = self.feature_linear(h)
-        h = F.relu(h)
-        # h = torch.cat([feature, input_views], dim=-1)
-        # for i, l in enumerate(self.views_linears):
-        #     h = self.views_linears[i](h)
-        #     h = F.relu(h)
+        # (4) Irradiance
+        irradiance_feature = self.irradiance_feature_layer(h)
+        irradiance_feature = F.relu(irradiance_feature)
+        irradiance = self.irradiance_layer(irradiance_feature)
 
-        # (3) dependent to position, direction
-        # (3)-1 Direct illumination I(x, d)
-        if self.use_illumination_feature_layer:
-            direct_illumination_feature = self.direct_feature_linear(h)
-            direct_illumination_feature = F.relu(direct_illumination_feature)
-            direct_illumination = self.direct_linear(direct_illumination_feature)
-        else:
-            direct_illumination = self.direct_linear(h)
-        direct_illumination = self.illumination_constant * self.illumination_activation(direct_illumination)
-
-        # (3)-2 Indirect illumination from kth base color w_k(x, d)
-        indirect_illuminations = {}
-        for k in range(self.num_cluster):
-            if self.use_illumination_feature_layer:
-                indirect_illumination_feature = getattr(self, 'indirect_feature_linear{}'.format(k))(h)
-                indirect_illumination_feature = F.relu(indirect_illumination_feature)
-                indirect_illumination = getattr(self, 'indirect_linear{}'.format(k))(indirect_illumination_feature)
-            else:
-                indirect_illumination = getattr(self, 'indirect_linear{}'.format(k))(h)
-            indirect_illumination = self.illumination_constant * self.illumination_activation(indirect_illumination)
-            indirect_illuminations['indirect_illumination{}'.format(k)] = indirect_illumination
-
-        ret = [sigma, albedo]
-        for k in range(self.num_cluster):
-            ret.append(indirect_illuminations['indirect_illumination{}'.format(k)])
-        ret.append(direct_illumination)
+        ret = [sigma, albedo_roughness, irradiance]
 
         if self.infer_normal:
             ret.append(normal)
