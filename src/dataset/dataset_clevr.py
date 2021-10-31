@@ -77,12 +77,26 @@ class ClevrDataset(NerfDataset):
 		frame = self.meta['frames'][::self.skip][index]
 		image_file_path = os.path.join(self.basedir, self.split, os.path.split(frame['file_path'])[1])
 		mask_file_path = os.path.join(os.path.split(image_file_path)[0], 'mask_' + os.path.split(image_file_path)[1])
-
+		if self.use_oracle_albedo:
+			albedo_file_path = os.path.join(
+				os.path.split(image_file_path)[0],
+				os.path.split(image_file_path)[1][:-4] + "_albedo_oracle.png"
+			)
+		elif self.use_flatten_image:
+			albedo_file_path = os.path.join(
+				os.path.split(image_file_path)[0],
+				os.path.split(image_file_path)[1][:-4] + "_albedo.png"
+			)
 		# (1) load RGB Image
 		image = cv2.imread(image_file_path)
 		image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+		if self.load_albedo:
+			albedo = cv2.imread(albedo_file_path)
+			albedo = cv2.cvtColor(albedo, cv2.COLOR_BGR2RGB)
 		if self.scale != 1:
 			image = cv2.resize(image, None, fx=self.scale, fy=self.scale)
+			if self.load_albedo:
+				albedo = cv2.resize(albedo, None, )
 
 		# (2) load colored mask and convert into labeled mask
 		instance_label_mask = None

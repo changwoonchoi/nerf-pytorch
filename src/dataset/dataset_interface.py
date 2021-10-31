@@ -33,6 +33,8 @@ class NerfDataset(Dataset, ABC):
 
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
+		self.load_oracle_albedo = kwargs.get("load_oracle_albedo", False)
+		self.load_flatten_image = kwargs.get("load_flatten_image", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
