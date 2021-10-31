@@ -38,13 +38,15 @@ render_decompose = False
 sample_length = 6
 
 beta_albedo_cluster = 0
-beta_indirect_sparse = 1
-beta_render = 2000
-beta_albedo_render = 50
+beta_indirect_sparse = 0
+beta_render = 1
+beta_albedo_render = 0.5
+beta_radiance_render = 1
+
 
 beta_smooth_albedo = 1
 beta_smooth_indirect = 1
-beta_inferred_normal = 10
+beta_inferred_normal = 0.5
 
 # clustering related
 cluster_image_number = -1

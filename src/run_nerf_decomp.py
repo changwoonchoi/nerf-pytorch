@@ -1,3 +1,9 @@
+# import os
+#
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"] = str(5)
+#
+
 import numpy as np
 import torch
 from torch.distributions.categorical import Categorical
@@ -227,6 +233,8 @@ def train():
         albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
         writer.add_images('test/gt_albedo', albedo_gt, 0)
 
+    mse_loss = torch.nn.MSELoss()
+
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
         target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
@@ -251,91 +259,46 @@ def train():
         # 2. calculate loss
         # 1) rendering loss
         rgb = result['color_map']
-        loss_render = img2mse(rgb, target_rgb)
-        if use_instance_mask:
-            instance_loss = label_encoder.error(
-                output_encoded_label=result['instance_map'],
-                target_label=target_info["label"],
-                CE_weight_type=args.CE_weight_type
-            )
-        else:
-            instance_loss = 0
-
+        loss_render = mse_loss(rgb, target_rgb)
         if 'color_map0' in result:
-            loss_render0 = img2mse(result['color_map0'], target_rgb)
+            loss_render0 = mse_loss(result['color_map0'], target_rgb)
             loss_render = loss_render + loss_render0
 
-        if 'instance0' in result and use_instance_mask:
-            instance_loss0 = label_encoder.error(
-                output_encoded_label=result['instance0'],
-                target_label=target_info["label"],
-                CE_weight_type=args.CE_weight_type
-            )
-            instance_loss = instance_loss + instance_loss0
+        # 1) radiance loss
+        radiance = result['radiance_map']
+        loss_render_radiance = mse_loss(radiance, target_rgb)
+        if 'radiance_map0' in result:
+            loss_render_radiance0 = mse_loss(result['radiance_map0'], target_rgb)
+            loss_render_radiance = loss_render_radiance + loss_render_radiance0
 
-        instance_loss_weight = args.instance_loss_weight
-        loss_render = loss_render + instance_loss_weight * instance_loss
-
-        # 2) albedo cluster loss
-        albedo = result['albedo']  # (N_rays, N_samples + N_importance, 3)
-        log_albedo = torch.log(albedo)
-        log_init_basecolor = torch.log(dataset.init_basecolor)
-        diff_albedo_cluster = log_albedo[..., None, :] - log_init_basecolor[None, None, ...]  # (N_rays, N_samples, n_cluster, 3)
-        diff_albedo_cluster = torch.linalg.norm(diff_albedo_cluster, dim=-1).min(dim=-1).values
-        loss_albedo_cluster = diff_albedo_cluster.sum() / torch.numel(diff_albedo_cluster)
-
-        # 3) albedo render loss
-        loss_albedo_render = img2mse(result['albedo_map'], target_chromaticity)
+        # 2) albedo render loss
+        loss_albedo_render = mse_loss(result['albedo_map'], target_chromaticity)
         if 'albedo_map0' in result:
-            loss_albedo_render0 = img2mse(result['albedo_map0'], target_chromaticity)
+            loss_albedo_render0 = mse_loss(result['albedo_map0'], target_chromaticity)
             loss_albedo_render = loss_albedo_render + loss_albedo_render0
 
-        # 4) indirect illumination regularization loss
-        indirect_illumination_weight = result['indirect_illumination_weight']
-        l1_indir_illum = torch.linalg.norm(indirect_illumination_weight, ord=1, dim=-1)
-        l1_indir_illum = l1_indir_illum.sum() / torch.numel(l1_indir_illum)
-
-        if 'indirect_illumination_weight0' in result:
-            indirect_illumination_weight0 = result['indirect_illumination_weight0']
-            l1_indir_illum0 = torch.linalg.norm(indirect_illumination_weight0, ord=1, dim=-1)
-            l1_indir_illum0 = l1_indir_illum0.sum() / torch.numel(l1_indir_illum0)
-            l1_indir_illum = l1_indir_illum + l1_indir_illum0
-
-        loss_reg = args.beta_albedo_cluster * loss_albedo_cluster \
-                    + args.beta_albedo_render * loss_albedo_render\
-                    + args.beta_indirect_sparse * l1_indir_illum
-
-        # 3) Normal loss
+        # 3) Normal render loss
         loss_inferred_normal = 0
         if args.infer_normal:
-            inferred_normal = result['inferred_normal']
-            weights = result['weights']
-            detached_weights = weights.clone().detach()
-            inferred_normal_map = torch.sum(detached_weights[..., None] * inferred_normal, -2)
+            inferred_normal_map = result['inferred_normal_map']
             if args.learn_normal_from_oracle:
                 target_normal_map = normalize(target_info["normal"], dim=-1)
             else:
-                normal = result['normal']
-                target_normal_map = torch.sum(detached_weights[..., None] * normal, -2)
-            loss_inferred_normal = torch.nn.MSELoss()(inferred_normal_map, target_normal_map)
-            #torch.mean(detached_weights[..., None] * (normal - inferred_normal) ** 2)
+                target_normal_map = result['normal_map']
+            loss_inferred_normal = mse_loss(inferred_normal_map, target_normal_map)
+            if 'inferred_normal_map0' in result:
+                loss_inferred_normal0 = mse_loss(result['inferred_normal_map0'], target_normal_map)
+                loss_inferred_normal = loss_inferred_normal + loss_inferred_normal0
 
-        # 4) smooth prior
-        # TODO: implement smooth prior
-        smooth_prior_albedo = 0
-        smooth_prior_indirect = 0
-
-        loss_smooth = args.beta_smooth_albedo * smooth_prior_albedo + args.beta_smooth_indirect * smooth_prior_indirect
-
-        total_loss = args.beta_render * loss_render + loss_reg + loss_smooth + args.beta_inferred_normal * loss_inferred_normal
+        total_loss = args.beta_render * loss_render + args.beta_albedo_render * loss_albedo_render \
+                      + args.beta_inferred_normal * loss_inferred_normal + args.beta_radiance_render * loss_render_radiance
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
             writer.add_scalar('Loss/Loss_render', loss_render, i)
-            writer.add_scalar('Loss/Loss_albedo_render', args.beta_albedo_render * loss_albedo_render, i)
-            writer.add_scalar('Loss/Loss_reg', loss_reg, i)
-            writer.add_scalar('Loss/Loss_reg/albedo_cluster', loss_albedo_cluster * args.beta_albedo_cluster, i)
-            writer.add_scalar('Loss/Loss_reg/indirect_sparsity', args.beta_indirect_sparse * l1_indir_illum, i)
+            writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
+            writer.add_scalar('Loss/Loss_radiance_render', loss_render_radiance, i)
+
             if args.infer_normal:
                 writer.add_scalar('Loss/Loss_normal/inferred_normal', loss_inferred_normal, i)
 
@@ -368,24 +331,37 @@ def train():
                 var.requires_grad = False
             # with torch.no_grad():
             poses = torch.Tensor(dataset_val.poses).to(device)
-            rgbs, albedos, direct_illuminations, indirect_illuminations, illuminations, disps,\
-            normals, inferred_normals, roughness, speculars = render_decomp_path(
+            render_decomp_path_results = render_decomp_path(
                 poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
                 render_factor=4, init_basecolor=dataset.init_basecolor
             )
-            writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
-            disps = np.expand_dims(disps, -1)
-            writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
-            writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
-            writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
-            writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
-            writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
-            writer.add_images('test/inferred/normals', normals.transpose((0, 3, 1, 2)), i)
-            roughness = np.expand_dims(roughness, -1)
-            writer.add_images('test/inferred/roughness', roughness.transpose((0, 3, 1, 2)), i)
-            writer.add_images('test/inferred/speculars', speculars.transpose((0, 3, 1, 2)), i)
-            if args.infer_normal:
-                writer.add_images('test/inferred/inferred_normals', inferred_normals.transpose((0, 3, 1, 2)), i)
+
+            def add_image_to_writer(key_name):
+                if key_name not in render_decomp_path_results:
+                    return
+                stacked_images = render_decomp_path_results[key_name]
+                if len(stacked_images.shape) != 4:
+                    stacked_images = np.expand_dims(stacked_images, -1)
+                writer.add_images('test/inferred/%s' % key_name, stacked_images.transpose((0, 3, 1, 2)), i)
+
+            # show_result_keys = ["rgb", "radiance", "albedo", "roughness", "specular", "normal", "inferred_normal"]
+            show_result_keys = list(render_decomp_path_results.keys())
+            for key in show_result_keys:
+                add_image_to_writer(key)
+
+            # writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
+            # disps = np.expand_dims(disps, -1)
+            # writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
+            # writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
+            # writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
+            # writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
+            # writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
+            # writer.add_images('test/inferred/normals', normals.transpose((0, 3, 1, 2)), i)
+            # roughness = np.expand_dims(roughness, -1)
+            # writer.add_images('test/inferred/roughness', roughness.transpose((0, 3, 1, 2)), i)
+            # writer.add_images('test/inferred/speculars', speculars.transpose((0, 3, 1, 2)), i)
+            # if args.infer_normal:
+            #     writer.add_images('test/inferred/inferred_normals', inferred_normals.transpose((0, 3, 1, 2)), i)
 
             for var in grad_vars:
                 var.requires_grad = True
