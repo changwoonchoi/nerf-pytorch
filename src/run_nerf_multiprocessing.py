@@ -55,9 +55,8 @@ class MultiProcessingRenderer:
 
 		# find all configs
 		config_files = find_all_configs(multiprocessing_configs["config_lists"])
-		config_files.sort()
+		# config_files.sort()
 		pprint(config_files)
-
 		gpu_ids = multiprocessing_configs.pop("available_gpus")
 
 		queue = Queue()

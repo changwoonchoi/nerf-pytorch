@@ -58,6 +58,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_rand", type=int, default=32 * 32 * 4,
 	                    help='batch size (number of random rays per gradient step)')
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
+	parser.add_argument("--N_iter_ignore_normal", type=int, default=5000, help="Ignore normal loss")
 
 	parser.add_argument("--beta_sparse_base", type=float, default=1., help="")
 	parser.add_argument("--beta_res", type=float, default=1., help="")
@@ -71,6 +72,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_inferred_normal", type=float, default=0.1)
 	parser.add_argument("--beta_albedo_render", type=float, default=1.)
 	parser.add_argument("--beta_radiance_render", type=float, default=1.)
+	parser.add_argument("--beta_inferred_depth", type=float, default=1.)
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_decay", type=int, default=250,
@@ -112,6 +114,11 @@ def config_parser(default_files=None):
 	parser.add_argument("--decompose_mode", type=str, default="binary", help='decompose mode one of all or binary')
 
 	parser.add_argument("--infer_normal", action='store_true', help='infer normal from NeRF')
+	parser.add_argument("--infer_normal_at_surface", action='store_true', help='infer normal from surface')
+	parser.add_argument("--infer_normal_target", type=str, default="normal_map_from_sigma_gradient", help='decompose mode one of all or binary')
+
+	parser.add_argument("--infer_depth", action='store_true', help='infer depth using additional MLP')
+
 	parser.add_argument("--learn_normal_from_oracle", action='store_true', help='learn_normal_from_oracle')
 	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')
 

@@ -60,4 +60,4 @@ cluster_merge_threshold = 0.05
 # force learn from oracle
 # learn_normal_from_oracle
 learn_albedo_from_oracle
-N_iter_ignore_normal = 50000
+N_iter_ignore_normal = 20000

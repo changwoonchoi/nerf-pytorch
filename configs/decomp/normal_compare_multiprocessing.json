@@ -1,6 +1,0 @@
-{
-  "available_gpus" : [0,1,2,3],
-  "config_lists":[
-    "../configs/decomp/normal_compare"
-  ]
-}

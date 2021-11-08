@@ -6,7 +6,7 @@ import numpy as np
 import utils.logging_utils
 from nerf_models.positional_embedder import get_embedder
 import os
-
+from networks.MLP import *
 
 # Model
 class NeRFDecomp(nn.Module):
@@ -14,8 +14,7 @@ class NeRFDecomp(nn.Module):
             self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
             instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True,
             use_illumination_feature_layer=False,
-            use_instance_feature_layer=False,
-            infer_normal=True
+            use_instance_feature_layer=False
     ):
         """
         NeRFDecomp Model
@@ -60,12 +59,6 @@ class NeRFDecomp(nn.Module):
 
         self.roughness_linear = nn.Linear(W, 1)
 
-        self.infer_normal = infer_normal
-
-        if infer_normal:
-            self.normal_feature_linear = nn.Linear(W, W // 2)
-            self.normal_linear = nn.Linear(W // 2, 3)
-
         self.irradiance_feature_linear = nn.Linear(W, W // 2)
         self.irradiance_linear = nn.Linear(W // 2, 1)
 
@@ -81,7 +74,6 @@ class NeRFDecomp(nn.Module):
         logs += ["\t- instance_label_dimension : {}".format(self.instance_label_dimension)]
         logs += ["\t- base_color_num : {}".format(self.num_cluster)]
         logs += ["\t- use_illumination_feature_layer : {}".format(self.use_illumination_feature_layer)]
-        logs += ["\t- infer normal : {}".format(self.infer_normal)]
         return "\n".join(logs)
 
     def forward(self, x):
@@ -114,12 +106,6 @@ class NeRFDecomp(nn.Module):
         # (2-3) roughness
         roughness = self.roughness_linear(h)
 
-        # (2-4) normal
-        if self.infer_normal:
-            normal_feature = self.normal_feature_linear(h)
-            normal_feature = F.relu(normal_feature)
-            normal = self.normal_linear(normal_feature)
-
         # (2-4) irradiance
         irradiance_feature = self.irradiance_feature_linear(h)
         irradiance_feature = F.relu(irradiance_feature)
@@ -135,8 +121,6 @@ class NeRFDecomp(nn.Module):
         radiance = self.radiance_linear(h)
 
         ret = [sigma, albedo, roughness, irradiance, radiance]
-        if self.infer_normal:
-            ret.append(normal)
 
         ret = torch.cat(ret, dim=-1)
 
@@ -195,8 +179,7 @@ def create_NeRFDecomp(args):
         use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
         num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
         use_illumination_feature_layer=args.use_illumination_feature_layer,
-        use_instance_feature_layer=args.use_instance_feature_layer,
-        infer_normal=args.infer_normal
+        use_instance_feature_layer=args.use_instance_feature_layer
     ).to(args.device)
     logger.info(model)
 
@@ -209,18 +192,32 @@ def create_NeRFDecomp(args):
             use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
             num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
             use_illumination_feature_layer=args.use_illumination_feature_layer,
-            use_instance_feature_layer=args.use_instance_feature_layer,
-            infer_normal=args.infer_normal
+            use_instance_feature_layer=args.use_instance_feature_layer
         ).to(args.device)
         logger.info("NeRFDecomp fine model")
         logger.info(model)
         grad_vars += list(model_fine.parameters())
+
+    # Depth MLP
+    depth_mlp = None
+    if args.infer_depth:
+        depth_mlp = PositionDirectionMLP(D=args.netdepth, W=args.netwidth,
+                                         input_ch=input_ch, input_ch_views=input_ch_views,
+                                         out_ch=1, skips=skips)
+        grad_vars += list(depth_mlp.parameters())
+
+    # Normal MLP
+    normal_mlp = None
+    if args.infer_normal:
+        normal_mlp = PositionMLP(D=args.netdepth, W=args.netwidth, input_ch=input_ch, out_ch=3, skips=skips)
+        grad_vars += list(normal_mlp.parameters())
 
     network_query_fn = lambda inputs, viewdirs, network_fn: run_network(
         inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn, netchunk=args.netchunk
     )
 
     optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
+    # optimizer_depth = torch.optim.Adam(params=depth_mlp.parameters(), lr=args.lrate, betas=(0.9, 0.999))
 
     start = 0
     basedir = args.basedir
@@ -234,6 +231,7 @@ def create_NeRFDecomp(args):
 
     logger.info('Found ckpts: ' + str(ckpts))
 
+
     if len(ckpts) > 0 and not args.no_reload:
         ckpt_path = ckpts[-1]
         logger.info('Reloading from ' + str(ckpt_path))
@@ -243,8 +241,11 @@ def create_NeRFDecomp(args):
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
         model.load_state_dict(ckpt['network_fn_state_dict'])
+        depth_mlp.load_state_dict(ckpt['depth_mlp'])
+
         if model_fine is not None:
             model_fine.load_state_dict(ckpt['network_fine_state_dict'])
+
 
     render_kwargs_train = {
         'network_query_fn': network_query_fn,
@@ -257,11 +258,16 @@ def create_NeRFDecomp(args):
         'white_bkgd': args.white_bkgd,
         'raw_noise_std': args.raw_noise_std,
         'ndc': False,
-        'lindisp': args.lindisp
+        'lindisp': args.lindisp,
+        "depth_mlp": depth_mlp,
+        "normal_mlp": normal_mlp,
+        "infer_depth": args.infer_depth,
+        "infer_normal": args.infer_normal,
+        "infer_normal_at_surface": args.infer_normal_at_surface
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}
     render_kwargs_test['perturb'] = False
-    render_kwargs_test['raw_noise_std'] = 0.
+    render_kwargs_test['raw_noise_std'] = 0
 
     return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer
