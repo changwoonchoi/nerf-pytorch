@@ -9,7 +9,7 @@ lrate_decay = 500
 
 N_samples = 64
 N_importance = 128
-N_rand = 512
+N_rand = 256
 N_iter = 100000
 
 # if calculate normal chunk should be small !!

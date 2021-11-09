@@ -1,0 +1,4 @@
+include = ../common.txt
+datadir = ../data/mitsuba/living-room-2
+basedir = ../logs/normal_infer_comparison/living-room-2
+infer_normal

@@ -241,8 +241,10 @@ def create_NeRFDecomp(args):
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
         model.load_state_dict(ckpt['network_fn_state_dict'])
-        depth_mlp.load_state_dict(ckpt['depth_mlp'])
-
+        if args.infer_depth:
+            depth_mlp.load_state_dict(ckpt['depth_mlp'])
+        if args.infer_normal:
+            normal_mlp.load_state_dict(ckpt['normal_mlp'])
         if model_fine is not None:
             model_fine.load_state_dict(ckpt['network_fine_state_dict'])
 

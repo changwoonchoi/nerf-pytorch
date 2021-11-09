@@ -16,7 +16,7 @@ def depth_to_position(H, W, K, c2w, d):
 	return rays_p
 
 
-def depth_to_normal(depth_map, pose, K):
+def depth_to_normal_image_space(depth_map, pose, K):
 	height, width = depth_map.shape
 	position = depth_to_position(height, width, K, pose, depth_map)
 	normal = torch.zeros((*depth_map.shape, 3))

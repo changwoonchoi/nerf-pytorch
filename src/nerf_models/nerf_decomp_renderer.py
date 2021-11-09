@@ -9,7 +9,10 @@ from torch.autograd import Variable
 from nerf_models.microfacet import *
 
 DEBUG = False
-from utils.depth_to_normal_utils import depth_to_normal
+from utils.depth_to_normal_utils import depth_to_normal_image_space
+
+from nerf_models.normal_from_depth import *
+from nerf_models.normal_from_sigma import *
 
 
 def raw2outputs_simple(raw, z_vals, rays_d):
@@ -28,84 +31,21 @@ def raw2outputs_simple(raw, z_vals, rays_d):
 	return radiance_map
 
 
-def get_depth(rays_o, rays_d, pts, network_query_fn, network_fn, z_vals):
-	raw = network_query_fn(pts, None, network_fn)
-
-	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
-
-	dists = z_vals[..., 1:] - z_vals[..., :-1]
-	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
-	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
-
-	sigma = raw2sigma(raw[..., 0], dists)
-	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
-
-	depth_map = torch.sum(weights * z_vals, -1)
-	return depth_map
-
-
-def get_normal_from_depth_gradient(rays_o, rays_d, network_query_fn, network_fn, z_vals):
-	up = torch.Tensor([0, 1, 0])
-	up = up.repeat(*rays_d.shape[:-1], 1)
-
-	right = torch.cross(rays_d, up, dim=-1)
-	up = torch.cross(right, rays_d)
-
-	a = torch.zeros(*rays_d.shape[:-1], 1)
-	b = torch.zeros(*rays_d.shape[:-1], 1)
-	a.requires_grad = True
-	b.requires_grad = True
-
-	new_x = rays_o + right * a + up * b
-	pts = new_x[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
-
-	raw = network_query_fn(pts, None, network_fn)
-	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
-	dists = z_vals[..., 1:] - z_vals[..., :-1]
-	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
-	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
-	sigma = raw2sigma(raw[..., 0], dists)
-	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
-	depth_map = torch.sum(weights * z_vals, -1)
-
-	depth_map.backward(torch.ones_like(depth_map))
-
-	dx = a.grad
-	dy = b.grad
-
-	grad = right * dx + up * dy
-	normal = F.normalize(grad - rays_d, dim=-1)
-	return normal
-
-
-def get_normal_from_depth_gradient_simple(rays_o, rays_d, network_query_fn, network_fn, z_vals):
-	rays_o.requires_grad=True
-	raw = network_query_fn(rays_o[..., None, :], None, network_fn)
-	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
-	dists = z_vals[..., 1:] - z_vals[..., :-1]
-	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
-	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
-	sigma = raw2sigma(raw[..., 0], dists)
-	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
-	depth_map = torch.sum(weights * z_vals, -1)
-
-	depth_map.backward(torch.ones_like(depth_map))
-
-	normal = F.normalize(rays_o.grad, dim=-1)
-	rays_o.requires_grad = False
-	return normal
-
-
 def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				network_query_fn, network_fn,
 				raw_noise_std=0., pytest=False,
 				calculate_normal_from_sigma_gradient=False,
 				calculate_normal_from_sigma_gradient_surface=False,
 				calculate_normal_from_depth_gradient=False,
+				calculate_normal_from_depth_gradient_direction=False,
+				calculate_normal_from_depth_gradient_epsilon=False,
+				calculate_normal_from_depth_gradient_direction_epsilon=False,
 				infer_normal=False,
 				infer_normal_at_surface=False,
 				normal_mlp=None,
 				brdf_lut=None,
+				epsilon=0.01,
+				epsilon_direction=0.01,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -159,32 +99,41 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	x_surface = rays_o + rays_d * depth_map[..., None]
 	x_surface.detach_()
 
-	# (4) calculate normal from sigma gradient
+	# (4A) calculate normal from sigma gradient
+	# (4A-1) normal from sigma gradient at volume
 	normal_map_from_sigma_gradient = None
 	if calculate_normal_from_sigma_gradient:
-		pts.requires_grad = True
-		sigma_x = network_query_fn(pts, None, network_fn)
-		sigma_x = F.relu(sigma_x)
-		sigma_x.backward(torch.ones_like(sigma_x))
-		normal_from_sigma_gradient = -normalize(pts.grad, dim=-1)
-		normal_from_sigma_gradient.detach_()
-		pts.requires_grad = False
-		normal_map_from_sigma_gradient = torch.sum(weights_detached[..., None] * normal_from_sigma_gradient, -2)
+		normal_map_from_sigma_gradient = get_normal_from_sigma_gradient(pts, weights_detached, network_query_fn, network_fn)
 
+	# (4A-2) normal from sigma gradient at surface
 	normal_map_from_sigma_gradient_surface = None
 	if calculate_normal_from_sigma_gradient_surface:
-		x_surface.requires_grad = True
-		sigma_x_surface = network_query_fn(x_surface, None, network_fn)
-		sigma_x_surface = F.relu(sigma_x_surface)
-		sigma_x_surface.backward(torch.ones_like(sigma_x_surface))
-		normal_map_from_sigma_gradient_surface = -normalize(x_surface.grad, dim=-1)
-		normal_map_from_sigma_gradient_surface.detach_()
-		x_surface.requires_grad = False
+		normal_map_from_sigma_gradient_surface = get_normal_from_sigma_gradient_surface(x_surface, network_query_fn, network_fn)
 
-	# (4) calculate normal from depth gradient
+	# (4B) calculate normal from depth gradient
+	# (4B-1) normal from depth gradient w.r.t position
 	normal_map_from_depth_gradient = None
 	if calculate_normal_from_depth_gradient:
 		normal_map_from_depth_gradient = get_normal_from_depth_gradient(rays_o, rays_d, network_query_fn, network_fn, z_vals)
+		normal_map_from_depth_gradient.detach_()
+
+	# (4B-2) normal from numerical depth gradient w.r.t position
+	normal_map_from_depth_gradient_epsilon = None
+	if calculate_normal_from_depth_gradient_epsilon:
+		normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
+		normal_map_from_depth_gradient_epsilon.detach_()
+
+	# (4B-3) normal from depth gradient w.r.t direction
+	normal_map_from_depth_gradient_direction = None
+	if calculate_normal_from_depth_gradient_direction:
+		normal_map_from_depth_gradient_direction = get_normal_from_depth_gradient_direction(rays_o, rays_d, network_query_fn, network_fn, z_vals)
+		normal_map_from_depth_gradient_direction.detach_()
+
+	# (4B-4) normal from numerical depth gradient w.r.t direction
+	normal_map_from_depth_gradient_direction_epsilon = None
+	if calculate_normal_from_depth_gradient_direction_epsilon:
+		normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
+		normal_map_from_depth_gradient_direction_epsilon.detach_()
 
 	# (5) other values
 	albedo = torch.sigmoid(raw[..., 1:4])
@@ -214,34 +163,36 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	target_normal_map = inferred_normal_map
 
 	# (7) calculate color from split-sum approximation
-	n_dot_v = torch.sum(rays_d * target_normal_map, -1)
-	n_dot_v = F.relu(n_dot_v)
+	# n_dot_v = torch.sum(rays_d * target_normal_map, -1)
+	# n_dot_v = F.relu(n_dot_v)
+	#
+	# BRDF_2D_LUT_uv = torch.stack([n_dot_v, roughness_map], -1)
+	# envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
+	# envBRDF = envBRDF.permute((0, 2, 3, 1))
+	# envBRDF = envBRDF.squeeze()
+	#
+	# F0 = torch.tensor([0.04, 0.04, 0.04])
+	# F0 = F0.repeat(*depth_map.shape, 1)
+	# envBRDF_coefficient1 = envBRDF[..., 0]
+	# envBRDF_coefficient0 = envBRDF[..., 1]
+	# envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
+	# fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, roughness_map)
+	# specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+	#
+	# with torch.no_grad():
+	# 	reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
+	# 	x_surface = rays_o + rays_d * depth_map[..., None]
+	#
+	# 	reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
+	# 	reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
+	# 	reflected_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
+	#
+	# approximated_radiance_map = (1 - fresnel_map) * albedo_map * irradiance_map[
+	# 	..., None] + specular_map * reflected_radiance_map
+	# # [N_rays, N_samples, 3]
 
-	BRDF_2D_LUT_uv = torch.stack([n_dot_v, roughness_map], -1)
-	envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
-	envBRDF = envBRDF.permute((0, 2, 3, 1))
-	envBRDF = envBRDF.squeeze()
-
-	F0 = torch.tensor([0.04, 0.04, 0.04])
-	F0 = F0.repeat(*depth_map.shape, 1)
-	envBRDF_coefficient1 = envBRDF[..., 0]
-	envBRDF_coefficient0 = envBRDF[..., 1]
-	envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
-	fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, roughness_map)
-	specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
-
-	with torch.no_grad():
-		reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
-		x_surface = rays_o + rays_d * depth_map[..., None]
-
-		reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
-		reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-		reflected_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
-
-	approximated_radiance_map = (1 - fresnel_map) * albedo_map * irradiance_map[
-		..., None] + specular_map * reflected_radiance_map
-	# [N_rays, N_samples, 3]
-	# approximated_radiance_map = torch.sum(weights[..., None] * approximated_radiance, -2)  # [N_rays, 3]
+	approximated_radiance_map = None
+	specular_map = None
 
 	# Organize results
 	results = {}
@@ -255,6 +206,10 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
 	results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
 	results["normal_map_from_depth_gradient"] = normal_map_from_depth_gradient
+	results["normal_map_from_depth_gradient_direction"] = normal_map_from_depth_gradient_direction
+	results["normal_map_from_depth_gradient_epsilon"] = normal_map_from_depth_gradient_epsilon
+	results["normal_map_from_depth_gradient_direction_epsilon"] = normal_map_from_depth_gradient_direction_epsilon
+
 	results["inferred_normal_map"] = inferred_normal_map
 
 	results["disp_map"] = disp_map
@@ -335,63 +290,6 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 		z_vals = lower + (upper - lower) * t_rand
 
-	#pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
-	# raw = network_query_fn(pts, viewdirs,
-	# 					   network_fn)  # raw = [sigma, albedo_res, indirect_illumination, direct_illumination, basecolor_score]
-	# raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
-	#
-	# dists = z_vals[..., 1:] - z_vals[..., :-1]
-	# dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
-	# dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
-	#
-	# noise = 0.
-	# if raw_noise_std > 0.:
-	# 	noise = torch.randn(raw[..., 0].shape) * raw_noise_std
-	#
-	# 	# Overwrite randomly sampled data if pytest
-	# 	if pytest:
-	# 		np.random.seed(0)
-	# 		noise = np.random.rand(*list(raw[..., 0].shape)) * raw_noise_std
-	# 		noise = torch.Tensor(noise)
-	#
-	# sigma = raw2sigma(raw[..., 0] + noise, dists)  # [N_rays, N_samples, ]
-	# weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
-	# depth_map = torch.sum(weights * z_vals, -1)
-	# x_surface = rays_o + rays_d * depth_map[..., None]
-	#
-	# # Calculate normal
-	# if calculate_normal_from_sigma:
-	# 	if calculate_normal_from_surface:
-	# 		x_surface.requires_grad = True
-	# 		sigma_x_surface = network_query_fn(x_surface, None, network_fn)
-	# 		sigma_x_surface = F.relu(sigma_x_surface)
-	# 		sigma_x_surface.backward(torch.ones_like(sigma_x_surface))
-	# 		normal_from_sigma = -normalize(pts.grad, dim=-1)
-	# 		normal_from_sigma.detach_()
-	# 		pts.requires_grad = False
-	# 	else:
-	# 		pts.requires_grad = True
-	# 		sigma_x = network_query_fn(pts, None, network_fn)
-	# 		sigma_x = F.relu(sigma_x)
-	# 		sigma_x.backward(torch.ones_like(sigma_x))
-	# 		normal_from_sigma = -normalize(pts.grad, dim=-1)
-	# 		normal_from_sigma.detach_()
-	# 		pts.requires_grad = False
-	# else:
-	# 	normal_from_sigma = None
-	#
-	# result = raw2outputs(
-	# 	raw, z_vals, normal_from_sigma, rays_o, rays_d, pts, network_fn.instance_label_dimension, raw_noise_std,
-	# 	white_bkgd, pytest=pytest,
-	# 	is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
-	# 	infer_normal=network_fn.infer_normal, brdf_lut=brdf_lut, network_fn=network_fn,
-	# 	network_query_fn=network_query_fn,
-	# 	z_vals_constant=z_vals
-	# )
-
-	#
-	# if calculate_normal_from_depth:
-	# 	result["normal_map_from_depth_gradient"] = get_normal(rays_o, viewdirs, network_query_fn, network_fn, z_vals)
 	z_vals_constant = z_vals
 	result = raw2outputs(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, pytest, **kwargs)
 
@@ -406,38 +304,6 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
 		result_fine = raw2outputs(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, run_fn, raw_noise_std,
 							 pytest, **kwargs)
-
-		# pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :,
-		# 													None]  # [N_rays, N_samples + N_importance, 3]
-		#
-		# run_fn = network_fn if network_fine is None else network_fine
-		#
-		# raw = network_query_fn(pts, viewdirs, run_fn)
-		#
-		# # Calculate normal
-		# if calculate_normal_from_sigma:
-		# 	pts.requires_grad = True
-		# 	sigma_x = network_query_fn(pts, None, run_fn)
-		# 	sigma_x = F.relu(sigma_x)
-		# 	sigma_x.backward(torch.ones_like(sigma_x))
-		# 	normal = -normalize(pts.grad, dim=-1)
-		# 	normal = normal.detach()
-		# 	pts.requires_grad = False
-		# else:
-		# 	normal = None
-		#
-		# result_fine = raw2outputs(
-		# 	raw, z_vals, normal, rays_o, rays_d, pts, run_fn.instance_label_dimension, raw_noise_std, white_bkgd,
-		# 	pytest=pytest,
-		# 	is_instance_label_logit=is_instance_label_logit, label_encoder=label_encoder, init_basecolor=init_basecolor,
-		# 	infer_normal=network_fn.infer_normal, brdf_lut=brdf_lut, network_fn=run_fn,
-		# 	network_query_fn=network_query_fn,
-		# 	z_vals_constant=z_vals_constant
-		# )
-		#
-		# if calculate_normal_from_depth:
-		# 	result_fine["normal_map_from_depth_gradient"] = get_normal(rays_o, viewdirs, network_query_fn, run_fn,
-		# 															   z_vals)
 
 		for k, v in result.items():
 			result_fine[k + "0"] = result[k]
@@ -540,11 +406,6 @@ def render_decomp(
 	return all_ret
 
 
-# k_extract = ['rgb_map', 'disp_map', 'acc_map']
-# ret_list = [all_ret[k] for k in k_extract]
-# ret_dict = {k : all_ret[k] for k in all_ret if k not in k_extract}
-# return ret_list + [ret_dict]
-
 
 def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
 					   savedir=None, render_factor=0, init_basecolor=None):
@@ -566,7 +427,6 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
 
 	def append_result(render_decomp_results, key_name, index, out_name):
 		if key_name not in render_decomp_results:
-			print("%s not in result" % key_name)
 			return
 		result_image = render_decomp_results[key_name]
 		if result_image is None:
@@ -598,6 +458,10 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
 		append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
 		append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
 		append_result(results_i, "normal_map_from_depth_gradient", i, "normal_map_from_depth_gradient")
+		append_result(results_i, "normal_map_from_depth_gradient_direction", i, "normal_map_from_depth_gradient_direction")
+		append_result(results_i, "normal_map_from_depth_gradient_epsilon", i, "normal_map_from_depth_gradient_epsilon")
+		append_result(results_i, "normal_map_from_depth_gradient_direction_epsilon", i, "normal_map_from_depth_gradient_direction_epsilon")
+
 		append_result(results_i, "inferred_normal_map", i, "inferred_normal_map")
 
 		append_result(results_i, "inferred_depth_map", i, "inferred_disp")
@@ -606,7 +470,7 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
 		append_result(results_i, "depth_map", i, "depth")
 
 		depth_image = results_i["depth_map"]
-		results_i["normal_map_from_depth_map"] = depth_to_normal(depth_image, c2w[:3, :4], K)
+		results_i["normal_map_from_depth_map"] = depth_to_normal_image_space(depth_image, c2w[:3, :4], K)
 		append_result(results_i, "normal_map_from_depth_map", i, "normal_from_depth")
 
 	for k, v in results.items():

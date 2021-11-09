@@ -238,11 +238,21 @@ def train():
     render_kwargs_test["calculate_normal_from_sigma_gradient"] = True
     render_kwargs_test["calculate_normal_from_sigma_gradient_surface"] = True
     render_kwargs_test["calculate_normal_from_depth_gradient"] = True
+    render_kwargs_test["calculate_normal_from_depth_gradient_direction"] = True
+    render_kwargs_test["calculate_normal_from_depth_gradient_epsilon"] = True
+    render_kwargs_test["calculate_normal_from_depth_gradient_direction_epsilon"] = True
+    render_kwargs_test["epsilon"] = 0.01
+    render_kwargs_test["epsilon_direction"] = 0.005
+    render_kwargs_train["epsilon"] = 0.01
+    render_kwargs_train["epsilon_direction"] = 0.005
 
     normal_target_keys = [
         "normal_map_from_sigma_gradient",
         "normal_map_from_sigma_gradient_surface",
-        "normal_map_from_depth_gradient"
+        "normal_map_from_depth_gradient",
+        "normal_map_from_depth_gradient_direction",
+        "normal_map_from_depth_gradient_epsilon",
+        "normal_map_from_depth_gradient_direction_epsilon"
     ]
     if args.infer_normal:
         assert args.infer_normal_target in normal_target_keys
@@ -258,9 +268,13 @@ def train():
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
 
         #####  Core optimization loop  #####
-        calculate_normal_from_depth_gradient = i % args.summary_step == 0
-        calculate_normal_from_sigma_gradient = i % args.summary_step == 0
-        calculate_normal_from_sigma_gradient_surface = i % args.summary_step == 0
+        calculate_normal_from_depth_gradient = (i % args.summary_step == 0)
+        calculate_normal_from_sigma_gradient = (i % args.summary_step == 0)
+        calculate_normal_from_sigma_gradient_surface = (i % args.summary_step == 0)
+        calculate_normal_from_depth_gradient_direction = (i % args.summary_step == 0)
+        calculate_normal_from_depth_gradient_epsilon = (i % args.summary_step == 0)
+        calculate_normal_from_depth_gradient_direction_epsilon = (i % args.summary_step == 0)
+
         if i >= args.N_iter_ignore_normal:
             if args.infer_normal_target == "normal_map_from_sigma_gradient":
                 calculate_normal_from_sigma_gradient = True
@@ -268,6 +282,12 @@ def train():
                 calculate_normal_from_sigma_gradient_surface = True
             elif args.infer_normal_target == "normal_map_from_depth_gradient":
                 calculate_normal_from_depth_gradient = True
+            elif args.infer_normal_target == "normal_map_from_depth_gradient_direction":
+                calculate_normal_from_depth_gradient_direction = True
+            elif args.infer_normal_target == "normal_map_from_depth_gradient_epsilon":
+                calculate_normal_from_depth_gradient_epsilon = True
+            elif args.infer_normal_target == "normal_map_from_depth_gradient_direction_epsilon":
+                calculate_normal_from_depth_gradient_direction_epsilon = True
 
         # 1. render sample
         result = render_decomp(
@@ -276,6 +296,9 @@ def train():
             calculate_normal_from_sigma_gradient=calculate_normal_from_sigma_gradient,
             calculate_normal_from_sigma_gradient_surface=calculate_normal_from_sigma_gradient_surface,
             calculate_normal_from_depth_gradient=calculate_normal_from_depth_gradient,
+            calculate_normal_from_depth_gradient_direction=calculate_normal_from_depth_gradient_direction,
+            calculate_normal_from_depth_gradient_epsilon=calculate_normal_from_depth_gradient_epsilon,
+            calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
             **render_kwargs_train
         )
 
@@ -283,11 +306,11 @@ def train():
 
         # 2. calculate loss
         # 1) rendering loss
-        rgb = result['color_map']
-        loss_render = mse_loss(rgb, target_rgb)
-        if 'color_map0' in result:
-            loss_render0 = mse_loss(result['color_map0'], target_rgb)
-            loss_render = loss_render + loss_render0
+        # rgb = result['color_map']
+        # loss_render = mse_loss(rgb, target_rgb)
+        # if 'color_map0' in result:
+        #     loss_render0 = mse_loss(result['color_map0'], target_rgb)
+        #     loss_render = loss_render + loss_render0
 
         # 1) radiance loss
         radiance = result['radiance_map']
@@ -342,22 +365,22 @@ def train():
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
-            writer.add_scalar('Loss/Loss_render', loss_render, i)
+            # writer.add_scalar('Loss/Loss_render', loss_render, i)
 
             writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
             writer.add_scalar('Loss/Loss_radiance_render', loss_render_radiance, i)
 
             for normal_key in normal_target_keys:
                 loss_from_gt = calculate_normal_loss(normal_key)
-                writer.add_scalar('Loss_normal/%s'%normal_key, loss_from_gt, i)
+                writer.add_scalar('Loss_normal/%s' % normal_key, loss_from_gt, i)
 
             if args.infer_depth:
                 writer.add_scalar('Loss/Loss_depth', loss_depth, i)
 
             if args.infer_normal:
-                writer.add_scalar('Loss/inferred_normal', loss_inferred_normal, i)
+                writer.add_scalar('Loss_normal/inferred_normal', loss_inferred_normal, i)
                 loss_from_gt = calculate_normal_loss("inferred_normal_map")
-                writer.add_scalar('inferred_normal_from_gt/%s' % "inferred_normal_map", loss_from_gt, i)
+                writer.add_scalar('Loss_normal/inferred_normal_from_gt', loss_from_gt, i)
 
         total_loss.backward()
         optimizer.step()
