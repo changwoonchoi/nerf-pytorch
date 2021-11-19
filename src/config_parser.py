@@ -59,6 +59,9 @@ def config_parser(default_files=None):
 	                    help='batch size (number of random rays per gradient step)')
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
 	parser.add_argument("--N_iter_ignore_normal", type=int, default=5000, help="Ignore normal loss")
+	parser.add_argument("--N_iter_ignore_approximated_radiance", type=int, default=5000, help="Ignore normal loss")
+
+	parser.add_argument("--coarse_radiance_number", type=int, default=0, help='coarse_radiance_number')
 
 	parser.add_argument("--beta_sparse_base", type=float, default=1., help="")
 	parser.add_argument("--beta_res", type=float, default=1., help="")
@@ -122,6 +125,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--learn_normal_from_oracle", action='store_true', help='learn_normal_from_oracle')
 	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')
 
+	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
 
 	# training options
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')

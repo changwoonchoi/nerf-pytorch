@@ -14,7 +14,8 @@ class NeRFDecomp(nn.Module):
             self, D=8, W=256, input_ch=3, input_ch_views=3, skips=[4], use_instance_label=True,
             instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True,
             use_illumination_feature_layer=False,
-            use_instance_feature_layer=False
+            use_instance_feature_layer=False,
+            coarse_radiance_number=0
     ):
         """
         NeRFDecomp Model
@@ -64,6 +65,22 @@ class NeRFDecomp(nn.Module):
 
         # x, d dependent
         self.radiance_linear = nn.Linear(W, 3)
+
+        self.coarse_radiance_number = coarse_radiance_number
+
+        self.additional_radiance_linear_feature_1 = nn.Linear(W, W//2)
+        self.additional_radiance_linear_feature_2 = nn.Linear(W, W//2)
+        self.additional_radiance_linear_feature_3 = nn.Linear(W, W//2)
+
+        self.additional_radiance_linear_1 = nn.Linear(W//2, 3)
+        self.additional_radiance_linear_2 = nn.Linear(W//2, 3)
+        self.additional_radiance_linear_3 = nn.Linear(W//2, 3)
+
+        # self.additional_radiance_linear = nn.ModuleList(
+        #     [nn.Linear(W, 3)] * coarse_radiance_number
+        # )
+        #for i in range(self.coarse_radiance_number):
+        #    self.additional_radiance_linear.append(nn.Linear(W, 3))
 
     def __str__(self):
         logs = ["[NeRFDecomp"]
@@ -120,7 +137,23 @@ class NeRFDecomp(nn.Module):
 
         radiance = self.radiance_linear(h)
 
+        radiance1 = self.additional_radiance_linear_feature_1(h)
+        radiance1 = F.relu(radiance1)
+        radiance1 = self.additional_radiance_linear_1(radiance1)
+
+        radiance2 = self.additional_radiance_linear_feature_2(h)
+        radiance2 = F.relu(radiance2)
+        radiance2 = self.additional_radiance_linear_2(radiance2)
+
+        radiance3 = self.additional_radiance_linear_feature_3(h)
+        radiance3 = F.relu(radiance3)
+        radiance3 = self.additional_radiance_linear_3(radiance3)
+
         ret = [sigma, albedo, roughness, irradiance, radiance]
+        ret += [radiance1, radiance2, radiance3]
+
+        #for l in self.additional_radiance_linear:
+        #    ret.append(l(h))
 
         ret = torch.cat(ret, dim=-1)
 
@@ -179,7 +212,8 @@ def create_NeRFDecomp(args):
         use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
         num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
         use_illumination_feature_layer=args.use_illumination_feature_layer,
-        use_instance_feature_layer=args.use_instance_feature_layer
+        use_instance_feature_layer=args.use_instance_feature_layer,
+        coarse_radiance_number=args.coarse_radiance_number
     ).to(args.device)
     logger.info(model)
 
@@ -192,7 +226,8 @@ def create_NeRFDecomp(args):
             use_instance_label=args.instance_mask, instance_label_dimension=args.instance_label_dimension,
             num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
             use_illumination_feature_layer=args.use_illumination_feature_layer,
-            use_instance_feature_layer=args.use_instance_feature_layer
+            use_instance_feature_layer=args.use_instance_feature_layer,
+            coarse_radiance_number=args.coarse_radiance_number
         ).to(args.device)
         logger.info("NeRFDecomp fine model")
         logger.info(model)
@@ -265,7 +300,8 @@ def create_NeRFDecomp(args):
         "normal_mlp": normal_mlp,
         "infer_depth": args.infer_depth,
         "infer_normal": args.infer_normal,
-        "infer_normal_at_surface": args.infer_normal_at_surface
+        "infer_normal_at_surface": args.infer_normal_at_surface,
+        "coarse_radiance_number": args.coarse_radiance_number
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

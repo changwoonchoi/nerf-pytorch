@@ -51,6 +51,9 @@ class NerfDataset(Dataset, ABC):
 		self.cluster_th = 0
 		self.init_basecolor = None
 		self.num_cluster = 0
+		self.coarse_radiance_number = kwargs.get("coarse_radiance_number")
+
+		self.coarse_resize_scale = 4
 
 	def get_focal_matrix(self):
 		K = np.array([
@@ -60,10 +63,60 @@ class NerfDataset(Dataset, ABC):
 		]).astype(np.float32)
 		return K
 
+	def get_resized_normal_albedo(self, resize_factor, i):
+		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor), antialias=True)
+		normal_temp = self.normals[i].permute((2, 0, 1))
+		albedo_temp = self.albedos[i].permute((2, 0, 1))
+		normal_temp = t(normal_temp).permute((1, 2, 0))
+		albedo_temp = t(albedo_temp).permute((1, 2, 0))
+		return {
+			"normal": normal_temp,
+			"albedo": albedo_temp
+		}
+
+	def get_coarse_images(self, level):
+		new_images = []
+		t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
+		for i in range(len(self)):
+			image_temp = self.images[i].permute((2, 0, 1))
+			# image_temp = image_temp.permute((1,2,0))
+			sh = self.height
+			sw = self.width
+			for _ in range(level):
+				sh = sh//self.coarse_resize_scale
+				sw = sw//self.coarse_resize_scale
+			t = transforms.Resize(size=(sh, sw), antialias=True)
+			image_temp = t_orig(t(image_temp))
+			new_images.append(image_temp)
+		return torch.stack(new_images, 0)
+
 	def get_info(self, image_index, u, v):
 		pixel_info = {}
+		#g = transforms.GaussianBlur(kernel_size=5, sigma=2)
+		#K = 4
+		t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
+
+		import matplotlib.pyplot as plt
+		image_temp = self.images[image_index].permute((2, 0, 1))
+		# image_temp = image_temp.permute((1,2,0))
+		sh = self.height
+		sw = self.width
+		for i in range(self.coarse_radiance_number):
+
+			sh = sh//self.coarse_resize_scale
+			sw = sw//self.coarse_resize_scale
+			t = transforms.Resize(size=(sh, sw), antialias=True)
+			image_temp = t(image_temp)
+			new_image = t_orig(image_temp).permute((1,2,0))
+			#plt.figure()
+			#plt.imshow(new_image.cpu().numpy())
+			pixel_info["rgb_%d" % (i+1)] = new_image[v, u, :]
+
+		#plt.show()
 
 		pixel_info["rgb"] = self.images[image_index][v, u, :]
+		#pixel_info["rgb2"] = g(self.images[image_index])[v, u, :]
+
 		if self.load_albedo:
 			pixel_info["albedo"] = self.albedos[image_index][v, u, :]
 		if self.load_normal:

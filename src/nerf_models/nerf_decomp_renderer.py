@@ -7,7 +7,7 @@ from utils.label_utils import *
 from torch.nn.functional import normalize
 from torch.autograd import Variable
 from nerf_models.microfacet import *
-
+from torchvision import transforms
 DEBUG = False
 from utils.depth_to_normal_utils import depth_to_normal_image_space
 
@@ -15,7 +15,7 @@ from nerf_models.normal_from_depth import *
 from nerf_models.normal_from_sigma import *
 
 
-def raw2outputs_simple(raw, z_vals, rays_d):
+def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3):
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -28,7 +28,16 @@ def raw2outputs_simple(raw, z_vals, rays_d):
 	radiance = torch.sigmoid(raw[..., 6:6 + 3])
 	radiance_map = torch.sum(weights[..., None] * radiance, -2)
 
-	return radiance_map
+	# (5)-A additional coarse radiance maps
+	N = 9
+	coarse_radiance_maps = []
+	for i in range(coarse_radiance_number):
+		coarse_radiance = torch.sigmoid(raw[..., N:N + 3])
+		coarse_radiance_map = torch.sum(weights[..., None] * coarse_radiance, -2)
+		coarse_radiance_maps.append(coarse_radiance_map)
+		N += 3
+
+	return radiance_map, coarse_radiance_maps
 
 
 def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
@@ -46,6 +55,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				brdf_lut=None,
 				epsilon=0.01,
 				epsilon_direction=0.01,
+				gt_values=None,
+				target_normal_map_for_radiance_calculation="ground_truth",
+				target_albedo_map_for_radiance_calculation="ground_truth",
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -148,6 +160,15 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	radiance = torch.sigmoid(raw[..., 6:6 + 3])
 	radiance_map = torch.sum(weights[..., None] * radiance, -2)
 
+	# (5)-A additional coarse radiance maps
+	N = 9
+	coarse_radiance_maps = []
+	for i in range(network_fn.coarse_radiance_number):
+		coarse_radiance = torch.sigmoid(raw[..., N:N + 3])
+		coarse_radiance_map = torch.sum(weights_detached[..., None] * coarse_radiance, -2)
+		coarse_radiance_maps.append(coarse_radiance_map)
+		N += 3
+
 	# (6) infer normal if necessary
 	inferred_normal_map = None
 	if infer_normal:
@@ -161,47 +182,87 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			inferred_normal_map = torch.sum(weights_detached[..., None] * inferred_normal, -2)
 
 	target_normal_map = inferred_normal_map
+	if target_normal_map_for_radiance_calculation == "ground_truth":
+		target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
+	elif target_normal_map_for_radiance_calculation == "inferred_normal_map":
+		target_normal_map = inferred_normal_map
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient":
+		target_normal_map = normal_map_from_sigma_gradient
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient_surface":
+		target_normal_map = normal_map_from_sigma_gradient_surface
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient":
+		target_normal_map = normal_map_from_depth_gradient
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_epsilon":
+		target_normal_map = normal_map_from_depth_gradient_epsilon
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction":
+		target_normal_map = normal_map_from_depth_gradient_direction
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction_epsilon":
+		target_normal_map = normal_map_from_depth_gradient_direction_epsilon
+
+	target_albedo_map = albedo_map
+	if target_albedo_map_for_radiance_calculation == "ground_truth":
+		target_albedo_map = gt_values["albedo"]
 
 	# (7) calculate color from split-sum approximation
-	# n_dot_v = torch.sum(rays_d * target_normal_map, -1)
-	# n_dot_v = F.relu(n_dot_v)
-	#
-	# BRDF_2D_LUT_uv = torch.stack([n_dot_v, roughness_map], -1)
-	# envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
-	# envBRDF = envBRDF.permute((0, 2, 3, 1))
-	# envBRDF = envBRDF.squeeze()
-	#
-	# F0 = torch.tensor([0.04, 0.04, 0.04])
-	# F0 = F0.repeat(*depth_map.shape, 1)
-	# envBRDF_coefficient1 = envBRDF[..., 0]
-	# envBRDF_coefficient0 = envBRDF[..., 1]
-	# envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
-	# fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, roughness_map)
-	# specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
-	#
-	# with torch.no_grad():
-	# 	reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
-	# 	x_surface = rays_o + rays_d * depth_map[..., None]
-	#
-	# 	reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
-	# 	reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-	# 	reflected_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
-	#
-	# approximated_radiance_map = (1 - fresnel_map) * albedo_map * irradiance_map[
-	# 	..., None] + specular_map * reflected_radiance_map
-	# # [N_rays, N_samples, 3]
+	n_dot_v = torch.sum(rays_d * target_normal_map, -1)
+	n_dot_v = F.relu(n_dot_v)
 
-	approximated_radiance_map = None
-	specular_map = None
+	# grid_sample input is  [-1, 1] x [-1, 1]
+	BRDF_2D_LUT_uv = torch.stack([2 * n_dot_v - 1, 2 * roughness_map - 1], -1)
+	envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
+	envBRDF = envBRDF.permute((0, 2, 3, 1))
+	envBRDF = envBRDF.squeeze()
+
+	# dielectric
+	F0 = torch.tensor([0.04, 0.04, 0.04])
+	F0 = F0.repeat(*depth_map.shape, 1)
+	envBRDF_coefficient1 = envBRDF[..., 0]
+	envBRDF_coefficient0 = envBRDF[..., 1]
+	envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
+	fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, roughness_map)
+	specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+
+
+	with torch.no_grad():
+		reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
+		x_surface = rays_o + rays_d * depth_map[..., None]
+
+		reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
+		reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
+		reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
+
+		prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
+
+	N_pref = len(reflected_coarse_radiance_map) + 1
+	mipmap_index1 = (roughness_map * (N_pref - 1)).long()
+	mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
+	mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
+	mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
+	prefiltered_reflected_map = \
+		(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
+		mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
+
+	diffuse_map = (1 - fresnel_map) * target_albedo_map * irradiance_map[..., None]
+	specular_map = specular_map * prefiltered_reflected_map
+	approximated_radiance_map = diffuse_map + specular_map
+
+	# [N_rays, N_samples, 3]
+
+	# approximated_radiance_map = None
+	# specular_map = None
 
 	# Organize results
 	results = {}
 	results["color_map"] = approximated_radiance_map
 	results["radiance_map"] = radiance_map
+	for k in range(len(coarse_radiance_maps)):
+		results["radiance_map_%d" % (k + 1)] = coarse_radiance_maps[k]
+
 	results["irradiance_map"] = irradiance_map
 	results["albedo_map"] = albedo_map
 	results["roughness_map"] = roughness_map
 	results["specular_map"] = specular_map
+	results["diffuse_map"] = diffuse_map
 
 	results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
 	results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
@@ -332,7 +393,14 @@ def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, **kwargs):
 	"""Render rays in smaller minibatches to avoid OOM.
 	"""
 	all_ret = {}
-	for i in range(0, rays_flat.shape[0], chunk):
+	gt_values = kwargs.get("gt_values", None)
+	N = rays_flat.shape[0]
+	for i in range(0, N, chunk):
+		gt_values_ith = {}
+		if gt_values is not None:
+			for k in gt_values.keys():
+				gt_values_ith[k] = gt_values[k][i:min(i+chunk, N)]
+		kwargs["gt_values"] = gt_values_ith
 		ret = render_rays(rays_flat[i:i + chunk], label_encoder=label_encoder, **kwargs)
 		for k in ret:
 			if k not in all_ret:
@@ -406,10 +474,14 @@ def render_decomp(
 	return all_ret
 
 
+from dataset.dataset_interface import NerfDataset
 
-def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
-					   savedir=None, render_factor=0, init_basecolor=None):
+def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
+					   savedir=None, render_factor=0, init_basecolor=None,
+					   gt_values = None,
+					   calculate_normal_from_depth_map=False):
 	H, W, focal = hwf
+	render_poses = dataset_test.poses
 
 	if render_factor != 0:
 		# Render downsampled for speed
@@ -447,13 +519,22 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
 			imageio.imwrite(filename, result_image_8bit)
 
 	for i, c2w in enumerate(tqdm(render_poses)):
-		results_i = render_decomp(H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, **render_kwargs)
+
+		gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
+		for k in gt_values.keys():
+			gt_values[k] = torch.reshape(gt_values[k], [-1, 3])
+		results_i = render_decomp(H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values, **render_kwargs)
 		append_result(results_i, "color_map", i, "rgb")
 		append_result(results_i, "radiance_map", i, "radiance")
+		for k in range(render_kwargs["coarse_radiance_number"]):
+			append_result(results_i, "radiance_map_%d" % (k+1), i, "radiance_%d" % (k+1))
+
 		append_result(results_i, "irradiance_map", i, "irradiance")
 		append_result(results_i, "albedo_map", i, "albedo")
+
 		append_result(results_i, "roughness_map", i, "roughness")
 		append_result(results_i, "specular_map", i, "specular")
+		append_result(results_i, "diffuse_map", i, "diffuse")
 
 		append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
 		append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
@@ -469,9 +550,10 @@ def render_decomp_path(render_poses, hwf, K, chunk, render_kwargs,
 		append_result(results_i, "disp_map", i, "disp")
 		append_result(results_i, "depth_map", i, "depth")
 
-		depth_image = results_i["depth_map"]
-		results_i["normal_map_from_depth_map"] = depth_to_normal_image_space(depth_image, c2w[:3, :4], K)
-		append_result(results_i, "normal_map_from_depth_map", i, "normal_from_depth")
+		if calculate_normal_from_depth_map:
+			depth_image = results_i["depth_map"]
+			results_i["normal_map_from_depth_map"] = depth_to_normal_image_space(depth_image, c2w[:3, :4], K)
+			append_result(results_i, "normal_map_from_depth_map", i, "normal_from_depth")
 
 	for k, v in results.items():
 		results[k] = np.stack(v, 0)

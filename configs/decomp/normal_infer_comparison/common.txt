@@ -9,7 +9,7 @@ lrate_decay = 500
 
 N_samples = 64
 N_importance = 128
-N_rand = 256
+N_rand = 512
 N_iter = 100000
 
 # if calculate normal chunk should be small !!
@@ -61,3 +61,6 @@ cluster_merge_threshold = 0.05
 # learn_normal_from_oracle
 learn_albedo_from_oracle
 N_iter_ignore_normal = 20000
+
+
+coarse_radiance_number = 3

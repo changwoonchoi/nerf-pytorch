@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from sklearn.preprocessing import normalize
+import torch
 
 
 def load_image_from_path(image_file_path, scale=1):
@@ -12,3 +13,22 @@ def load_image_from_path(image_file_path, scale=1):
 	image /= 255.0
 
 	return image
+
+
+def texture(image, u, v):
+	width, height, channel = image.shape
+	u_d = (width - 1) * u
+	v_d = (height - 1) * v
+	u_d = torch.clip(u_d, 0, width - 1)
+	v_d = torch.clip(v_d, 0, height - 1)
+	u_i = u_d.to(torch.long)
+	v_i = v_d.to(torch.long)
+	u_f = u_d - u_i
+	v_f = v_d - v_i
+
+	value_00 = image[u_i+0, v_i+0, :]
+	value_01 = image[u_i+0, v_i+1, :]
+	value_10 = image[u_i+1, v_i+0, :]
+	value_11 = image[u_i+1, v_i+0, :]
+
+	value = value_00 * (1-u_f) * (1-v_f) + value_01 * (1-u_f) * v_f + value_10 * u_f * (1-v_f) + value_11 * u_f * v_f

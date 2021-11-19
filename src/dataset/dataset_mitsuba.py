@@ -73,7 +73,9 @@ class MitsubaDataset(NerfDataset):
 		if self.load_normal:
 			sample["normal"] = load_image_from_path(normal_file_path, scale=self.scale)
 		if self.load_albedo:
-			sample["albedo"] = load_image_from_path(albedo_file_path, scale=self.scale)
+			albedo_srgb = load_image_from_path(albedo_file_path, scale=self.scale)
+			albedo_rgb = np.power(albedo_srgb, 1/2.2)
+			sample["albedo"] = albedo_rgb
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:

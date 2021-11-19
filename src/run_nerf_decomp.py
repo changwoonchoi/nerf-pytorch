@@ -118,7 +118,8 @@ def train():
             "image_scale": args.image_scale,
             "load_normal": True, #args.learn_normal_from_oracle,
             "load_albedo": args.learn_albedo_from_oracle,
-            "sample_length": args.sample_length
+            "sample_length": args.sample_length,
+            "coarse_radiance_number": args.coarse_radiance_number
         }
         dataset = load_dataset_split("train", **load_params)
         dataset_val = load_dataset_split("test", skip=10, **load_params)
@@ -152,10 +153,12 @@ def train():
         brdf_lut_path = "../data/ibl_brdf_lut.png"
         brdf_lut = cv2.imread(brdf_lut_path)
         brdf_lut = cv2.cvtColor(brdf_lut, cv2.COLOR_BGR2RGB)
+
         brdf_lut = brdf_lut.astype(np.float32)
         brdf_lut /= 255.0
         brdf_lut = torch.tensor(brdf_lut).to(args.device)
         brdf_lut = brdf_lut.permute((2, 0, 1))
+
 
     # (2) Create log file / folder
     with time_measure("[2] Log file create"):
@@ -221,6 +224,10 @@ def train():
     img_gt = dataset_val.images.permute((0, 3, 1, 2))
     writer.add_images('test/gt_rgb', img_gt, 0)
 
+    for k in range(args.coarse_radiance_number):
+        img_gt_k = dataset_val.get_coarse_images(k+1)
+        writer.add_images('test/gt_rgb_coarse_%d' % (k+1), img_gt_k, 0)
+
     if use_instance_mask:
         colored_label_gt = label_to_colored_label(dataset_val.masks, label_encoder.label_color_list)
         colored_label_gt = colored_label_gt.permute((0, 3, 1, 2))
@@ -235,12 +242,12 @@ def train():
 
     mse_loss = torch.nn.MSELoss()
     l1_loss = torch.nn.L1Loss()
-    render_kwargs_test["calculate_normal_from_sigma_gradient"] = True
-    render_kwargs_test["calculate_normal_from_sigma_gradient_surface"] = True
-    render_kwargs_test["calculate_normal_from_depth_gradient"] = True
-    render_kwargs_test["calculate_normal_from_depth_gradient_direction"] = True
-    render_kwargs_test["calculate_normal_from_depth_gradient_epsilon"] = True
-    render_kwargs_test["calculate_normal_from_depth_gradient_direction_epsilon"] = True
+    render_kwargs_test["calculate_normal_from_sigma_gradient"] = args.calculate_all_analytic_normals
+    render_kwargs_test["calculate_normal_from_sigma_gradient_surface"] = args.calculate_all_analytic_normals
+    render_kwargs_test["calculate_normal_from_depth_gradient"] = args.calculate_all_analytic_normals
+    render_kwargs_test["calculate_normal_from_depth_gradient_direction"] = args.calculate_all_analytic_normals
+    render_kwargs_test["calculate_normal_from_depth_gradient_epsilon"] = args.calculate_all_analytic_normals
+    render_kwargs_test["calculate_normal_from_depth_gradient_direction_epsilon"] = args.calculate_all_analytic_normals
     render_kwargs_test["epsilon"] = 0.01
     render_kwargs_test["epsilon_direction"] = 0.005
     render_kwargs_train["epsilon"] = 0.01
@@ -255,7 +262,7 @@ def train():
         "normal_map_from_depth_gradient_direction_epsilon"
     ]
     if args.infer_normal:
-        assert args.infer_normal_target in normal_target_keys
+        assert args.infer_normal_target in normal_target_keys + ["ground_truth_normal"]
 
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
@@ -268,12 +275,20 @@ def train():
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
 
         #####  Core optimization loop  #####
-        calculate_normal_from_depth_gradient = (i % args.summary_step == 0)
-        calculate_normal_from_sigma_gradient = (i % args.summary_step == 0)
-        calculate_normal_from_sigma_gradient_surface = (i % args.summary_step == 0)
-        calculate_normal_from_depth_gradient_direction = (i % args.summary_step == 0)
-        calculate_normal_from_depth_gradient_epsilon = (i % args.summary_step == 0)
-        calculate_normal_from_depth_gradient_direction_epsilon = (i % args.summary_step == 0)
+        if args.calculate_all_analytic_normals:
+            calculate_normal_from_depth_gradient = (i % args.summary_step == 0)
+            calculate_normal_from_sigma_gradient = (i % args.summary_step == 0)
+            calculate_normal_from_sigma_gradient_surface = (i % args.summary_step == 0)
+            calculate_normal_from_depth_gradient_direction = (i % args.summary_step == 0)
+            calculate_normal_from_depth_gradient_epsilon = (i % args.summary_step == 0)
+            calculate_normal_from_depth_gradient_direction_epsilon = (i % args.summary_step == 0)
+        else:
+            calculate_normal_from_depth_gradient = False
+            calculate_normal_from_sigma_gradient = False
+            calculate_normal_from_sigma_gradient_surface = False
+            calculate_normal_from_depth_gradient_direction = False
+            calculate_normal_from_depth_gradient_epsilon = False
+            calculate_normal_from_depth_gradient_direction_epsilon = False
 
         if i >= args.N_iter_ignore_normal:
             if args.infer_normal_target == "normal_map_from_sigma_gradient":
@@ -299,10 +314,29 @@ def train():
             calculate_normal_from_depth_gradient_direction=calculate_normal_from_depth_gradient_direction,
             calculate_normal_from_depth_gradient_epsilon=calculate_normal_from_depth_gradient_epsilon,
             calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
+            gt_values=target_info,
             **render_kwargs_train
         )
 
         optimizer.zero_grad()
+
+        def calculate_loss(key_name, target="ground_truth_normal", loss_fn=mse_loss):
+            if key_name not in result:
+                print("Key %s not in result" % key_name)
+                return 0
+
+            if not isinstance(target, str):
+                loss_from_target = loss_fn(result[key_name], target)
+                if key_name+'0' in result:
+                    loss_from_target += loss_fn(result[key_name + '0'], target)
+            else:
+                loss_from_target = loss_fn(result[key_name], result[target])
+                if key_name+'0' in result:
+                    if target+'0' in result:
+                        loss_from_target += loss_fn(result[key_name + '0'], result[target+'0'])
+                    else:
+                        loss_from_target += loss_fn(result[key_name + '0'], result[target])
+            return loss_from_target
 
         # 2. calculate loss
         # 1) rendering loss
@@ -312,19 +346,22 @@ def train():
         #     loss_render0 = mse_loss(result['color_map0'], target_rgb)
         #     loss_render = loss_render + loss_render0
 
+        # 0) approximated radiance loss
+        loss_render = calculate_loss("color_map", target_rgb)
+
         # 1) radiance loss
-        radiance = result['radiance_map']
-        loss_render_radiance = mse_loss(radiance, target_rgb)
-        if 'radiance_map0' in result:
-            loss_render_radiance0 = mse_loss(result['radiance_map0'], target_rgb)
-            loss_render_radiance = loss_render_radiance + loss_render_radiance0
+        loss_render_radiance = calculate_loss("radiance_map", target_rgb)
+
+        # 1-A) coarse radiance loss (for prefiltered env-map)
+        loss_render_coarse_radiance = []
+        for k in range(args.coarse_radiance_number):
+            loss_render_radiance_i = calculate_loss("radiance_map_%d" % (k+1), target_info["rgb_%d" % (k+1)])
+            loss_render_coarse_radiance.append(loss_render_radiance_i)
 
         # 2) albedo render loss
-        loss_albedo_render = mse_loss(result['albedo_map'], target_chromaticity)
-        if 'albedo_map0' in result:
-            loss_albedo_render0 = mse_loss(result['albedo_map0'], target_chromaticity)
-            loss_albedo_render = loss_albedo_render + loss_albedo_render0
+        loss_albedo_render = calculate_loss("albedo_map", target_chromaticity)
 
+        # 3) Depth map if required
         loss_depth = 0
         if args.infer_depth:
             loss_depth = mse_loss(result['inferred_depth_map'], result['depth_map'].detach())
@@ -336,50 +373,48 @@ def train():
         # normal from gt
         result["ground_truth_normal"] = normalize(2 * target_info["normal"] - 1, dim=-1)
 
-        def calculate_normal_loss(key_name, target="ground_truth_normal", loss_fn=mse_loss):
-            if key_name not in result:
-                print("Key %s not in result" % key_name)
-                return 0
-
-            loss_normal_from_target = loss_fn(result[key_name], result[target])
-            if key_name+'0' in result:
-                if target+'0' in result:
-                    loss_normal_from_target += loss_fn(result[key_name + '0'], result[target+'0'])
-                else:
-                    loss_normal_from_target += loss_fn(result[key_name + '0'], result[target])
-            return loss_normal_from_target
-
         # inferred & gt / sigma
         loss_inferred_normal = 0
         if args.infer_normal and i >= args.N_iter_ignore_normal:
-            loss_inferred_normal = calculate_normal_loss("inferred_normal_map", args.infer_normal_target)
+            loss_inferred_normal = calculate_loss("inferred_normal_map", args.infer_normal_target)
 
-        # total_loss = loss_render_radiance
-        if i < args.N_iter_ignore_normal:
-            total_loss = args.beta_radiance_render * loss_render_radiance
-        else:
-            total_loss = args.beta_radiance_render * loss_render_radiance \
-                         + args.beta_inferred_depth * loss_depth + args.beta_inferred_normal * loss_inferred_normal
+        # Final loss
+        # (a) radiance loss
+        total_loss = args.beta_radiance_render * loss_render_radiance
+        for k in range(args.coarse_radiance_number):
+            total_loss += args.beta_radiance_render * loss_render_coarse_radiance[k]
+
+        # total_loss += args.beta_albedo_render * loss_albedo_render
+
+        # (b) normal loss
+        if i>= args.N_iter_ignore_normal:
+            total_loss += args.beta_inferred_normal * loss_inferred_normal
                     #args.beta_render * loss_render + args.beta_albedo_render * loss_albedo_render + args.beta_inferred_depth * loss_depth
                       # + args.beta_inferred_normal * loss_inferred_normal + args.beta_radiance_render * loss_render_radiance \
+        if i>= args.N_iter_ignore_approximated_radiance:
+            total_loss += args.beta_render * loss_render
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
-            # writer.add_scalar('Loss/Loss_render', loss_render, i)
+            writer.add_scalar('Loss/Loss_render', loss_render, i)
 
             writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
             writer.add_scalar('Loss/Loss_radiance_render', loss_render_radiance, i)
 
-            for normal_key in normal_target_keys:
-                loss_from_gt = calculate_normal_loss(normal_key)
-                writer.add_scalar('Loss_normal/%s' % normal_key, loss_from_gt, i)
+            for k in range(args.coarse_radiance_number):
+                writer.add_scalar('Loss/Loss_radiance_render_coarse_%d' % (k+1), loss_render_coarse_radiance[k], i)
+
+            if args.calculate_all_analytic_normals:
+                for normal_key in normal_target_keys:
+                    loss_from_gt = calculate_loss(normal_key)
+                    writer.add_scalar('Loss_normal/%s' % normal_key, loss_from_gt, i)
 
             if args.infer_depth:
                 writer.add_scalar('Loss/Loss_depth', loss_depth, i)
 
             if args.infer_normal:
                 writer.add_scalar('Loss_normal/inferred_normal', loss_inferred_normal, i)
-                loss_from_gt = calculate_normal_loss("inferred_normal_map")
+                loss_from_gt = calculate_loss("inferred_normal_map", "ground_truth_normal")
                 writer.add_scalar('Loss_normal/inferred_normal_from_gt', loss_from_gt, i)
 
         total_loss.backward()
@@ -416,10 +451,12 @@ def train():
                 var.requires_grad = False
 
             # with torch.no_grad():
-            poses = torch.Tensor(dataset_val.poses).to(device)
+            # poses = torch.Tensor(dataset_val.poses).to(device)
+
             render_decomp_path_results = render_decomp_path(
-                poses, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-                render_factor=4, init_basecolor=dataset.init_basecolor
+                dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+                render_factor=4, init_basecolor=dataset.init_basecolor,
+                calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
             )
 
             def add_image_to_writer(key_name):
@@ -435,20 +472,6 @@ def train():
             for key in show_result_keys:
                 add_image_to_writer(key)
 
-            # writer.add_images('test/inferred/rgb', rgbs.transpose((0, 3, 1, 2)), i)
-            # disps = np.expand_dims(disps, -1)
-            # writer.add_images('test/inferred/disps', disps.transpose((0, 3, 1, 2)), i)
-            # writer.add_images('test/inferred/albedo', albedos.transpose((0, 3, 1, 2)), i)
-            # writer.add_images('test/inferred/direct_illumination', direct_illuminations.transpose((0, 3, 1, 2)), i)
-            # writer.add_images('test/inferred/indirect_illumination', indirect_illuminations.transpose((0, 3, 1, 2)), i)
-            # writer.add_images('test/inferred/illumination', illuminations.transpose((0, 3, 1, 2)), i)
-            # writer.add_images('test/inferred/normals', normals.transpose((0, 3, 1, 2)), i)
-            # roughness = np.expand_dims(roughness, -1)
-            # writer.add_images('test/inferred/roughness', roughness.transpose((0, 3, 1, 2)), i)
-            # writer.add_images('test/inferred/speculars', speculars.transpose((0, 3, 1, 2)), i)
-            # if args.infer_normal:
-            #     writer.add_images('test/inferred/inferred_normals', inferred_normals.transpose((0, 3, 1, 2)), i)
-
             for var in grad_vars:
                 var.requires_grad = True
 
@@ -459,6 +482,3 @@ def train():
 
 if __name__ == '__main__':
     train()
-    #test_autograd()
-    #test_base_color()
-    #test_parser()
