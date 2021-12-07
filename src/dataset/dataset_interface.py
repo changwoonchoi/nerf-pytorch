@@ -30,9 +30,11 @@ class NerfDataset(Dataset, ABC):
 		self.masks = []
 		self.normals = []
 		self.albedos = []
+		self.roughness = []
 
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
+		self.load_roughness = kwargs.get("load_roughness", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -67,11 +69,15 @@ class NerfDataset(Dataset, ABC):
 		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor), antialias=True)
 		normal_temp = self.normals[i].permute((2, 0, 1))
 		albedo_temp = self.albedos[i].permute((2, 0, 1))
+		roughness_temp = self.roughness[i].permute((2,0,1))
 		normal_temp = t(normal_temp).permute((1, 2, 0))
 		albedo_temp = t(albedo_temp).permute((1, 2, 0))
+		roughness_temp = t(roughness_temp).permute((1,2,0))
+
 		return {
 			"normal": normal_temp,
-			"albedo": albedo_temp
+			"albedo": albedo_temp,
+			"roughness": roughness_temp
 		}
 
 	def get_coarse_images(self, level):
@@ -92,13 +98,10 @@ class NerfDataset(Dataset, ABC):
 
 	def get_info(self, image_index, u, v):
 		pixel_info = {}
-		#g = transforms.GaussianBlur(kernel_size=5, sigma=2)
-		#K = 4
 		t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
 
-		import matplotlib.pyplot as plt
 		image_temp = self.images[image_index].permute((2, 0, 1))
-		# image_temp = image_temp.permute((1,2,0))
+
 		sh = self.height
 		sw = self.width
 		for i in range(self.coarse_radiance_number):
@@ -107,15 +110,10 @@ class NerfDataset(Dataset, ABC):
 			sw = sw//self.coarse_resize_scale
 			t = transforms.Resize(size=(sh, sw), antialias=True)
 			image_temp = t(image_temp)
-			new_image = t_orig(image_temp).permute((1,2,0))
-			#plt.figure()
-			#plt.imshow(new_image.cpu().numpy())
+			new_image = t_orig(image_temp).permute((1, 2, 0))
 			pixel_info["rgb_%d" % (i+1)] = new_image[v, u, :]
 
-		#plt.show()
-
 		pixel_info["rgb"] = self.images[image_index][v, u, :]
-		#pixel_info["rgb2"] = g(self.images[image_index])[v, u, :]
 
 		if self.load_albedo:
 			pixel_info["albedo"] = self.albedos[image_index][v, u, :]
@@ -123,6 +121,9 @@ class NerfDataset(Dataset, ABC):
 			pixel_info["normal"] = self.normals[image_index][v, u, :]
 		if self.load_instance_label_mask:
 			pixel_info["label"] = self.masks[image_index][v, u]
+		if self.load_roughness:
+			pixel_info["roughness"] = self.roughness[image_index][v, u]
+
 		return pixel_info
 
 	def get_near_far_plane(self):
@@ -149,6 +150,8 @@ class NerfDataset(Dataset, ABC):
 				self.normals.append(data["normal"][0])
 			if self.load_albedo:
 				self.albedos.append(data["albedo"][0])
+			if self.load_roughness:
+				self.roughness.append(data["roughness"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -162,6 +165,8 @@ class NerfDataset(Dataset, ABC):
 			self.normals = torch.stack(self.normals, 0).to(device)
 		if self.load_albedo:
 			self.albedos = torch.stack(self.albedos, 0).to(device)
+		if self.load_roughness:
+			self.roughness = torch.stack(self.roughness, 0).to(device)
 
 	def __getitem__(self, item):
 		pass

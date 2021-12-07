@@ -67,18 +67,18 @@ class NeRFDecomp(nn.Module):
         self.radiance_linear = nn.Linear(W, 3)
 
         self.coarse_radiance_number = coarse_radiance_number
-
-        self.additional_radiance_linear_feature_1 = nn.Linear(W, W//2)
-        self.additional_radiance_linear_feature_2 = nn.Linear(W, W//2)
-        self.additional_radiance_linear_feature_3 = nn.Linear(W, W//2)
-
-        self.additional_radiance_linear_1 = nn.Linear(W//2, 3)
-        self.additional_radiance_linear_2 = nn.Linear(W//2, 3)
-        self.additional_radiance_linear_3 = nn.Linear(W//2, 3)
-
-        # self.additional_radiance_linear = nn.ModuleList(
-        #     [nn.Linear(W, 3)] * coarse_radiance_number
-        # )
+        self.additional_radiance_feature_linear = nn.ModuleList(
+            [nn.Linear(W, W // 2)] * coarse_radiance_number
+        )
+        self.additional_radiance_linear = nn.ModuleList(
+            [nn.Linear(W // 2, 3)] * coarse_radiance_number
+        )
+        #
+        # if coarse_radiance_number > 0:
+        #
+        # else:
+        #     self.additional_radiance_feature_linear = None
+        #     self.additional_radiance_linear = None
         #for i in range(self.coarse_radiance_number):
         #    self.additional_radiance_linear.append(nn.Linear(W, 3))
 
@@ -136,21 +136,15 @@ class NeRFDecomp(nn.Module):
             h = F.relu(h)
 
         radiance = self.radiance_linear(h)
-
-        radiance1 = self.additional_radiance_linear_feature_1(h)
-        radiance1 = F.relu(radiance1)
-        radiance1 = self.additional_radiance_linear_1(radiance1)
-
-        radiance2 = self.additional_radiance_linear_feature_2(h)
-        radiance2 = F.relu(radiance2)
-        radiance2 = self.additional_radiance_linear_2(radiance2)
-
-        radiance3 = self.additional_radiance_linear_feature_3(h)
-        radiance3 = F.relu(radiance3)
-        radiance3 = self.additional_radiance_linear_3(radiance3)
-
         ret = [sigma, albedo, roughness, irradiance, radiance]
-        ret += [radiance1, radiance2, radiance3]
+
+        for i in range(self.coarse_radiance_number):
+            radiance_i = self.additional_radiance_feature_linear[i](h)
+            radiance_i = F.relu(radiance_i)
+            radiance_i = self.additional_radiance_linear[i](radiance_i)
+            ret.append(radiance_i)
+
+        # ret += [radiance1, radiance2, radiance3]
 
         #for l in self.additional_radiance_linear:
         #    ret.append(l(h))

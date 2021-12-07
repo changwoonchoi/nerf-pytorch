@@ -6,6 +6,7 @@ lindisp = True
 
 use_viewdirs = True
 lrate_decay = 500
+#lrate = 1e-5
 
 N_samples = 64
 N_importance = 128
@@ -18,7 +19,7 @@ chunk = 1024
 precrop_iters = 0
 precrop_frac = 0.5
 
-image_scale = 0.5
+image_scale = 1
 #instance_mask
 #instance_label_encoding = scalar
 #instance_loss_weight = 0.5

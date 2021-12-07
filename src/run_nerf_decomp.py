@@ -2,7 +2,7 @@
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"] = str(5)
-#
+
 
 import numpy as np
 import torch
@@ -27,6 +27,7 @@ from utils.generator_utils import *
 from utils.timing_utils import *
 import cv2
 from torch.nn.functional import normalize
+
 
 def test():
     raise NotImplementedError
@@ -117,6 +118,7 @@ def train():
         load_params = {
             "image_scale": args.image_scale,
             "load_normal": True, #args.learn_normal_from_oracle,
+            "load_roughness": True,
             "load_albedo": args.learn_albedo_from_oracle,
             "sample_length": args.sample_length,
             "coarse_radiance_number": args.coarse_radiance_number
@@ -339,12 +341,6 @@ def train():
             return loss_from_target
 
         # 2. calculate loss
-        # 1) rendering loss
-        # rgb = result['color_map']
-        # loss_render = mse_loss(rgb, target_rgb)
-        # if 'color_map0' in result:
-        #     loss_render0 = mse_loss(result['color_map0'], target_rgb)
-        #     loss_render = loss_render + loss_render0
 
         # 0) approximated radiance loss
         loss_render = calculate_loss("color_map", target_rgb)
@@ -416,6 +412,8 @@ def train():
                 writer.add_scalar('Loss_normal/inferred_normal', loss_inferred_normal, i)
                 loss_from_gt = calculate_loss("inferred_normal_map", "ground_truth_normal")
                 writer.add_scalar('Loss_normal/inferred_normal_from_gt', loss_from_gt, i)
+
+        # total_loss = args.beta_radiance_render * loss_render_radiance
 
         total_loss.backward()
         optimizer.step()

@@ -58,6 +58,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				gt_values=None,
 				target_normal_map_for_radiance_calculation="ground_truth",
 				target_albedo_map_for_radiance_calculation="ground_truth",
+				target_roughness_map_for_radiance_calculation="ground_truth",
+				target_radiance_map_for_radiance_calculation="ground_truth",
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -203,12 +205,16 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	if target_albedo_map_for_radiance_calculation == "ground_truth":
 		target_albedo_map = gt_values["albedo"]
 
+	target_roughness_map = roughness_map
+	if target_roughness_map_for_radiance_calculation == "ground_truth":
+		target_roughness_map = gt_values["roughness"][...,0]
+
 	# (7) calculate color from split-sum approximation
-	n_dot_v = torch.sum(rays_d * target_normal_map, -1)
-	n_dot_v = F.relu(n_dot_v)
+	n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
+	n_dot_v = torch.clip(n_dot_v, 0, 1)
 
 	# grid_sample input is  [-1, 1] x [-1, 1]
-	BRDF_2D_LUT_uv = torch.stack([2 * n_dot_v - 1, 2 * roughness_map - 1], -1)
+	BRDF_2D_LUT_uv = torch.stack([2 * n_dot_v - 1, 2 * target_roughness_map - 1], -1)
 	envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
 	envBRDF = envBRDF.permute((0, 2, 3, 1))
 	envBRDF = envBRDF.squeeze()
@@ -216,12 +222,14 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# dielectric
 	F0 = torch.tensor([0.04, 0.04, 0.04])
 	F0 = F0.repeat(*depth_map.shape, 1)
+	target_metallic_map = (1-target_roughness_map)[...,None]
+	F0 = F0 * (1-target_metallic_map) + target_albedo_map * target_metallic_map
+
 	envBRDF_coefficient1 = envBRDF[..., 0]
 	envBRDF_coefficient0 = envBRDF[..., 1]
 	envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
-	fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, roughness_map)
+	fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, target_roughness_map)
 	specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
-
 
 	with torch.no_grad():
 		reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
@@ -242,7 +250,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
 		mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
 
-	diffuse_map = (1 - fresnel_map) * target_albedo_map * irradiance_map[..., None]
+	diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * irradiance_map[..., None]
 	specular_map = specular_map * prefiltered_reflected_map
 	approximated_radiance_map = diffuse_map + specular_map
 
@@ -263,6 +271,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["roughness_map"] = roughness_map
 	results["specular_map"] = specular_map
 	results["diffuse_map"] = diffuse_map
+	results["n_dot_v_map"] = n_dot_v
 
 	results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
 	results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
@@ -522,7 +531,7 @@ def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
 
 		gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
 		for k in gt_values.keys():
-			gt_values[k] = torch.reshape(gt_values[k], [-1, 3])
+			gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
 		results_i = render_decomp(H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values, **render_kwargs)
 		append_result(results_i, "color_map", i, "rgb")
 		append_result(results_i, "radiance_map", i, "radiance")
@@ -535,6 +544,7 @@ def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
 		append_result(results_i, "roughness_map", i, "roughness")
 		append_result(results_i, "specular_map", i, "specular")
 		append_result(results_i, "diffuse_map", i, "diffuse")
+		append_result(results_i, "n_dot_v_map", i, "n_dot_v")
 
 		append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
 		append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
