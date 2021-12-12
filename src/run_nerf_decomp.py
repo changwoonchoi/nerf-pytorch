@@ -109,7 +109,7 @@ def train():
 
             # real data load using multiprocessing(torch DataLoader) --> load all at once
             # TODO : if dataset is too large, it may not be loaded at once.
-            target_dataset.load_all_data(num_of_workers=10)
+            target_dataset.load_all_data(num_of_workers=1)
             if do_logging:
                 logger_dataset.info(target_dataset)
             return target_dataset
@@ -211,12 +211,14 @@ def train():
         batch_size = args.N_rand
         use_batching = not args.no_batching
         start = start + 1
+        # TODO: sample generator returns image patch
         if use_batching:
             sample_generator = sample_generator_all_image_merged(dataset, batch_size=batch_size)
         else:
             sample_generator = sample_generator_single_image(dataset, batch_size=batch_size,
                                                              precrop_iters=args.precrop_iters,
-                                                             precrop_frac=args.precrop_frac, initial_iters=start)
+                                                             precrop_frac=args.precrop_frac, initial_iters=start,
+                                                             ray_sample=args.ray_sample)
 
     # (5) Main train loop
     K = dataset.get_focal_matrix()
@@ -269,6 +271,7 @@ def train():
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
         target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
+        # target_info, rays_o, rays_d, rays_o_neigh, rays_d_neigh = next(sample_generator)  # 5 x (N_rand, 3)
         target_rgb = target_info["rgb"]
         if args.learn_albedo_from_oracle:
             target_chromaticity = target_info["albedo"]

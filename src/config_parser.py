@@ -57,6 +57,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--netwidth_fine", type=int, default=256, help='channels per layer in fine network')
 	parser.add_argument("--N_rand", type=int, default=32 * 32 * 4,
 	                    help='batch size (number of random rays per gradient step)')
+	parser.add_argument("--ray_sample", type=str, default="pixel")
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
 	parser.add_argument("--N_iter_ignore_normal", type=int, default=5000, help="Ignore normal loss")
 	parser.add_argument("--N_iter_ignore_approximated_radiance", type=int, default=5000, help="Ignore normal loss")

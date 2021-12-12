@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba_scale_2/kitchen
+basedir = ../logs/specular_ibl/kitchen

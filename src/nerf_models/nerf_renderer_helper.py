@@ -15,11 +15,20 @@ def get_rays_few(screen_coords, K, c2w):
 	# get rays from few coords
 	i = screen_coords[:, 0]
 	j = screen_coords[:, 1]
-	dirs = torch.stack([(i-K[0][2])/K[0][0], -(j-K[1][2])/K[1][1], -torch.ones_like(i)], -1)
+	dirs = torch.stack([(i-K[0][2])/K[0][0], -(j-K[1][2])/K[1][1], -torch.ones_like(i)], -1)  # (N_rand, 3)
 	# Rotate ray directions from camera frame to the world frame
 	rays_d = torch.sum(dirs[..., np.newaxis, :] * c2w[:3,:3], -1)  # dot product, equals to: [c2w.dot(dir) for dir in dirs]
 	# Translate camera frame's origin to the world frame. It is the origin of all rays.
 	rays_o = c2w[:3,-1].expand(rays_d.shape)
+	return rays_o, rays_d
+
+
+def get_rays_patch_few(neighbor_coords, K, c2w):
+	i = neighbor_coords[:, :, 0]
+	j = neighbor_coords[:, :, 1]
+	dirs = torch.stack([(i - K[0][2]) / K[0][0], -(j - K[1][2]) / K[1][1], -torch.ones_like(i)], -1)  # (N_rand, 8, 3)
+	rays_d = torch.sum(dirs[..., np.newaxis, :] * c2w[:3, :3], -1)
+	rays_o = c2w[:3, -1].expand(rays_d.shape)
 	return rays_o, rays_d
 
 
