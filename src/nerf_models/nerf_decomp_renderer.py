@@ -222,7 +222,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# dielectric
 	F0 = torch.tensor([0.04, 0.04, 0.04])
 	F0 = F0.repeat(*depth_map.shape, 1)
-	target_metallic_map = (1-target_roughness_map)[...,None]
+	target_metallic_map = (1-target_roughness_map)[..., None]
 	F0 = F0 * (1-target_metallic_map) + target_albedo_map * target_metallic_map
 
 	envBRDF_coefficient1 = envBRDF[..., 0]

@@ -356,6 +356,7 @@ def train():
 
         # 2) albedo render loss
         loss_albedo_render = calculate_loss("albedo_map", target_chromaticity)
+        loss_roughness_render = calculate_loss("roughness_map", target_info.get("roughness", 1.0))
 
         # 3) Depth map if required
         loss_depth = 0
@@ -380,8 +381,6 @@ def train():
         for k in range(args.coarse_radiance_number):
             total_loss += args.beta_radiance_render * loss_render_coarse_radiance[k]
 
-        # total_loss += args.beta_albedo_render * loss_albedo_render
-
         # (b) normal loss
         if i>= args.N_iter_ignore_normal:
             total_loss += args.beta_inferred_normal * loss_inferred_normal
@@ -389,12 +388,17 @@ def train():
                       # + args.beta_inferred_normal * loss_inferred_normal + args.beta_radiance_render * loss_render_radiance \
         if i>= args.N_iter_ignore_approximated_radiance:
             total_loss += args.beta_render * loss_render
+            #total_loss += 0.1 * args.beta_albedo_render * loss_albedo_render
+        #else:
+            #total_loss += args.beta_albedo_render * loss_albedo_render
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
             writer.add_scalar('Loss/Loss_render', loss_render, i)
 
             writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
+            writer.add_scalar('Loss/Loss_roughness_render', loss_roughness_render, i)
+
             writer.add_scalar('Loss/Loss_radiance_render', loss_render_radiance, i)
 
             for k in range(args.coarse_radiance_number):

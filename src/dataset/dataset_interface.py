@@ -67,18 +67,19 @@ class NerfDataset(Dataset, ABC):
 
 	def get_resized_normal_albedo(self, resize_factor, i):
 		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor), antialias=True)
-		normal_temp = self.normals[i].permute((2, 0, 1))
+		result = {}
 		albedo_temp = self.albedos[i].permute((2, 0, 1))
-		roughness_temp = self.roughness[i].permute((2,0,1))
-		normal_temp = t(normal_temp).permute((1, 2, 0))
-		albedo_temp = t(albedo_temp).permute((1, 2, 0))
-		roughness_temp = t(roughness_temp).permute((1,2,0))
+		result["albedo"] = t(albedo_temp).permute((1, 2, 0))
 
-		return {
-			"normal": normal_temp,
-			"albedo": albedo_temp,
-			"roughness": roughness_temp
-		}
+		if self.load_normal:
+			normal_temp = self.normals[i].permute((2, 0, 1))
+			result["normal"] = t(normal_temp).permute((1, 2, 0))
+
+		if self.load_roughness:
+			roughness_temp = self.roughness[i].permute((2,0,1))
+			result["roughness"] = t(roughness_temp).permute((1,2,0))
+
+		return result
 
 	def get_coarse_images(self, level):
 		new_images = []
