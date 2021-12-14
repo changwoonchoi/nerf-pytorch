@@ -417,7 +417,8 @@ def train():
             total_loss += args.beta_render * loss_render
 
         # (c) roughness loss
-        total_loss += args.beta_roughness_smooth * loss_roughness
+        if i >= args.N_iter_ignore_roughness_smooth:
+            total_loss += args.beta_roughness_smooth * loss_roughness
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)

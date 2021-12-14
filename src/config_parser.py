@@ -61,6 +61,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
 	parser.add_argument("--N_iter_ignore_normal", type=int, default=5000, help="Ignore normal loss")
 	parser.add_argument("--N_iter_ignore_approximated_radiance", type=int, default=5000, help="Ignore normal loss")
+	parser.add_argument("--N_iter_ignore_roughness_smooth", type=int, default=5000, help="Ignore roughness loss")
 
 	parser.add_argument("--coarse_radiance_number", type=int, default=0, help='coarse_radiance_number')
 
