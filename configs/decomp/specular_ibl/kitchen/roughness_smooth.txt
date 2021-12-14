@@ -4,4 +4,4 @@ infer_normal
 infer_normal_target = ground_truth_normal
 
 ray_sample = "patch"
-N_rand = 256
+N_rand = 512

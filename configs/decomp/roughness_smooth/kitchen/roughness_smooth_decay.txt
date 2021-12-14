@@ -1,0 +1,10 @@
+include = common.txt
+expname = roughness_smooth_decay
+infer_normal
+infer_normal_target = ground_truth_normal
+
+ray_sample = "patch"
+N_rand = 256
+
+smooth_weight_decay = 1
+smooth_weight_type = "color"

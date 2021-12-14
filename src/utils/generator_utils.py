@@ -107,9 +107,12 @@ def sample_generator_single_image(
         random_uv = np.stack([random_u, random_v], 1)  # (N_rand, 2)
         uv_t = torch.Tensor(random_uv)
         random_uv_neigh = None
+        rgb_info_neigh = None
         if ray_sample == "patch":
             random_uv_neigh = get_neighbor_coord(random_uv)  # (N_rand, 8, 2)
             uv_neigh_t = torch.Tensor(random_uv_neigh)
+            rgb_info_neigh = dataset.get_info(random_image_index, random_uv_neigh[..., 0].reshape(-1,),
+                                              random_uv_neigh[..., 1].reshape(-1,))['rgb'].reshape(-1, 8, 3)
 
         pixel_info = dataset.get_info(random_image_index, random_u, random_v)
 
@@ -143,7 +146,7 @@ def sample_generator_single_image(
             plt.imshow(tmp_img.cpu().numpy())
             plt.show()
         n_iters += 1
-        yield pixel_info, ray_o, ray_d, ray_o_neigh, ray_d_neigh
+        yield pixel_info, ray_o, ray_d, rgb_info_neigh, ray_o_neigh, ray_d_neigh
 
 
 def get_neighbor_coord(coord):

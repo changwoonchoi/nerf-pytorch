@@ -40,9 +40,38 @@ def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3):
 	return radiance_map, coarse_radiance_maps
 
 
+def raw2outputs_neigh(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std):
+	# sample points
+	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
+	raw = network_query_fn(pts, rays_d, network_fn)
+
+	# distances
+	dists = z_vals[..., 1:] - z_vals[..., :-1]
+	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
+	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
+
+	noise = 0.
+	if raw_noise_std > 0.:
+		noise = torch.randn(raw[..., 0].shape) * raw_noise_std
+
+	# (0) get sigma
+	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
+	sigma = raw2sigma(raw[..., 0] + noise, dists)
+
+	# (1) get weight from sigma
+	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
+	weights_detached = weights.detach()
+	roughness = torch.sigmoid(raw[..., 4])
+	roughness_map = torch.sum(weights_detached * roughness, -1)
+	results = {}
+	results["roughness_map"] = roughness_map
+	results["weights"] = weights
+	return results
+
+
 def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				network_query_fn, network_fn,
-				raw_noise_std=0., pytest=False,
+				raw_noise_std=0., pytest=False, neighbor=False,
 				calculate_normal_from_sigma_gradient=False,
 				calculate_normal_from_sigma_gradient_surface=False,
 				calculate_normal_from_depth_gradient=False,
@@ -76,6 +105,10 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		weights: [num_rays, num_samples]. Weights assigned to each sampled color.
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
+	if neighbor:
+		return raw2outputs_neigh(
+			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std
+		)
 
 	# sample points
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
@@ -297,7 +330,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 # 				calculate_normal_from_depth=True, infer_depth=False, calculate_normal_from_surface=False):
 def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecolor, retraw=False, lindisp=False,
 				perturb=0., N_importance=0, network_fine=None, white_bkgd=False, raw_noise_std=0., verbose=False,
-				pytest=False, **kwargs):
+				pytest=False, neighbor=False, **kwargs):
 	"""Volumetric rendering.
 	Args:
 	  ray_batch: array of shape [batch_size, ...]. All information necessary
@@ -361,7 +394,9 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		z_vals = lower + (upper - lower) * t_rand
 
 	z_vals_constant = z_vals
-	result = raw2outputs(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, pytest, **kwargs)
+	result = raw2outputs(
+		rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, pytest, neighbor, **kwargs
+	)
 
 	# (2) need importance sampling
 	if N_importance > 0:
@@ -372,8 +407,9 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 		run_fn = network_fn if network_fine is None else network_fine
 
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
-		result_fine = raw2outputs(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, run_fn, raw_noise_std,
-							 pytest, **kwargs)
+		result_fine = raw2outputs(
+			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, run_fn, raw_noise_std, pytest, neighbor, **kwargs
+		)
 
 		for k, v in result.items():
 			result_fine[k + "0"] = result[k]
@@ -398,7 +434,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 	return result
 
 
-def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, **kwargs):
+def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, neighbor=False, **kwargs):
 	"""Render rays in smaller minibatches to avoid OOM.
 	"""
 	all_ret = {}
@@ -410,7 +446,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, **kwargs):
 			for k in gt_values.keys():
 				gt_values_ith[k] = gt_values[k][i:min(i+chunk, N)]
 		kwargs["gt_values"] = gt_values_ith
-		ret = render_rays(rays_flat[i:i + chunk], label_encoder=label_encoder, **kwargs)
+		ret = render_rays(rays_flat[i:i + chunk], label_encoder=label_encoder, neighbor=neighbor, **kwargs)
 		for k in ret:
 			if k not in all_ret:
 				all_ret[k] = []
@@ -424,7 +460,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, **kwargs):
 
 def render_decomp(
 		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1.,
-		c2w_staticcam=None, label_encoder=None, **kwargs
+		c2w_staticcam=None, label_encoder=None, rays_neigh=None, **kwargs
 ):
 	"""Render rays
 	Args:
@@ -448,12 +484,30 @@ def render_decomp(
 	  acc_map: [batch_size]. Accumulated opacity (alpha) along a ray.
 	  extras: dict with everything returned by render_rays().
 	"""
+	all_ret_neigh = None
 	if c2w is not None:
 		# special case to render full image
 		rays_o, rays_d = get_rays(H, W, K, c2w)
 	else:
 		# use provided ray batch
 		rays_o, rays_d = rays
+		if rays_neigh is not None:
+			rays_o_neigh, rays_d_neigh = rays_neigh
+			viewdirs_neigh = rays_d_neigh
+			viewdirs_neigh = viewdirs_neigh / torch.norm(viewdirs_neigh, dim=-1, keepdim=True)
+			viewdirs_neigh = torch.reshape(viewdirs_neigh, [-1, 3]).float()
+			sh_neigh = rays_d_neigh.shape
+			if ndc:
+				rays_o_neigh, rays_d_neigh = ndc_rays(H, W, K[0][0], 1., rays_o_neigh, rays_d_neigh)
+			rays_o_neigh = torch.reshape(rays_o_neigh, [-1, 3]).float()
+			rays_d_neigh = torch.reshape(rays_d_neigh, [-1, 3]).float()
+			near_neigh, far_neigh = near * torch.ones_like(rays_d_neigh[..., :1]), far * torch.ones_like(rays_d_neigh[..., :1])
+			rays_neighbor = torch.cat([rays_o_neigh, rays_d_neigh, near_neigh, far_neigh], -1)
+			rays_neighbor = torch.cat([rays_neighbor, viewdirs_neigh], -1)
+			all_ret_neigh = batchify_rays(rays_neighbor, chunk, label_encoder=label_encoder, neighbor=True, **kwargs)
+			for k in all_ret_neigh:
+				k_sh_neigh = list(sh_neigh[:-1]) + list(all_ret_neigh[k].shape[1:])
+				all_ret_neigh[k] = torch.reshape(all_ret_neigh[k], k_sh_neigh)
 
 	viewdirs = rays_d
 	if c2w_staticcam is not None:
@@ -480,7 +534,7 @@ def render_decomp(
 	for k in all_ret:
 		k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
 		all_ret[k] = torch.reshape(all_ret[k], k_sh)
-	return all_ret
+	return all_ret, all_ret_neigh
 
 
 from dataset.dataset_interface import NerfDataset
@@ -532,7 +586,7 @@ def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
 		gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
 		for k in gt_values.keys():
 			gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
-		results_i = render_decomp(H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values, **render_kwargs)
+		results_i, _ = render_decomp(H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values, **render_kwargs)
 		append_result(results_i, "color_map", i, "rgb")
 		append_result(results_i, "radiance_map", i, "radiance")
 		for k in range(render_kwargs["coarse_radiance_number"]):

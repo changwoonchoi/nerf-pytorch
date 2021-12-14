@@ -270,14 +270,17 @@ def train():
 
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
-        target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
-        # target_info, rays_o, rays_d, rays_o_neigh, rays_d_neigh = next(sample_generator)  # 5 x (N_rand, 3)
+        # target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
+        target_info, rays_o, rays_d, rgb_info_neigh, rays_o_neigh, rays_d_neigh = next(sample_generator)  # (N_rand, 3), (N_rand, 8, 3)
         target_rgb = target_info["rgb"]
         if args.learn_albedo_from_oracle:
             target_chromaticity = target_info["albedo"]
         else:
             target_chromaticity = target_rgb / (torch.linalg.norm(target_rgb, dim=-1, keepdim=True) + 1e-10)
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
+        batch_rays_neigh = None
+        if args.ray_sample == "patch":
+            batch_rays_neigh = torch.stack([rays_o_neigh.reshape((-1, 3)), rays_d_neigh.reshape((-1, 3))], 0)  # (2, N_rand * 8, 3)
 
         #####  Core optimization loop  #####
         if args.calculate_all_analytic_normals:
@@ -310,7 +313,7 @@ def train():
                 calculate_normal_from_depth_gradient_direction_epsilon = True
 
         # 1. render sample
-        result = render_decomp(
+        result, result_neigh = render_decomp(
             dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True,
             init_basecolor=dataset.init_basecolor,
             calculate_normal_from_sigma_gradient=calculate_normal_from_sigma_gradient,
@@ -319,7 +322,7 @@ def train():
             calculate_normal_from_depth_gradient_direction=calculate_normal_from_depth_gradient_direction,
             calculate_normal_from_depth_gradient_epsilon=calculate_normal_from_depth_gradient_epsilon,
             calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
-            gt_values=target_info,
+            gt_values=target_info, rays_neigh=batch_rays_neigh,
             **render_kwargs_train
         )
 
@@ -377,6 +380,26 @@ def train():
         if args.infer_normal and i >= args.N_iter_ignore_normal:
             loss_inferred_normal = calculate_loss("inferred_normal_map", args.infer_normal_target)
 
+        # 4) roughness smoothness loss
+        loss_roughness = 0
+        if args.ray_sample == "patch":
+            if args.smooth_weight_type == "color":
+                smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(rgb_info_neigh - target_info['rgb'].view([-1, 1, 3]), 1, -1))
+            elif args.smooth_weight_type == 'chrom':
+                smooth_weight = torch.exp(
+                    -args.smooth_weight_decay * torch.norm(
+                        normalize(rgb_info_neigh, dim=-1) - normalize(target_info['rgb'].view([-1, 1, 3]), dim=-1), 1, -1
+                    )
+                )
+            else:
+                raise ValueError
+            loss_roughness = result['roughness_map'].reshape([-1, 1]) - result_neigh['roughness_map'].reshape([-1, 8])
+            loss_roughness = torch.sum(torch.norm(smooth_weight * loss_roughness, 1, -1))
+            if 'loss_roughness0' in result:
+                loss_roughness0 = result['roughness_map0'].reshape([-1, 1]) - result_neigh['roughness_map0'].reshape([-1, 8])
+                loss_roughness0 = torch.sum(torch.norm(smooth_weight * loss_roughness0, 1, -1))
+                loss_roughness += loss_roughness0
+
         # Final loss
         # (a) radiance loss
         total_loss = args.beta_radiance_render * loss_render_radiance
@@ -392,6 +415,9 @@ def train():
                       # + args.beta_inferred_normal * loss_inferred_normal + args.beta_radiance_render * loss_render_radiance \
         if i>= args.N_iter_ignore_approximated_radiance:
             total_loss += args.beta_render * loss_render
+
+        # (c) roughness loss
+        total_loss += args.beta_roughness_smooth * loss_roughness
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
@@ -415,6 +441,8 @@ def train():
                 writer.add_scalar('Loss_normal/inferred_normal', loss_inferred_normal, i)
                 loss_from_gt = calculate_loss("inferred_normal_map", "ground_truth_normal")
                 writer.add_scalar('Loss_normal/inferred_normal_from_gt', loss_from_gt, i)
+
+            writer.add_scalar('Loss/Loss_roughness_smooth', loss_roughness, i)
 
         # total_loss = args.beta_radiance_render * loss_render_radiance
 
@@ -453,7 +481,6 @@ def train():
 
             # with torch.no_grad():
             # poses = torch.Tensor(dataset_val.poses).to(device)
-
             render_decomp_path_results = render_decomp_path(
                 dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
                 render_factor=4, init_basecolor=dataset.init_basecolor,
