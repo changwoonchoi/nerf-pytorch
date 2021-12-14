@@ -57,9 +57,11 @@ def config_parser(default_files=None):
 	parser.add_argument("--netwidth_fine", type=int, default=256, help='channels per layer in fine network')
 	parser.add_argument("--N_rand", type=int, default=32 * 32 * 4,
 	                    help='batch size (number of random rays per gradient step)')
+	parser.add_argument("--ray_sample", type=str, default="pixel")
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
 	parser.add_argument("--N_iter_ignore_normal", type=int, default=5000, help="Ignore normal loss")
 	parser.add_argument("--N_iter_ignore_approximated_radiance", type=int, default=5000, help="Ignore normal loss")
+	parser.add_argument("--N_iter_ignore_roughness_smooth", type=int, default=5000, help="Ignore roughness loss")
 
 	parser.add_argument("--coarse_radiance_number", type=int, default=0, help='coarse_radiance_number')
 
@@ -76,6 +78,9 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_albedo_render", type=float, default=1.)
 	parser.add_argument("--beta_radiance_render", type=float, default=1.)
 	parser.add_argument("--beta_inferred_depth", type=float, default=1.)
+	parser.add_argument("--beta_roughness_smooth", type=float, default=0.1)
+	parser.add_argument("--smooth_weight_decay", type=float, default=0.)
+	parser.add_argument("--smooth_weight_type", type=str, default="color")
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_decay", type=int, default=250,

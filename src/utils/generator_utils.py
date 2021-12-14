@@ -58,7 +58,8 @@ def sample_generator_single_image(
         visualize=False,
         precrop_iters=500,
         precrop_frac=0.5,
-        initial_iters=0
+        initial_iters=0,
+        ray_sample="pixel"
 ):
     """
     Get sample from a single random image.
@@ -89,13 +90,29 @@ def sample_generator_single_image(
             eW = min(W // 2 + dW, W)
             # logger.info(f"\nCenter cropping of size {2*dH} x {2*dW} is enabled until iter {precrop_iters}")
         else:
-            sH = 0
-            eH = H
-            sW = 0
-            eW = W
+            if ray_sample == "pixel":
+                sH = 0
+                eH = H
+                sW = 0
+                eW = W
+            elif ray_sample == "patch":
+                sH = 1
+                eH = H - 1
+                sW = 1
+                eW = W - 1
+            else:
+                raise ValueError
         random_u = np.random.randint(sW, eW, batch_size)
         random_v = np.random.randint(sH, eH, batch_size)
-        random_uv = np.stack([random_u, random_v], 1)
+        random_uv = np.stack([random_u, random_v], 1)  # (N_rand, 2)
+        uv_t = torch.Tensor(random_uv)
+        random_uv_neigh = None
+        rgb_info_neigh = None
+        if ray_sample == "patch":
+            random_uv_neigh = get_neighbor_coord(random_uv)  # (N_rand, 8, 2)
+            uv_neigh_t = torch.Tensor(random_uv_neigh)
+            rgb_info_neigh = dataset.get_info(random_image_index, random_uv_neigh[..., 0].reshape(-1,),
+                                              random_uv_neigh[..., 1].reshape(-1,))['rgb'].reshape(-1, 8, 3)
 
         pixel_info = dataset.get_info(random_image_index, random_u, random_v)
 
@@ -107,15 +124,43 @@ def sample_generator_single_image(
         #     mask = dataset.masks[random_image_index]
         #     pixel_label = mask[random_v, random_u]  # height is first!!!
 
-        uv_t = torch.Tensor(random_uv)
+        # uv_t = torch.Tensor(random_uv)
         ray_o, ray_d = get_rays_few(uv_t, dataset.get_focal_matrix(), pose[:3, :4])
+        ray_o_neigh, ray_d_neigh = None, None
+        if ray_sample == "patch":
+            ray_o_neigh, ray_d_neigh = get_rays_patch_few(uv_neigh_t, dataset.get_focal_matrix(), pose[:3, :4])
 
         if visualize:
-            pixel_info["rgb"][random_v, random_u, 0] = 255
-            pixel_info["rgb"][random_v, random_u, 1] = 0
-            pixel_info["rgb"][random_v, random_u, 2] = 0
-            plt.imshow(pixel_info["rgb"])
+            tmp_img = dataset.images[random_image_index].clone().detach()
+            # pixel_info["rgb"][random_v, random_u, 0] = 255
+            # pixel_info["rgb"][random_v, random_u, 1] = 0
+            # pixel_info["rgb"][random_v, random_u, 2] = 0
+            # plt.imshow(pixel_info["rgb"])
+            tmp_img[random_v, random_u, 0] = 1
+            tmp_img[random_v, random_u, 1] = 0
+            tmp_img[random_v, random_u, 2] = 0
+            tmp_img[np.reshape(random_uv_neigh[:, :, 1], (-1,)), np.reshape(random_uv_neigh[:, :, 0], (-1, )), 0] = 0
+            tmp_img[np.reshape(random_uv_neigh[:, :, 1], (-1,)), np.reshape(random_uv_neigh[:, :, 0], (-1, )), 1] = 0
+            tmp_img[np.reshape(random_uv_neigh[:, :, 1], (-1,)), np.reshape(random_uv_neigh[:, :, 0], (-1, )), 2] = 1
+            # tmp_img *= 255
+            plt.imshow(tmp_img.cpu().numpy())
             plt.show()
-
         n_iters += 1
-        yield pixel_info, ray_o, ray_d
+        yield pixel_info, ray_o, ray_d, rgb_info_neigh, ray_o_neigh, ray_d_neigh
+
+
+def get_neighbor_coord(coord):
+    """
+    get 8 neighborhood pixel coordinates
+    """
+    coord_neigh = np.repeat(coord[:, np.newaxis, :], 8, axis=1)
+    neigh_relation = np.array([[-1, -1],
+                               [-1, 0],
+                               [-1, 1],
+                               [0, -1],
+                               [0, 1],
+                               [1, -1],
+                               [1, 0],
+                               [1, 1]])
+    coord_neigh += neigh_relation
+    return coord_neigh
