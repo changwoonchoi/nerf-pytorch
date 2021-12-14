@@ -64,8 +64,8 @@ def raw2outputs_neigh(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn,
 	roughness = torch.sigmoid(raw[..., 4])
 	roughness_map = torch.sum(weights_detached * roughness, -1)
 	results = {}
-	results["roughness_map"] = roughness_map
-	results["weights"] = weights
+	results["roughness_map"] = roughness_map.detach()
+	results["weights"] = weights.detach()
 	return results
 
 
