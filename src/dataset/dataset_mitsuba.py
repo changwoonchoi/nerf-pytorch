@@ -25,8 +25,13 @@ class MitsubaDataset(NerfDataset):
 		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
 			self.meta = json.load(fp)
 
-		self.instance_color_list = np.loadtxt(os.path.join(basedir, 'instance_label.txt'))
-		self.instance_num = len(self.instance_color_list)
+		if self.load_instance_label_mask:
+			self.instance_color_list = np.loadtxt(os.path.join(basedir, 'instance_label.txt'))
+			self.instance_num = len(self.instance_color_list)
+		else:
+			self.instance_color_list = []
+			self.instance_num = 0
+
 		self.basedir = basedir
 
 		self.skip = kwargs.get("skip", 1)

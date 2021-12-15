@@ -41,8 +41,8 @@ sample_length = 6
 beta_albedo_cluster = 0
 beta_indirect_sparse = 0
 beta_render = 1
-beta_albedo_render = 0.5
-beta_radiance_render = 1
+beta_albedo_render = 0.2
+beta_radiance_render = 0.3
 
 
 beta_smooth_albedo = 1
