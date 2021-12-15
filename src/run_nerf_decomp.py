@@ -395,10 +395,10 @@ def train():
             else:
                 raise ValueError
             loss_roughness = result['roughness_map'].reshape([-1, 1]) - result_neigh['roughness_map'].reshape([-1, 8])
-            loss_roughness = torch.sum(torch.norm(smooth_weight * loss_roughness, 1, -1))
+            loss_roughness = torch.mean(torch.norm(smooth_weight * loss_roughness, 1, -1))
             if 'loss_roughness0' in result:
                 loss_roughness0 = result['roughness_map0'].reshape([-1, 1]) - result_neigh['roughness_map0'].reshape([-1, 8])
-                loss_roughness0 = torch.sum(torch.norm(smooth_weight * loss_roughness0, 1, -1))
+                loss_roughness0 = torch.mean(torch.norm(smooth_weight * loss_roughness0, 1, -1))
                 loss_roughness += loss_roughness0
 
         # Final loss
