@@ -5,3 +5,4 @@ expname = roughness_smooth
 
 ray_sample = "patch"
 N_rand = 512
+beta_roughness_smooth = 0.00001

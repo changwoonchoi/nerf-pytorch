@@ -1,7 +1,8 @@
 include = common.txt
-expname = roughness_smooth
+expname = roughness_smooth_1e-2
 # infer_normal
 # infer_normal_target = ground_truth_normal
 
 ray_sample = "patch"
 N_rand = 512
+beta_roughness_smooth = 0.01

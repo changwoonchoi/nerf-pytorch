@@ -57,6 +57,8 @@ def depth_to_normal(depth_path, pose, camera_angle_x):
 		n_j = np.clip(y, 0, height - 1)
 		return position[n_j, n_i, :]
 
+	kernel_size = 16
+
 	for i in range(width):
 		for j in range(height):
 			s01 = get_value(i - 1, j)
@@ -72,16 +74,66 @@ def depth_to_normal(depth_path, pose, camera_angle_x):
 
 			vc = np.cross(vb, va)
 			vc = normalize(vc)
-			normal[j,i,:] = vc #get_value(i, j)[1]
+
+			normal[j,i,:] = vc
+	plt.imshow((normal + 1) * 0.5)
+	plt.show()
+
+	binormal, tangent = get_TBN(normal)
+	#binormal = torch.Tensor(binormal)
+	#tangent = torch.Tensor(tangent)
+
+	TBNs = np.stack([tangent, binormal, normal], axis=-1)
+
+	samples = []
+	for i in range(kernel_size):
+		samples.append(cosine_sample_hemisphere())
+	samples = np.array(samples)
+	#position = torch.Tensor(position)
+
+	radius = 0.01
+	print(position.shape)
+
+	samplePos = position + radius * TBNs * samples
+	print(samplePos.shape)
+	# for i in range(width):
+	# 	for j in range(height):
+	# 		TBN = TBNs[j, i, :]
+	# 		fragPos = position[j, i, :]
+	# 		for k in range(kernel_size):
+	# 			samplePos = fragPos + radius * TBN * samples[i]
+
+
 	print(normal.shape)
 	plt.imshow((normal + 1) * 0.5)
 	plt.show()
 
+import random
+def cosine_sample_hemisphere():
+	u1 = random.random()
+	u2 = random.random()
+	r = np.sqrt(u1)
+	phi = 2 * np.pi * u2
+	x = r * np.cos(phi)
+	y = r * np.sin(phi)
+	z = np.sqrt(max(0, 1-x*x-y*y))
+	return np.array([x, y, z], dtype=np.float32)
+
+
+def get_TBN(normal):
+	binormal = np.zeros_like(normal)
+	binormal[..., 0] = np.where(normal[...,0] > normal[...,2], -normal[..., 1], 0)
+	binormal[..., 1] = np.where(normal[...,0] > normal[...,2], normal[..., 0], -normal[...,2])
+	binormal[..., 2] = np.where(normal[..., 0] > normal[..., 2], 0, normal[..., 1])
+	binormal = binormal / np.linalg.norm(binormal, axis=-1, keepdims=True)
+	tangent = np.cross(binormal, normal, axis=-1)
+
+	return binormal, tangent
 
 import os
 import json
 if __name__ == "__main__":
-	target = "veach-ajar"
+	target = "kitchen"
 	basedir = '../../data/mitsuba/%s' % target
 	with open(os.path.join(basedir, 'transforms_test.json'), 'r') as fp:
 		meta = json.load(fp)
@@ -96,7 +148,7 @@ if __name__ == "__main__":
 		poses.append(pose)
 	camera_angle_x = float(meta['frames'][0]['fov_degree']) / 180.0 * np.pi
 
-	for i in range(10):
+	for i in range(1):
 		path = "../../logs_20211101/specular_ibl_normal_oracle/%s/infer_normal/testset_100000/disp_00%d.png" % (target, i)
 		#path = "../../logs/specular_ibl_no_normalize/%s/infer_normal/testset_100000/disp_00%d.png" % (
 		#target, i)

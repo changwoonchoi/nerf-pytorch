@@ -1,7 +1,6 @@
 # import os
-#
-# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-# os.environ["CUDA_VISIBLE_DEVICES"] = str(5)
+# os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"]="6"
 
 
 import numpy as np
@@ -279,6 +278,7 @@ def train():
             target_chromaticity = target_rgb / (torch.linalg.norm(target_rgb, dim=-1, keepdim=True) + 1e-10)
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
         batch_rays_neigh = None
+
         if args.ray_sample == "patch":
             batch_rays_neigh = torch.stack([rays_o_neigh.reshape((-1, 3)), rays_d_neigh.reshape((-1, 3))], 0)  # (2, N_rand * 8, 3)
 
@@ -312,8 +312,11 @@ def train():
             elif args.infer_normal_target == "normal_map_from_depth_gradient_direction_epsilon":
                 calculate_normal_from_depth_gradient_direction_epsilon = True
 
+        #print(batch_rays.shape, "batch_rays")
+        #print(batch_rays_neigh.shape, "batch_rays_neigh")
+
         # 1. render sample
-        result, result_neigh = render_decomp(
+        result = render_decomp(
             dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True,
             init_basecolor=dataset.init_basecolor,
             calculate_normal_from_sigma_gradient=calculate_normal_from_sigma_gradient,
@@ -322,9 +325,17 @@ def train():
             calculate_normal_from_depth_gradient_direction=calculate_normal_from_depth_gradient_direction,
             calculate_normal_from_depth_gradient_epsilon=calculate_normal_from_depth_gradient_epsilon,
             calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
-            gt_values=target_info, rays_neigh=batch_rays_neigh,
+            gt_values=target_info,
             **render_kwargs_train
         )
+
+        with torch.no_grad():
+            result_neigh = render_decomp(
+                dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays_neigh, verbose=i < 10, retraw=True,
+                init_basecolor=dataset.init_basecolor,
+                is_neighbor=True,
+                **render_kwargs_train
+            )
 
         optimizer.zero_grad()
 
@@ -383,6 +394,8 @@ def train():
 
         # 4) roughness smoothness loss
         loss_roughness = 0
+        # print(result["roughness_map"].shape, "roughness_map")
+
         if args.ray_sample == "patch":
             if args.smooth_weight_type == "color":
                 smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(rgb_info_neigh - target_info['rgb'].view([-1, 1, 3]), 1, -1))
@@ -393,12 +406,15 @@ def train():
                     )
                 )
             else:
-                raise ValueError
+                smooth_weight = 1.0
+
             loss_roughness = result['roughness_map'].reshape([-1, 1]) - result_neigh['roughness_map'].reshape([-1, 8])
-            loss_roughness = torch.sum(torch.norm(smooth_weight * loss_roughness, 1, -1))
+            loss_roughness = torch.norm(loss_roughness[..., None], 1, -1)
+            loss_roughness = torch.mean(smooth_weight * loss_roughness)
+            # loss_roughness = torch.mean(torch.norm(smooth_weight * loss_roughness, 1, -1))
             if 'loss_roughness0' in result:
                 loss_roughness0 = result['roughness_map0'].reshape([-1, 1]) - result_neigh['roughness_map0'].reshape([-1, 8])
-                loss_roughness0 = torch.sum(torch.norm(smooth_weight * loss_roughness0, 1, -1))
+                loss_roughness0 = torch.mean(torch.norm(smooth_weight * loss_roughness0, 1, -1))
                 loss_roughness += loss_roughness0
 
         # Final loss
@@ -489,7 +505,7 @@ def train():
             render_decomp_path_results = render_decomp_path(
                 dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
                 render_factor=4, init_basecolor=dataset.init_basecolor,
-                calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
+                calculate_normal_from_depth_map=True,
             )
 
             def add_image_to_writer(key_name):

@@ -68,8 +68,9 @@ class NerfDataset(Dataset, ABC):
 	def get_resized_normal_albedo(self, resize_factor, i):
 		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor), antialias=True)
 		result = {}
-		albedo_temp = self.albedos[i].permute((2, 0, 1))
-		result["albedo"] = t(albedo_temp).permute((1, 2, 0))
+		if self.load_albedo:
+			albedo_temp = self.albedos[i].permute((2, 0, 1))
+			result["albedo"] = t(albedo_temp).permute((1, 2, 0))
 
 		if self.load_normal:
 			normal_temp = self.normals[i].permute((2, 0, 1))

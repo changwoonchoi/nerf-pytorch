@@ -3,6 +3,7 @@ from dataset.dataset_interface import NerfDataset
 from torch.utils.data import DataLoader
 from nerf_models.nerf_renderer_helper import *
 import torch
+
 import matplotlib.pyplot as plt
 from utils.logging_utils import load_logger
 from utils.timing_utils import time_measure
@@ -131,18 +132,16 @@ def sample_generator_single_image(
             ray_o_neigh, ray_d_neigh = get_rays_patch_few(uv_neigh_t, dataset.get_focal_matrix(), pose[:3, :4])
 
         if visualize:
+            plt.figure()
             tmp_img = dataset.images[random_image_index].clone().detach()
-            # pixel_info["rgb"][random_v, random_u, 0] = 255
-            # pixel_info["rgb"][random_v, random_u, 1] = 0
-            # pixel_info["rgb"][random_v, random_u, 2] = 0
-            # plt.imshow(pixel_info["rgb"])
+
             tmp_img[random_v, random_u, 0] = 1
             tmp_img[random_v, random_u, 1] = 0
             tmp_img[random_v, random_u, 2] = 0
             tmp_img[np.reshape(random_uv_neigh[:, :, 1], (-1,)), np.reshape(random_uv_neigh[:, :, 0], (-1, )), 0] = 0
             tmp_img[np.reshape(random_uv_neigh[:, :, 1], (-1,)), np.reshape(random_uv_neigh[:, :, 0], (-1, )), 1] = 0
             tmp_img[np.reshape(random_uv_neigh[:, :, 1], (-1,)), np.reshape(random_uv_neigh[:, :, 0], (-1, )), 2] = 1
-            # tmp_img *= 255
+
             plt.imshow(tmp_img.cpu().numpy())
             plt.show()
         n_iters += 1
