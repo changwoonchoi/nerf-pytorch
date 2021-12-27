@@ -33,53 +33,6 @@ def test():
     raise NotImplementedError
 
 
-def test_parser():
-    parser = recursive_config_parser()
-    args = parser.parse_args()
-
-def test_autograd():
-    a = torch.tensor([[2., 3.], [4., 5.]])
-    b = torch.tensor([[1., 1.], [1., 1.]])
-    L = nn.Linear(2, 1)
-    L.weight.data.fill_(1)
-    L.bias.data.fill_(0)
-
-    a.requires_grad = True
-    Q = L(a*b)**2
-    print("Q", Q)
-    Q.backward(torch.ones_like(Q))
-    print(a.grad)
-
-    a = torch.tensor([[2., 5.], [3., 4.]])
-    a.requires_grad = True
-    Q = L(a*b) ** 2
-    print("Q", Q)
-    Q.backward(torch.ones_like(Q))
-    print(a.grad)
-    #print(b.grad)
-
-def test_base_color():
-    parser = recursive_config_parser()
-    args = parser.parse_args()
-    args.device = device
-    # (1) Load dataset
-    with time_measure("[1] Data load"):
-        def load_dataset_split(split="train", do_logging=True, **kwargs):
-            # create dataset config
-            target_dataset = load_dataset(args.dataset_type, args.datadir, split=split, **kwargs)
-            # real data load using multiprocessing(torch DataLoader) --> load all at once
-            # TODO : if dataset is too large, it may not be loaded at once.
-            target_dataset.load_all_data(num_of_workers=10)
-            return target_dataset
-
-        # load train and validation dataset
-        dataset = load_dataset_split("train", sample_length=args.sample_length, image_scale=args.image_scale)
-
-    # (2) Load dataset
-    with time_measure("[2] Base color evaluation"):
-        dataset.get_base_color(visualize=True)
-
-
 def train():
     parser = recursive_config_parser()
     args = parser.parse_args()
@@ -98,7 +51,6 @@ def train():
     logger_dataset.info("Infer normal: " + str(args.infer_normal))
     logger_dataset.info("Learn normal from oracle: " + str(args.learn_normal_from_oracle))
     logger_dataset.info("Learn albedo from oracle: " + str(args.learn_albedo_from_oracle))
-
 
     # (1) Load dataset
     with time_measure("[1] Data load"):
@@ -161,7 +113,6 @@ def train():
         brdf_lut /= 255.0
         brdf_lut = torch.tensor(brdf_lut).to(args.device)
         brdf_lut = brdf_lut.permute((2, 0, 1))
-
 
     # (2) Create log file / folder
     with time_measure("[2] Log file create"):
@@ -356,6 +307,23 @@ def train():
                         loss_from_target += loss_fn(result[key_name + '0'], result[target])
             return loss_from_target
 
+        def calculate_smooth_loss(key_name, norm_p=1):
+            if len(result[key_name].shape) == 1:
+                result_p = result[key_name][..., None]
+                result_p_neighs = result_neigh[key_name][..., None]
+            else:
+                result_p = result[key_name]
+                result_p_neighs = result_neigh[key_name]
+            result_p_neighs = result_p_neighs.reshape([-1, 8, result_p_neighs.shape[-1]])
+
+            loss_smooth = result_p[:, None, :] - result_p_neighs
+            loss_smooth = torch.norm(loss_smooth, norm_p, -1)
+            loss_smooth = torch.mean(smooth_weight * loss_smooth)
+
+            if key_name + '0' in result:
+                loss_smooth += calculate_smooth_loss(key_name + '0', norm_p)
+            return loss_smooth
+
         # 2. calculate loss
 
         # 0) approximated radiance loss
@@ -414,11 +382,6 @@ def train():
 
         if args.ray_sample == "patch":
             if args.smooth_weight_type == "color":
-                print(neigh_info['rgb'].shape)
-                print(target_info['rgb'].view([-1, 1, 3]).shape)
-                a = neigh_info['rgb'] - target_info['rgb'].view([-1, 1, 3])
-                print(a.shape)
-
                 smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(neigh_info['rgb'] - target_info['rgb'].view([-1, 1, 3]), 2, -1))
             elif args.smooth_weight_type == 'chrom':
                 smooth_weight = torch.exp(
@@ -434,36 +397,18 @@ def train():
                 ))
             else:
                 raise ValueError
+
             # 5-1 roughness smooth
             if args.roughness_smooth:
-                loss_smooth_roughness = result['roughness_map'].reshape([-1, 1]) - result_neigh['roughness_map'].reshape([-1, 8])
-                loss_smooth_roughness = torch.norm(loss_smooth_roughness.reshape([-1, 8, 1]), 1, -1)
-                loss_smooth_roughness = torch.mean(smooth_weight * loss_smooth_roughness)
-                if 'roughness_map0' in result:
-                    loss_smooth_roughness0 = result['roughness_map0'].reshape([-1, 1]) - result_neigh['roughness_map0'].reshape([-1, 8])
-                    loss_smooth_roughness0 = torch.norm(loss_smooth_roughness0.reshape([-1, 8, 1]), 1, -1)
-                    loss_smooth_roughness0 = torch.mean(smooth_weight * loss_smooth_roughness0)
-                    loss_smooth_roughness += loss_smooth_roughness0
+                loss_smooth_roughness = calculate_smooth_loss("roughness_map")
+
             # 5-2 albedo smooth
             if args.albedo_smooth:
-                loss_smooth_albedo = result['albedo_map'].reshape([-1, 1, 3]) - result_neigh['albedo_map'].reshape([-1, 8, 3])
-                loss_smooth_albedo = torch.norm(loss_smooth_albedo, 1, -1)
-                loss_smooth_albedo = torch.mean(smooth_weight * loss_smooth_albedo)
-                if 'albedo_map0' in result:
-                    loss_smooth_albedo0 = result['albedo_map0'].reshape([-1, 1, 3]) - result_neigh['albedo_map0'].reshape([-1, 8, 3])
-                    loss_smooth_albedo0 = torch.norm(loss_smooth_albedo0, 1, -1)
-                    loss_smooth_albedo0 = torch.mean(smooth_weight * loss_smooth_albedo0)
-                    loss_smooth_albedo += loss_smooth_albedo0
+                loss_smooth_albedo = calculate_smooth_loss("albedo_map")
+
             # 5-3 irradiance smooth
             if args.irradiance_smooth:
-                loss_smooth_irradiance = result['irradiance_map'].reshape([-1, 1]) - result_neigh['irradiance_map'].reshape([-1, 8])
-                loss_smooth_irradiance = torch.norm(loss_smooth_irradiance.reshape([-1, 8, 1]), 1, -1)
-                loss_smooth_irradiance = torch.mean(smooth_weight * loss_smooth_irradiance)
-                if 'irradiance_map0' in result:
-                    loss_smooth_irradiance0 = result['irradiance_map0'].reshape([-1, 1]) - result_neigh['irradiance_map0'].reshape([-1, 8])
-                    loss_smooth_irradiance0 = torch.norm(loss_smooth_irradiance0.reshape([-1, 8, 1]), 1, -1)
-                    loss_smooth_irradiance0 = torch.mean(smooth_weight * loss_smooth_irradiance0)
-                    loss_smooth_irradiance += loss_smooth_irradiance0
+                loss_smooth_irradiance = calculate_smooth_loss("irradiance_map")
 
         # 6) instance-wise constant loss (for test)
         loss_instancewise_constant_albedo = 0
