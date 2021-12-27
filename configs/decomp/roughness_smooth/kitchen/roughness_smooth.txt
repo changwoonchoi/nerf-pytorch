@@ -1,5 +1,5 @@
 include = common.txt
-expname = roughness_smooth
+# expname = roughness_smooth
 # infer_normal
 # infer_normal_target = ground_truth_normal
 

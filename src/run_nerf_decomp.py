@@ -38,6 +38,11 @@ def train():
     args = parser.parse_args()
     args.device = device
 
+    if args.expname is None:
+        expname = args.config.split("/")[-1]
+        expname = expname.split(".")[0]
+        args.expname = expname
+
     if args.render_only:
         test()
         return
@@ -307,22 +312,7 @@ def train():
                         loss_from_target += loss_fn(result[key_name + '0'], result[target])
             return loss_from_target
 
-        def calculate_smooth_loss(key_name, norm_p=1):
-            if len(result[key_name].shape) == 1:
-                result_p = result[key_name][..., None]
-                result_p_neighs = result_neigh[key_name][..., None]
-            else:
-                result_p = result[key_name]
-                result_p_neighs = result_neigh[key_name]
-            result_p_neighs = result_p_neighs.reshape([-1, 8, result_p_neighs.shape[-1]])
 
-            loss_smooth = result_p[:, None, :] - result_p_neighs
-            loss_smooth = torch.norm(loss_smooth, norm_p, -1)
-            loss_smooth = torch.mean(smooth_weight * loss_smooth)
-
-            if key_name + '0' in result:
-                loss_smooth += calculate_smooth_loss(key_name + '0', norm_p)
-            return loss_smooth
 
         # 2. calculate loss
 
@@ -397,6 +387,23 @@ def train():
                 ))
             else:
                 raise ValueError
+
+            def calculate_smooth_loss(key_name, norm_p=1):
+                if len(result[key_name].shape) == 1:
+                    result_p = result[key_name][..., None]
+                    result_p_neighs = result_neigh[key_name][..., None]
+                else:
+                    result_p = result[key_name]
+                    result_p_neighs = result_neigh[key_name]
+                result_p_neighs = result_p_neighs.reshape([-1, 8, result_p_neighs.shape[-1]])
+
+                loss_smooth = result_p[:, None, :] - result_p_neighs
+                loss_smooth = torch.norm(loss_smooth, norm_p, -1)
+                loss_smooth = torch.mean(smooth_weight * loss_smooth)
+
+                if key_name + '0' in result:
+                    loss_smooth += calculate_smooth_loss(key_name + '0', norm_p)
+                return loss_smooth
 
             # 5-1 roughness smooth
             if args.roughness_smooth:
