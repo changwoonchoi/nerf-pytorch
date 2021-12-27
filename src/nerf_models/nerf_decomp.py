@@ -63,6 +63,10 @@ class NeRFDecomp(nn.Module):
         self.irradiance_feature_linear = nn.Linear(W, W // 2)
         self.irradiance_linear = nn.Linear(W // 2, 1)
 
+        if self.use_instance_label:
+            self.instance_feature_linear = nn.Linear(W, W // 2)
+            self.instance_linear = nn.Linear(W // 2, self.instance_label_dimension)
+
         # x, d dependent
         self.radiance_linear = nn.Linear(W, 3)
 
@@ -128,6 +132,12 @@ class NeRFDecomp(nn.Module):
         irradiance_feature = F.relu(irradiance_feature)
         irradiance = self.irradiance_linear(irradiance_feature)
 
+        # (2-5) instance
+        if self.use_instance_label:
+            instance_feature = self.instance_feature_linear(h)
+            instance_feature = F.relu(instance_feature)
+            instance = self.instance_linear(instance_feature)
+
         # (3) position + direction
         feature = self.feature_linear(h)
         h = torch.cat([feature, input_views], dim=-1)
@@ -143,6 +153,9 @@ class NeRFDecomp(nn.Module):
             radiance_i = F.relu(radiance_i)
             radiance_i = self.additional_radiance_linear[i](radiance_i)
             ret.append(radiance_i)
+
+        if self.use_instance_label:
+            ret.append(instance)
 
         # ret += [radiance1, radiance2, radiance3]
 

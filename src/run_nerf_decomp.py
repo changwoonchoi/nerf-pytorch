@@ -1,6 +1,7 @@
 # import os
-# os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-# os.environ["CUDA_VISIBLE_DEVICES"]="6"
+#
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"] = str(5)
 
 
 import numpy as np
@@ -120,7 +121,8 @@ def train():
             "load_roughness": True,
             "load_albedo": args.learn_albedo_from_oracle,
             "sample_length": args.sample_length,
-            "coarse_radiance_number": args.coarse_radiance_number
+            "coarse_radiance_number": args.coarse_radiance_number,
+            "load_instance_label_mask": args.instance_mask
         }
         dataset = load_dataset_split("train", **load_params)
         dataset_val = load_dataset_split("test", skip=10, **load_params)
@@ -193,7 +195,7 @@ def train():
 
         render_kwargs_train['brdf_lut'] = brdf_lut
         render_kwargs_test['brdf_lut'] = brdf_lut
-
+        is_instance_label_logit = False
         if use_instance_mask:
             is_instance_label_logit = isinstance(label_encoder, OneHotLabelEncoder) and (args.CE_weight_type != "mse")
             render_kwargs_train["is_instance_label_logit"] = is_instance_label_logit
@@ -270,7 +272,7 @@ def train():
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
         # target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
-        target_info, rays_o, rays_d, rgb_info_neigh, rays_o_neigh, rays_d_neigh = next(sample_generator)  # (N_rand, 3), (N_rand, 8, 3)
+        target_info, rays_o, rays_d, neigh_info, rays_o_neigh, rays_d_neigh = next(sample_generator)  # (N_rand, 3), (N_rand, 8, 3)
         target_rgb = target_info["rgb"]
         if args.learn_albedo_from_oracle:
             target_chromaticity = target_info["albedo"]
@@ -278,7 +280,6 @@ def train():
             target_chromaticity = target_rgb / (torch.linalg.norm(target_rgb, dim=-1, keepdim=True) + 1e-10)
         batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
         batch_rays_neigh = None
-
         if args.ray_sample == "patch":
             batch_rays_neigh = torch.stack([rays_o_neigh.reshape((-1, 3)), rays_d_neigh.reshape((-1, 3))], 0)  # (2, N_rand * 8, 3)
 
@@ -312,11 +313,8 @@ def train():
             elif args.infer_normal_target == "normal_map_from_depth_gradient_direction_epsilon":
                 calculate_normal_from_depth_gradient_direction_epsilon = True
 
-        #print(batch_rays.shape, "batch_rays")
-        #print(batch_rays_neigh.shape, "batch_rays_neigh")
-
         # 1. render sample
-        result = render_decomp(
+        result, result_neigh = render_decomp(
             dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True,
             init_basecolor=dataset.init_basecolor,
             calculate_normal_from_sigma_gradient=calculate_normal_from_sigma_gradient,
@@ -325,17 +323,10 @@ def train():
             calculate_normal_from_depth_gradient_direction=calculate_normal_from_depth_gradient_direction,
             calculate_normal_from_depth_gradient_epsilon=calculate_normal_from_depth_gradient_epsilon,
             calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
-            gt_values=target_info,
+            gt_values=target_info, rays_neigh=batch_rays_neigh,
+            use_instance=args.instance_mask, label_encoder=label_encoder,
             **render_kwargs_train
         )
-
-        with torch.no_grad():
-            result_neigh = render_decomp(
-                dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays_neigh, verbose=i < 10, retraw=True,
-                init_basecolor=dataset.init_basecolor,
-                is_neighbor=True,
-                **render_kwargs_train
-            )
 
         optimizer.zero_grad()
 
@@ -392,30 +383,107 @@ def train():
         if args.infer_normal and i >= args.N_iter_ignore_normal:
             loss_inferred_normal = calculate_loss("inferred_normal_map", args.infer_normal_target)
 
-        # 4) roughness smoothness loss
-        loss_roughness = 0
-        # print(result["roughness_map"].shape, "roughness_map")
+        # 4) instance render loss
+        loss_instance = 0
+        if args.instance_mask:
+            loss_instance = label_encoder.error(
+                output_encoded_label=result['instance_map'],
+                target_label=target_info['label'],
+                CE_weight_type=args.CE_weight_type
+            )
+            if 'instance_map0' in result:
+                loss_instance0 = label_encoder.error(
+                    output_encoded_label=result['instance_map0'],
+                    target_label=target_info['label'],
+                    CE_weight_type=args.CE_weight_type
+                )
+                loss_instance += loss_instance0
+
+        # 5) smoothness loss
+        loss_smooth_roughness = 0
+        loss_smooth_albedo = 0
+        loss_smooth_irradiance = 0
 
         if args.ray_sample == "patch":
             if args.smooth_weight_type == "color":
-                smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(rgb_info_neigh - target_info['rgb'].view([-1, 1, 3]), 1, -1))
+                smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(neigh_info['rgb'] - target_info['rgb'].view([-1, 1, 3]), 2, -1))
             elif args.smooth_weight_type == 'chrom':
                 smooth_weight = torch.exp(
                     -args.smooth_weight_decay * torch.norm(
-                        normalize(rgb_info_neigh, dim=-1) - normalize(target_info['rgb'].view([-1, 1, 3]), dim=-1), 1, -1
+                        normalize(neigh_info["rgb"], dim=-1) - normalize(target_info['rgb'].view([-1, 1, 3]), dim=-1), 2, -1
                     )
                 )
+            elif args.smooth_weight_type == 'normal':
+                smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(neigh_info['normal'] - target_info['normal'].view([-1, 1, 3]), 2, -1))
+            elif args.smooth_weight_type == 'all':
+                smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
+                    torch.cat([neigh_info['rgb'], neigh_info['normal']], dim=-1) - torch.cat([target_info['rgb'], target_info['normal']], dim=-1).view([-1, 1, 6]), 2, -1
+                ))
             else:
-                smooth_weight = 1.0
+                raise ValueError
+            # 5-1 roughness smooth
+            if args.roughness_smooth:
+                loss_smooth_roughness = result['roughness_map'].reshape([-1, 1]) - result_neigh['roughness_map'].reshape([-1, 8])
+                loss_smooth_roughness = torch.norm(loss_smooth_roughness.reshape([-1, 8, 1]), 1, -1)
+                loss_smooth_roughness = torch.mean(smooth_weight * loss_smooth_roughness)
+                if 'roughness_map0' in result:
+                    loss_smooth_roughness0 = result['roughness_map0'].reshape([-1, 1]) - result_neigh['roughness_map0'].reshape([-1, 8])
+                    loss_smooth_roughness0 = torch.norm(loss_smooth_roughness0.reshape([-1, 8, 1]), 1, -1)
+                    loss_smooth_roughness0 = torch.mean(smooth_weight * loss_smooth_roughness0)
+                    loss_smooth_roughness += loss_smooth_roughness0
+            # 5-2 albedo smooth
+            if args.albedo_smooth:
+                loss_smooth_albedo = result['albedo_map'].reshape([-1, 1, 3]) - result_neigh['albedo_map'].reshape([-1, 8, 3])
+                loss_smooth_albedo = torch.norm(loss_smooth_albedo, 1, -1)
+                loss_smooth_albedo = torch.mean(smooth_weight * loss_smooth_albedo)
+                if 'albedo_map0' in result:
+                    loss_smooth_albedo0 = result['albedo_map0'].reshape([-1, 1, 3]) - result_neigh['albedo_map0'].reshape([-1, 8, 3])
+                    loss_smooth_albedo0 = torch.norm(loss_smooth_albedo0, 1, -1)
+                    loss_smooth_albedo0 = torch.mean(smooth_weight * loss_smooth_albedo0)
+                    loss_smooth_albedo += loss_smooth_albedo0
+            # 5-3 irradiance smooth
+            if args.irradiance_smooth:
+                loss_smooth_irradiance = result['irradiance_map'].reshape([-1, 1]) - result_neigh['irradiance_map'].reshape([-1, 8])
+                loss_smooth_irradiance = torch.norm(loss_smooth_irradiance.reshape([-1, 8, 1]), 1, -1)
+                loss_smooth_irradiance = torch.mean(smooth_weight * loss_smooth_irradiance)
+                if 'irradiance_map0' in result:
+                    loss_smooth_irradiance0 = result['irradiance_map0'].reshape([-1, 1]) - result_neigh['irradiance_map0'].reshape([-1, 8])
+                    loss_smooth_irradiance0 = torch.norm(loss_smooth_irradiance0.reshape([-1, 8, 1]), 1, -1)
+                    loss_smooth_irradiance0 = torch.mean(smooth_weight * loss_smooth_irradiance0)
+                    loss_smooth_irradiance += loss_smooth_irradiance0
 
-            loss_roughness = result['roughness_map'].reshape([-1, 1]) - result_neigh['roughness_map'].reshape([-1, 8])
-            loss_roughness = torch.norm(loss_roughness[..., None], 1, -1)
-            loss_roughness = torch.mean(smooth_weight * loss_roughness)
-            # loss_roughness = torch.mean(torch.norm(smooth_weight * loss_roughness, 1, -1))
-            if 'loss_roughness0' in result:
-                loss_roughness0 = result['roughness_map0'].reshape([-1, 1]) - result_neigh['roughness_map0'].reshape([-1, 8])
-                loss_roughness0 = torch.mean(torch.norm(smooth_weight * loss_roughness0, 1, -1))
-                loss_roughness += loss_roughness0
+        # 6) instance-wise constant loss (for test)
+        loss_instancewise_constant_albedo = 0
+        loss_instancewise_constant_irradiance = 0
+        if args.instance_mask:
+            expected_label = torch.argmax(result['instance_map'], dim=-1)  # (N_rand, )
+            for instance_idx in range(args.instance_label_dimension - 1):  # ignore last label (last label is for others)
+                instance_mask = expected_label == instance_idx
+                if args.albedo_instance_constant:
+                    instance_albedos = result['albedo_map'][instance_mask]
+                    instancewise_albedo_std = torch.mean(torch.std(instance_albedos, dim=0, unbiased=True))
+                    if not torch.isnan(instancewise_albedo_std):
+                        loss_instancewise_constant_albedo += instancewise_albedo_std
+                if args.irradiance_instance_constant:
+                    instance_irradiances = result['irradiance_map'][instance_mask]
+                    instancewise_irradiance_std = torch.std(instance_irradiances, dim=0, unbiased=True)
+                    if not torch.isnan(instancewise_irradiance_std):
+                        loss_instancewise_constant_irradiance += instancewise_irradiance_std
+            if 'instance_map0' in result:
+                expected_label0 = torch.argmax(result['instance_map0'], dim=-1)
+                for instance_idx in range(args.instance_label_dimension - 1):
+                    instance_mask0 = expected_label0 == instance_idx
+                    if args.albedo_instance_constant:
+                        instance_albedos0 = result['albedo_map0'][instance_mask0]
+                        instancewise_albedo_std0 = torch.mean(torch.std(instance_albedos0, dim=0, unbiased=True))
+                        if not torch.isnan(instancewise_albedo_std0):
+                            loss_instancewise_constant_albedo += instancewise_albedo_std0
+                    if args.irradiance_instance_constant:
+                        instance_irradiances0 = result['irradiance_map0'][instance_mask0]
+                        instancewise_irradiance_std0 = torch.std(instance_irradiances0, dim=0, unbiased=True)
+                        if not torch.isnan(instancewise_irradiance_std0):
+                            loss_instancewise_constant_irradiance += instancewise_irradiance_std0
+        loss_instancewise_constant = loss_instancewise_constant_albedo + loss_instancewise_constant_irradiance
 
         # Final loss
         # (a) radiance loss
@@ -434,9 +502,19 @@ def train():
         #else:
             #total_loss += args.beta_albedo_render * loss_albedo_render
 
-        # (c) roughness loss
-        if i >= args.N_iter_ignore_roughness_smooth:
-            total_loss += args.beta_roughness_smooth * loss_roughness
+        # (c) smoothness loss
+        if i >= args.N_iter_ignore_smooth:
+            total_loss += args.beta_roughness_smooth * loss_smooth_roughness
+            total_loss += args.beta_irradiance_smooth * loss_smooth_irradiance
+            total_loss += args.beta_albedo_smooth * loss_smooth_albedo
+
+        # (d) instance loss
+        if args.instance_mask:
+            total_loss += args.beta_instance * loss_instance
+
+        # (e) instance-wise constant loss (for test)
+            if i >= args.N_iter_ignore_instancewise_constant:
+                total_loss += args.beta_instancewise_constant * loss_instancewise_constant
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
@@ -463,7 +541,16 @@ def train():
                 loss_from_gt = calculate_loss("inferred_normal_map", "ground_truth_normal")
                 writer.add_scalar('Loss_normal/inferred_normal_from_gt', loss_from_gt, i)
 
-            writer.add_scalar('Loss/Loss_roughness_smooth', loss_roughness, i)
+            writer.add_scalar('Loss/Loss_roughness_smooth', loss_smooth_roughness, i)
+            writer.add_scalar('Loss/Loss_irradiance_smooth', loss_smooth_irradiance, i)
+            writer.add_scalar('Loss/Loss_albedo_smooth', loss_smooth_albedo, i)
+            if args.instance_mask:
+                writer.add_scalar('Loss/Loss_instance', loss_instance, i)
+                writer.add_scalar('Loss/Loss_instancewise_constant', loss_instancewise_constant, i)
+                if args.albedo_instance_constant:
+                    writer.add_scalar('Loss/Loss_instancewise_constant_albedo', loss_instancewise_constant_albedo, i)
+                if args.irradiance_instance_constant:
+                    writer.add_scalar('Loss/Loss_instancewise_constant_irradiance', loss_instancewise_constant_irradiance, i)
 
         # total_loss = args.beta_radiance_render * loss_render_radiance
 
@@ -505,7 +592,8 @@ def train():
             render_decomp_path_results = render_decomp_path(
                 dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
                 render_factor=4, init_basecolor=dataset.init_basecolor,
-                calculate_normal_from_depth_map=True,
+                calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
+                use_instance=use_instance_mask, label_encoder=label_encoder
             )
 
             def add_image_to_writer(key_name):
