@@ -273,6 +273,7 @@ def train():
         # sample rgb and rays from sample generator
         # target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
         target_info, rays_o, rays_d, neigh_info, rays_o_neigh, rays_d_neigh = next(sample_generator)  # (N_rand, 3), (N_rand, 8, 3)
+
         target_rgb = target_info["rgb"]
         if args.learn_albedo_from_oracle:
             target_chromaticity = target_info["albedo"]
@@ -314,7 +315,7 @@ def train():
                 calculate_normal_from_depth_gradient_direction_epsilon = True
 
         # 1. render sample
-        result, result_neigh = render_decomp(
+        result = render_decomp(
             dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays, verbose=i < 10, retraw=True,
             init_basecolor=dataset.init_basecolor,
             calculate_normal_from_sigma_gradient=calculate_normal_from_sigma_gradient,
@@ -323,10 +324,17 @@ def train():
             calculate_normal_from_depth_gradient_direction=calculate_normal_from_depth_gradient_direction,
             calculate_normal_from_depth_gradient_epsilon=calculate_normal_from_depth_gradient_epsilon,
             calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
-            gt_values=target_info, rays_neigh=batch_rays_neigh,
-            use_instance=args.instance_mask, label_encoder=label_encoder,
+            gt_values=target_info,
             **render_kwargs_train
         )
+
+        with torch.no_grad():
+            result_neigh = render_decomp(
+                dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays_neigh, verbose=i < 10, retraw=True,
+                init_basecolor=dataset.init_basecolor,
+                is_neighbor=True,
+                **render_kwargs_train
+            )
 
         optimizer.zero_grad()
 
@@ -406,6 +414,11 @@ def train():
 
         if args.ray_sample == "patch":
             if args.smooth_weight_type == "color":
+                print(neigh_info['rgb'].shape)
+                print(target_info['rgb'].view([-1, 1, 3]).shape)
+                a = neigh_info['rgb'] - target_info['rgb'].view([-1, 1, 3])
+                print(a.shape)
+
                 smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(neigh_info['rgb'] - target_info['rgb'].view([-1, 1, 3]), 2, -1))
             elif args.smooth_weight_type == 'chrom':
                 smooth_weight = torch.exp(

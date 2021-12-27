@@ -149,6 +149,7 @@ def sample_generator_single_image(
             plt.imshow(tmp_img.cpu().numpy())
             plt.show()
         n_iters += 1
+
         yield pixel_info, ray_o, ray_d, neigh_info, ray_o_neigh, ray_d_neigh
 
 

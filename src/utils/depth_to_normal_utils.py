@@ -16,30 +16,57 @@ def depth_to_position(H, W, K, c2w, d):
 	return rays_p
 
 
+def normalize(x):
+	return x / np.linalg.norm(x, axis=-1, keepdims=True)
+
+
 def depth_to_normal_image_space(depth_map, pose, K):
 	height, width = depth_map.shape
 	position = depth_to_position(height, width, K, pose, depth_map)
-	normal = torch.zeros((*depth_map.shape, 3))
 
-	def get_value(x, y):
-		n_i = np.clip(x, 0, width - 1)
-		n_j = np.clip(y, 0, height - 1)
-		return position[n_j, n_i, :]
+	position = position.cpu().detach().numpy()
+	position_padded = np.pad(position, ((1, 1),(1, 1),(0, 0)), 'edge')
 
-	for i in range(width):
-		for j in range(height):
-			s01 = get_value(i - 1, j)
-			s21 = get_value(i + 1, j)
-			s10 = get_value(i, j - 1)
-			s12 = get_value(i, j + 1)
+	left = position_padded[1:-1,:-2,:]
+	right = position_padded[1:-1, 2:, :]
+	up = position_padded[:-2, 1:-1, :]
+	bottom = position_padded[2:, 1:-1, :]
 
-			va = s21 - s01
-			vb = s12 - s10
+	va = right - left
+	vb = bottom - up
 
-			va = F.normalize(va, dim=-1)
-			vb = F.normalize(vb, dim=-1)
+	va = normalize(va)
+	vb = normalize(vb)
 
-			vc = torch.cross(vb, va)
-			vc = F.normalize(vc, dim=-1)
-			normal[j,i,:] = vc
-	return normal
+	vc = np.cross(vb, va, axis=-1)
+	vc = normalize(vc)
+	return torch.Tensor(vc)
+
+
+# def depth_to_normal_image_space(depth_map, pose, K):
+# 	height, width = depth_map.shape
+# 	position = depth_to_position(height, width, K, pose, depth_map)
+# 	normal = torch.zeros((*depth_map.shape, 3))
+#
+# 	def get_value(x, y):
+# 		n_i = np.clip(x, 0, width - 1)
+# 		n_j = np.clip(y, 0, height - 1)
+# 		return position[n_j, n_i, :]
+#
+# 	for i in range(width):
+# 		for j in range(height):
+# 			s01 = get_value(i - 1, j)
+# 			s21 = get_value(i + 1, j)
+# 			s10 = get_value(i, j - 1)
+# 			s12 = get_value(i, j + 1)
+#
+# 			va = s21 - s01
+# 			vb = s12 - s10
+#
+# 			va = F.normalize(va, dim=-1)
+# 			vb = F.normalize(vb, dim=-1)
+#
+# 			vc = torch.cross(vb, va)
+# 			vc = F.normalize(vc, dim=-1)
+# 			normal[j,i,:] = vc
+# 	return normal
