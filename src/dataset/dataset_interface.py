@@ -31,6 +31,7 @@ class NerfDataset(Dataset, ABC):
 		self.normals = []
 		self.albedos = []
 		self.roughness = []
+		self.instances = []
 
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
@@ -44,7 +45,7 @@ class NerfDataset(Dataset, ABC):
 		self.logger = load_logger("NeRF DataSet")
 		self.logger.setLevel(logging.DEBUG)
 
-		self.load_instance_label_mask = False
+		self.load_instance_label_mask = kwargs.get("load_instance_label_mask", False)
 
 		# base color clustering related
 		self.cluster_image_resize = 0.5

@@ -61,10 +61,20 @@ def raw2outputs_neigh(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn,
 	# (1) get weight from sigma
 	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
 	weights_detached = weights.detach()
-	roughness = torch.sigmoid(raw[..., 4])
-	roughness_map = torch.sum(weights_detached * roughness, -1)
+
+	roughness = torch.sigmoid(raw[..., 4])  # (N_rand * 8, N_sample)
+	albedo = torch.sigmoid(raw[..., 1:4])  # (N_rand * 8, N_sample, 3)
+	irradiance = torch.sigmoid(raw[..., 5])  # (N_rand * 8, N_sample, 3)
+
+	roughness_map = torch.sum(weights_detached * roughness, -1)  # (N_rand * 8, )
+	albedo_map = torch.sum(weights_detached[..., None] * albedo, 1)  # (N_rand * 8, 3)
+	irradiance_map = torch.sum(weights_detached * irradiance, -1)  # (N_rand * 8, )
+
 	results = {}
+	# don't calculate gradient for neighborhood pixels
 	results["roughness_map"] = roughness_map.detach()
+	results["albedo_map"] = albedo_map.detach()
+	results["irradiance_map"] = irradiance_map.detach()
 	results["weights"] = weights.detach()
 	return results
 
@@ -89,6 +99,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				target_albedo_map_for_radiance_calculation="ground_truth",
 				target_roughness_map_for_radiance_calculation="ground_truth",
 				target_radiance_map_for_radiance_calculation="ground_truth",
+				use_instance=False, is_instance_label_logit=True,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -194,6 +205,15 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 	radiance = torch.sigmoid(raw[..., 6:6 + 3])
 	radiance_map = torch.sum(weights[..., None] * radiance, -2)
+
+	if use_instance:
+		if is_instance_label_logit:
+			instance_score = raw[..., 9 + 3 * network_fn.coarse_radiance_number:]  # no sigmoid -> just use logits
+		else:
+			instance_score = torch.sigmoid(raw[..., 9 + 3 * network_fn.coarser_radiance_number:])  # (N_rays, N_samples, instance_label_dimension)
+		instance_map = torch.sum(weights[..., None] * instance_score, -2)  # (N_rays, instance_label_dimension)
+	else:
+		instance_map = None
 
 	# (5)-A additional coarse radiance maps
 	N = 9
@@ -305,6 +325,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["specular_map"] = specular_map
 	results["diffuse_map"] = diffuse_map
 	results["n_dot_v_map"] = n_dot_v
+	results["instance_map"] = instance_map
 
 	results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
 	results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
@@ -539,10 +560,11 @@ def render_decomp(
 
 from dataset.dataset_interface import NerfDataset
 
-def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
-					   savedir=None, render_factor=0, init_basecolor=None,
-					   gt_values = None,
-					   calculate_normal_from_depth_map=False):
+
+def render_decomp_path(
+		dataset_test: NerfDataset, hwf, K, chunk, render_kwargs, savedir=None, render_factor=0, init_basecolor=None,
+		gt_values=None, calculate_normal_from_depth_map=False, use_instance=False, label_encoder=None
+):
 	H, W, focal = hwf
 	render_poses = dataset_test.poses
 
@@ -560,7 +582,7 @@ def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
 
 	results = {}
 
-	def append_result(render_decomp_results, key_name, index, out_name):
+	def append_result(render_decomp_results, key_name, index, out_name, label_encoder=None):
 		if key_name not in render_decomp_results:
 			return
 		result_image = render_decomp_results[key_name]
@@ -573,6 +595,8 @@ def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
 		elif "depth" in key_name:
 			# depth to disp
 			result_image = 1. / torch.max(1e-10 * torch.ones_like(result_image), result_image)
+		elif "instance" in key_name:
+			result_image = label_encoder.encoded_label_to_colored_label(result_image)
 
 		results[out_name].append(result_image.cpu().numpy())
 		if savedir is not None:
@@ -586,7 +610,10 @@ def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
 		gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
 		for k in gt_values.keys():
 			gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
-		results_i, _ = render_decomp(H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values, **render_kwargs)
+		results_i, _ = render_decomp(
+			H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
+			use_instance=use_instance, label_encoder=label_encoder, **render_kwargs
+		)
 		append_result(results_i, "color_map", i, "rgb")
 		append_result(results_i, "radiance_map", i, "radiance")
 		for k in range(render_kwargs["coarse_radiance_number"]):
@@ -613,6 +640,8 @@ def render_decomp_path(dataset_test: NerfDataset, hwf, K, chunk, render_kwargs,
 
 		append_result(results_i, "disp_map", i, "disp")
 		append_result(results_i, "depth_map", i, "depth")
+
+		append_result(results_i, "instance_map", i, "instance_map", label_encoder=label_encoder)
 
 		if calculate_normal_from_depth_map:
 			depth_image = results_i["depth_map"]
