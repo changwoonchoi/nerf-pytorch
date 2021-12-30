@@ -27,6 +27,7 @@ from utils.generator_utils import *
 from utils.timing_utils import *
 import cv2
 from torch.nn.functional import normalize
+from utils.math_utils import *
 
 
 def test():
@@ -312,7 +313,8 @@ def train():
                         loss_from_target += loss_fn(result[key_name + '0'], result[target])
             return loss_from_target
 
-
+        # normal from gt
+        result["ground_truth_normal"] = normalize(2 * target_info["normal"] - 1, dim=-1)
 
         # 2. calculate loss
 
@@ -334,15 +336,40 @@ def train():
 
         # 3) Depth map if required
         loss_depth = 0
-        if args.infer_depth:
+        if args.infer_depth and iter >= args.N_iter_ignore_depth:
+            # according to NeRV paper
+            # 3-1) point from camera
             loss_depth = mse_loss(result['inferred_depth_map'], result['depth_map'].detach())
-            if 'depth_map0' in result:
-                loss_depth += mse_loss(result['inferred_depth_map'], result['depth_map0'].detach())
+
+            # 3-2) point in volume
+            # select first hit point & random direction align with normal
+            normal_map = result["ground_truth_normal"]
+
+            expected_points = rays_o + rays_d * result['depth_map'][..., None]
+            expected_points = expected_points.detach()
+
+            random_direction = 2 * torch.rand(*rays_d.shape) - 1
+            normal_dot = torch.sum(random_direction * normal_map, dim=-1)
+            random_direction = torch.sign(normal_dot)[..., None] * random_direction
+            random_direction = F.normalize(random_direction, dim=-1)
+
+            random_points = torch.stack([expected_points.reshape((-1, 3)), random_direction.reshape((-1, 3))], 0)
+
+            # with torch.no_grad():
+            result_random_volume = render_decomp(
+                dataset.height, dataset.width, K, chunk=args.chunk, rays=random_points, verbose=i < 10, retraw=True,
+                init_basecolor=dataset.init_basecolor,
+                is_depth_only=True,
+                **render_kwargs_train
+            )
+
+            loss_depth_random = mse_loss(result_random_volume['inferred_depth_map'], result_random_volume['depth_map'].detach())
+            loss_depth += loss_depth_random
+            #if 'depth_map0' in result:
+            #    loss_depth += mse_loss(result['inferred_depth_map'], result['depth_map0'].detach())
 
         # 3) Normal render loss
 
-        # normal from gt
-        result["ground_truth_normal"] = normalize(2 * target_info["normal"] - 1, dim=-1)
 
         # inferred & gt / sigma
         loss_inferred_normal = 0
@@ -478,8 +505,12 @@ def train():
             total_loss += args.beta_instance * loss_instance
 
         # (e) instance-wise constant loss (for test)
-            if i >= args.N_iter_ignore_instancewise_constant:
-                total_loss += args.beta_instancewise_constant * loss_instancewise_constant
+        if i >= args.N_iter_ignore_instancewise_constant:
+            total_loss += args.beta_instancewise_constant * loss_instancewise_constant
+
+        # (f) depth loss
+        if i >= args.N_iter_ignore_depth:
+            total_loss += args.beta_inferred_depth * loss_depth
 
         if i % args.summary_step == 0:
             writer.add_scalar('Loss/Total_Loss', total_loss, i)
