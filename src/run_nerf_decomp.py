@@ -1,7 +1,7 @@
-import os
-
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = str(2)
+# import os
+#
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+#os.environ["CUDA_VISIBLE_DEVICES"] = str(2)
 #import matplotlib
 #matplotlib.use('TkAgg')
 
