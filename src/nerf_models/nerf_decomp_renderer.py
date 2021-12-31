@@ -319,11 +319,11 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			sampled_dir_radiance = torch.reshape(sampled_dir_radiance, (-1, *hemisphere_samples.shape))
 
 		brdf_specular, brdf_diffuse = microfacet(target_sampled_hemisphere_dirs, -rays_d, target_normal_map, target_albedo_map, target_roughness_map[..., None])
-		#print(brdf_diffuse.shape, 'brdf_diffuse')
-		#print(brdf_specular.shape, 'brdf_specular')
 
-		specular_map = torch.mean(sampled_dir_radiance * brdf_specular, dim=1)
-		diffuse_map = torch.mean(sampled_dir_radiance * brdf_diffuse, dim=1)
+		# Multiply solid angle corresponding to the lighting sample
+		# equal area sampling on hemisphere --> solid angle = 2 * pi / N_sample
+		specular_map = torch.mean(sampled_dir_radiance * brdf_specular, dim=1) * 2 * np.pi
+		diffuse_map = torch.mean(sampled_dir_radiance * brdf_diffuse, dim=1) * 2 * np.pi
 		approximated_radiance_map = specular_map + diffuse_map
 
 		# print(target_sampled_hemisphere_dirs.shape, "target_sampled_hemisphere_dirs")

@@ -65,5 +65,6 @@ cluster_merge_threshold = 0.05
 N_iter_ignore_normal = 0
 N_iter_ignore_approximated_radiance = 10000
 N_iter_ignore_smooth = 15000
+N_iter_ignore_depth = 15000
 
 coarse_radiance_number = 3
