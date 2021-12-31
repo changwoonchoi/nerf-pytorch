@@ -632,7 +632,7 @@ from dataset.dataset_interface import NerfDataset
 
 def render_decomp_path(
 		dataset_test: NerfDataset, hwf, K, chunk, render_kwargs, savedir=None, render_factor=0, init_basecolor=None,
-		gt_values=None, calculate_normal_from_depth_map=False, use_instance=False, label_encoder=None
+		gt_values=None, calculate_normal_from_depth_map=False, use_instance=False, label_encoder=None, **kwargs
 ):
 	H, W, focal = hwf
 	render_poses = dataset_test.poses
@@ -681,7 +681,7 @@ def render_decomp_path(
 			gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
 		results_i = render_decomp(
 			H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
-			use_instance=use_instance, label_encoder=label_encoder, **render_kwargs
+			use_instance=use_instance, label_encoder=label_encoder, **render_kwargs, **kwargs
 		)
 		append_result(results_i, "color_map", i, "rgb")
 		append_result(results_i, "radiance_map", i, "radiance")

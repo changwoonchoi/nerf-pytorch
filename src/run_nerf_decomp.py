@@ -1,7 +1,7 @@
 # import os
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-#os.environ["CUDA_VISIBLE_DEVICES"] = str(2)
+# os.environ["CUDA_VISIBLE_DEVICES"] = str(2)
 #import matplotlib
 #matplotlib.use('TkAgg')
 
@@ -594,7 +594,8 @@ def train():
                 dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
                 render_factor=4, init_basecolor=dataset.init_basecolor,
                 calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
-                use_instance=use_instance_mask, label_encoder=label_encoder
+                use_instance=use_instance_mask, label_encoder=label_encoder,
+                hemisphere_samples=hemisphere_samples
             )
 
             def add_image_to_writer(key_name):
