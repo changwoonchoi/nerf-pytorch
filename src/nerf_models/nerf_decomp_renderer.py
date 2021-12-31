@@ -14,6 +14,10 @@ from utils.depth_to_normal_utils import depth_to_normal_image_space
 from nerf_models.normal_from_depth import *
 from nerf_models.normal_from_sigma import *
 
+import matplotlib.pyplot as plt
+from utils.math_utils import get_TBN
+from nerf_models.microfacet import Microfacet
+
 
 def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3):
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
@@ -77,10 +81,40 @@ def raw2outputs_neigh(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn,
 	results["weights"] = weights
 	return results
 
+def raw2outputs_depth(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std):
+	# sample points
+	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
+	raw = network_query_fn(pts, rays_d, network_fn)
+
+	# distances
+	dists = z_vals[..., 1:] - z_vals[..., :-1]
+	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
+	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
+
+	noise = 0.
+	if raw_noise_std > 0.:
+		noise = torch.randn(raw[..., 0].shape) * raw_noise_std
+
+	# (0) get sigma
+	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
+	sigma = raw2sigma(raw[..., 0] + noise, dists)
+
+	# (1) get weight from sigma
+	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
+
+	depth_map = torch.sum(weights * z_vals, -1)
+
+	results = {}
+	results["depth_map"] = depth_map
+	results["weights"] = weights
+	return results
+
 
 def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				network_query_fn, network_fn,
-				raw_noise_std=0., pytest=False, neighbor=False,
+				raw_noise_std=0., pytest=False,
+				is_neighbor=False,
+				is_depth_only=False,
 				calculate_normal_from_sigma_gradient=False,
 				calculate_normal_from_sigma_gradient_surface=False,
 				calculate_normal_from_depth_gradient=False,
@@ -99,6 +133,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				target_roughness_map_for_radiance_calculation="ground_truth",
 				target_radiance_map_for_radiance_calculation="ground_truth",
 				use_instance=False, is_instance_label_logit=True,
+				hemisphere_samples=None,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -115,11 +150,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		weights: [num_rays, num_samples]. Weights assigned to each sampled color.
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
-	if neighbor:
+	if is_neighbor:
 		return raw2outputs_neigh(
 			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std
 		)
-
+	elif is_depth_only:
+		return raw2outputs_depth(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std)
 	# sample points
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
 	raw = network_query_fn(pts, rays_d, network_fn)
@@ -260,51 +296,91 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	target_roughness_map = roughness_map
 	# if target_roughness_map_for_radiance_calculation == "ground_truth":
 	# 	target_roughness_map = gt_values["roughness"][...,0]
-
-	# (7) calculate color from split-sum approximation
 	n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
 	n_dot_v = torch.clip(n_dot_v, 0, 1)
 
-	# grid_sample input is  [-1, 1] x [-1, 1]
-	BRDF_2D_LUT_uv = torch.stack([2 * n_dot_v - 1, 2 * target_roughness_map - 1], -1)
-	envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
-	envBRDF = envBRDF.permute((0, 2, 3, 1))
-	envBRDF = envBRDF.squeeze()
+	if kwargs.get('use_monte_carlo_integration', True):
+		microfacet = Microfacet()
+		target_binormal_map, target_tangent_map = get_TBN(target_normal_map)
+		target_TBNs = torch.stack([target_tangent_map, target_binormal_map, target_normal_map], dim=-1)
+		target_sampled_hemisphere_dirs = torch.tensordot(target_TBNs, hemisphere_samples, dims=[[2], [1]])
+		target_sampled_hemisphere_dirs = torch.permute(target_sampled_hemisphere_dirs, (0, 2, 1))
 
-	# dielectric
-	F0 = torch.tensor([0.04, 0.04, 0.04])
-	F0 = F0.repeat(*depth_map.shape, 1)
-	target_metallic_map = (1-target_roughness_map)[..., None]
-	F0 = F0 * (1-target_metallic_map) + target_albedo_map * target_metallic_map
+		sampled_dirs = torch.reshape(target_sampled_hemisphere_dirs, [-1, 3])
+		sampled_pos = x_surface.repeat_interleave(hemisphere_samples.shape[0], dim=0)
 
-	envBRDF_coefficient1 = envBRDF[..., 0]
-	envBRDF_coefficient0 = envBRDF[..., 1]
-	envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
-	fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, target_roughness_map)
-	specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+		with torch.no_grad():
+			sampled_dir_depth_map = network_query_fn(sampled_pos[..., None, :], sampled_dirs, kwargs["depth_mlp"])
+			sampled_dir_depth_map = F.relu(sampled_dir_depth_map[..., 0])
+			sampled_dir_x_surface = sampled_pos + sampled_dirs * sampled_dir_depth_map
 
-	with torch.no_grad():
-		reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
-		x_surface = rays_o + rays_d * depth_map[..., None]
+			reflected_ray_raw = network_query_fn(sampled_dir_x_surface[..., None, :], sampled_dirs, network_fn)
+			sampled_dir_radiance = torch.sigmoid(reflected_ray_raw[..., 6:6 + 3])
+			sampled_dir_radiance = torch.reshape(sampled_dir_radiance, (-1, *hemisphere_samples.shape))
 
-		reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
-		reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-		reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
+		brdf_specular, brdf_diffuse = microfacet(target_sampled_hemisphere_dirs, -rays_d, target_normal_map, target_albedo_map, target_roughness_map[..., None])
+		#print(brdf_diffuse.shape, 'brdf_diffuse')
+		#print(brdf_specular.shape, 'brdf_specular')
 
-		prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
+		specular_map = torch.mean(sampled_dir_radiance * brdf_specular, dim=1)
+		diffuse_map = torch.mean(sampled_dir_radiance * brdf_diffuse, dim=1)
+		approximated_radiance_map = specular_map + diffuse_map
 
-	N_pref = len(reflected_coarse_radiance_map) + 1
-	mipmap_index1 = (roughness_map * (N_pref - 1)).long()
-	mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
-	mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
-	mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
-	prefiltered_reflected_map = \
-		(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
-		mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
+		# print(target_sampled_hemisphere_dirs.shape, "target_sampled_hemisphere_dirs")
+		# sample_0 = target_sampled_hemisphere_dirs[1, ...]
+		# sample_0 = sample_0.detach().cpu().numpy()
+		# print(sample_0)
+		# print(target_normal_map[1,...], "NORMAL")
+		# fig = plt.figure()
+		# ax = fig.gca(projection='3d')
+		# ax.scatter(sample_0[:, 0], sample_0[:, 2], sample_0[:, 1])
+		# ax.set_xlim3d(-1, 1)
+		# ax.set_ylim3d(-1, 1)
+		# ax.set_zlim3d(-1, 1)
+		# plt.show()
+	else:
+		# (7) calculate color from split-sum approximation
 
-	diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * irradiance_map[..., None]
-	specular_map = specular_map * prefiltered_reflected_map
-	approximated_radiance_map = diffuse_map + specular_map
+		# grid_sample input is  [-1, 1] x [-1, 1]
+		BRDF_2D_LUT_uv = torch.stack([2 * n_dot_v - 1, 2 * target_roughness_map - 1], -1)
+		envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
+		envBRDF = envBRDF.permute((0, 2, 3, 1))
+		envBRDF = envBRDF.squeeze()
+
+		# dielectric
+		F0 = torch.tensor([0.04, 0.04, 0.04])
+		F0 = F0.repeat(*depth_map.shape, 1)
+		target_metallic_map = (1-target_roughness_map)[..., None]
+		F0 = F0 * (1-target_metallic_map) + target_albedo_map * target_metallic_map
+
+		envBRDF_coefficient1 = envBRDF[..., 0]
+		envBRDF_coefficient0 = envBRDF[..., 1]
+		envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
+		fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, target_roughness_map)
+		specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+
+		with torch.no_grad():
+			reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
+			x_surface = rays_o + rays_d * depth_map[..., None]
+
+			reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
+			reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
+			reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
+
+			prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
+
+		N_pref = len(reflected_coarse_radiance_map) + 1
+		mipmap_index1 = (roughness_map * (N_pref - 1)).long()
+		mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
+		mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
+		mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
+		prefiltered_reflected_map = \
+			(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
+			mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
+
+		diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * irradiance_map[..., None]
+		specular_map = specular_map * prefiltered_reflected_map
+		approximated_radiance_map = diffuse_map + specular_map
 
 	# [N_rays, N_samples, 3]
 
@@ -345,7 +421,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecolor, retraw=False, lindisp=False,
 				perturb=0., N_importance=0, network_fine=None, white_bkgd=False, raw_noise_std=0., verbose=False,
-				pytest=False, neighbor=False, **kwargs):
+				pytest=False, is_neighbor=False, **kwargs):
 	"""Volumetric rendering.
 	Args:
 	  ray_batch: array of shape [batch_size, ...]. All information necessary
@@ -410,7 +486,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 	z_vals_constant = z_vals
 	result = raw2outputs(
-		rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, pytest, neighbor, **kwargs
+		rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, pytest, is_neighbor, **kwargs
 	)
 
 	# (2) need importance sampling
@@ -423,7 +499,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
 		result_fine = raw2outputs(
-			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, run_fn, raw_noise_std, pytest, neighbor, **kwargs
+			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, run_fn, raw_noise_std, pytest, is_neighbor, **kwargs
 		)
 
 		for k, v in result.items():
@@ -449,7 +525,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 	return result
 
 
-def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, neighbor=False, **kwargs):
+def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, is_neighbor=False, **kwargs):
 	"""Render rays in smaller minibatches to avoid OOM.
 	"""
 	all_ret = {}
@@ -461,7 +537,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, neighbor=False
 			for k in gt_values.keys():
 				gt_values_ith[k] = gt_values[k][i:min(i+chunk, N)]
 		kwargs["gt_values"] = gt_values_ith
-		ret = render_rays(rays_flat[i:i + chunk], label_encoder=label_encoder, neighbor=neighbor, **kwargs)
+		ret = render_rays(rays_flat[i:i + chunk], label_encoder=label_encoder, is_neighbor=is_neighbor, **kwargs)
 		for k in ret:
 			if k not in all_ret:
 				all_ret[k] = []
@@ -475,7 +551,7 @@ def batchify_rays(rays_flat, chunk=1024 * 32, label_encoder=None, neighbor=False
 
 def render_decomp(
 		H, W, K, chunk=1024 * 32, rays=None, c2w=None, ndc=True, near=0., far=1.,
-		c2w_staticcam=None, label_encoder=None, is_neighbor=False, **kwargs
+		c2w_staticcam=None, label_encoder=None, is_neighbor=False, is_depth_only=False, **kwargs
 ):
 	"""Render rays
 	Args:
@@ -544,7 +620,7 @@ def render_decomp(
 	rays = torch.cat([rays, viewdirs], -1)
 
 	# Render and reshape
-	all_ret = batchify_rays(rays, chunk, label_encoder=label_encoder, neighbor=is_neighbor, **kwargs)
+	all_ret = batchify_rays(rays, chunk, label_encoder=label_encoder, is_neighbor=is_neighbor, is_depth_only=is_depth_only, **kwargs)
 	for k in all_ret:
 		k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
 		all_ret[k] = torch.reshape(all_ret[k], k_sh)

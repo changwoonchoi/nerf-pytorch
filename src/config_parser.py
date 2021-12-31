@@ -60,6 +60,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--ray_sample", type=str, default="pixel")
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
 	parser.add_argument("--N_iter_ignore_normal", type=int, default=15000, help="Ignore normal loss")
+	parser.add_argument("--N_iter_ignore_depth", type=int, default=15000, help="Ignore depth loss")
 	parser.add_argument("--N_iter_ignore_approximated_radiance", type=int, default=5000, help="Ignore normal loss")
 	parser.add_argument("--N_iter_ignore_smooth", type=int, default=15000, help="Ignore smoothness loss")
 	parser.add_argument("--N_iter_ignore_instancewise_constant", type=int, default=15000, help="Ignore instancewise constant loss")
@@ -143,6 +144,9 @@ def config_parser(default_files=None):
 	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')
 
 	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
+
+	parser.add_argument("--N_hemisphere_sample_sqrt", type=int, default=16, help='N_hemisphere_sample_sqrt')
+	parser.add_argument("--use_monte_carlo_integration", action='store_true', help='use_monte_carlo_integration')
 
 	# training options
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')

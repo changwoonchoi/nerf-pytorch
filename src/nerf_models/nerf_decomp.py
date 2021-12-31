@@ -308,7 +308,8 @@ def create_NeRFDecomp(args):
         "infer_depth": args.infer_depth,
         "infer_normal": args.infer_normal,
         "infer_normal_at_surface": args.infer_normal_at_surface,
-        "coarse_radiance_number": args.coarse_radiance_number
+        "coarse_radiance_number": args.coarse_radiance_number,
+        "use_monte_carlo_integration": args.use_monte_carlo_integration
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

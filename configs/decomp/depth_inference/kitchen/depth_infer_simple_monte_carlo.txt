@@ -1,0 +1,10 @@
+include = common.txt
+N_rand = 512
+
+use_monte_carlo_integration
+N_hemisphere_sample_sqrt = 16
+
+N_iter_ignore_normal = 0
+N_iter_ignore_approximated_radiance = 20000
+N_iter_ignore_smooth = 0
+N_iter_ignore_depth = 10000

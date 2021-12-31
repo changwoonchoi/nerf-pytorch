@@ -1,8 +1,9 @@
-# import os
-#
-# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-# os.environ["CUDA_VISIBLE_DEVICES"] = str(5)
+import os
 
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = str(2)
+#import matplotlib
+#matplotlib.use('TkAgg')
 
 import numpy as np
 import torch
@@ -226,6 +227,9 @@ def train():
     if args.infer_normal:
         assert args.infer_normal_target in normal_target_keys + ["ground_truth_normal"]
 
+    hemisphere_samples = get_hemisphere_samples(args.N_hemisphere_sample_sqrt)
+    hemisphere_samples = torch.Tensor(hemisphere_samples).to(args.device)
+
     for i in trange(start, N_iters):
         # sample rgb and rays from sample generator
         # target_info, rays_o, rays_d = next(sample_generator)  # 3 x (N_rand, 3)
@@ -282,18 +286,19 @@ def train():
             calculate_normal_from_depth_gradient_epsilon=calculate_normal_from_depth_gradient_epsilon,
             calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
             gt_values=target_info,
+            hemisphere_samples=hemisphere_samples,
             **render_kwargs_train
         )
 
-        with torch.no_grad():
-            result_neigh = render_decomp(
-                dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays_neigh, verbose=i < 10, retraw=True,
-                init_basecolor=dataset.init_basecolor,
-                is_neighbor=True,
-                **render_kwargs_train
-            )
+        if args.ray_sample == "patch":
+            with torch.no_grad():
+                result_neigh = render_decomp(
+                    dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays_neigh, verbose=i < 10, retraw=True,
+                    init_basecolor=dataset.init_basecolor,
+                    is_neighbor=True,
+                    **render_kwargs_train
+                )
 
-        optimizer.zero_grad()
 
         def calculate_loss(key_name, target="ground_truth_normal", loss_fn=mse_loss):
             if key_name not in result:
@@ -336,7 +341,7 @@ def train():
 
         # 3) Depth map if required
         loss_depth = 0
-        if args.infer_depth and iter >= args.N_iter_ignore_depth:
+        if args.infer_depth and i >= args.N_iter_ignore_depth:
             # according to NeRV paper
             # 3-1) point from camera
             loss_depth = mse_loss(result['inferred_depth_map'], result['depth_map'].detach())
@@ -549,7 +554,7 @@ def train():
                     writer.add_scalar('Loss/Loss_instancewise_constant_irradiance', loss_instancewise_constant_irradiance, i)
 
         # total_loss = args.beta_radiance_render * loss_render_radiance
-
+        optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
 
