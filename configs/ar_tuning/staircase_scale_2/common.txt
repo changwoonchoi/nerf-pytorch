@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba_scale_2/staircase
+basedir = ../logs/ar_tuning/staircase_scale_2

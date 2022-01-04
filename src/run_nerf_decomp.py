@@ -75,7 +75,7 @@ def train():
         load_params = {
             "image_scale": args.image_scale,
             "load_normal": True, #args.learn_normal_from_oracle,
-            "load_roughness": True,
+            "load_roughness": False,
             "load_albedo": args.learn_albedo_from_oracle,
             "sample_length": args.sample_length,
             "coarse_radiance_number": args.coarse_radiance_number,
@@ -330,7 +330,7 @@ def train():
 
         # 2) albedo render loss
         loss_albedo_render = calculate_loss("albedo_map", target_chromaticity)
-        loss_roughness_render = calculate_loss("roughness_map", target_info.get("roughness", 1.0))
+        # loss_roughness_render = calculate_loss("roughness_map", target_info.get("roughness", 1.0))
 
         # 3) Depth map if required
         loss_depth = 0
@@ -486,7 +486,7 @@ def train():
             writer.add_scalar('Loss/Loss_render', loss_render, i)
 
             writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
-            writer.add_scalar('Loss/Loss_roughness_render', loss_roughness_render, i)
+            # writer.add_scalar('Loss/Loss_roughness_render', loss_roughness_render, i)
 
             writer.add_scalar('Loss/Loss_radiance_render', loss_render_radiance, i)
 

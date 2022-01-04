@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba_scale_2/living-room-2
+basedir = ../logs/ar_tuning/living-room-2_scale_2

@@ -281,7 +281,11 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	envBRDF_coefficient0 = envBRDF[..., 1]
 	envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
 	fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, target_roughness_map)
-	specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+
+	specular_map = F0 * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+	"""
+	specular_map = torch.tensor([0.04, 0.04, 0.04]) * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+	"""
 
 	with torch.no_grad():
 		reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
@@ -325,6 +329,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["diffuse_map"] = diffuse_map
 	results["n_dot_v_map"] = n_dot_v
 	results["instance_map"] = instance_map
+
+	results["reflected_radiance_map"] = reflected_radiance_map
+	results["prefiltered_reflected_map"] = prefiltered_reflected_map
 
 	results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
 	results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
@@ -619,6 +626,9 @@ def render_decomp_path(
 		append_result(results_i, "specular_map", i, "specular")
 		append_result(results_i, "diffuse_map", i, "diffuse")
 		append_result(results_i, "n_dot_v_map", i, "n_dot_v")
+
+		append_result(results_i, "reflected_radiance_map", i, "reflected_radiance_map")
+		append_result(results_i, "prefiltered_reflected_map", i, "prefiltered_reflected_map")
 
 		append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
 		append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")

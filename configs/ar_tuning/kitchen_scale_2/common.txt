@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba_scale_2/kitchen
+basedir = ../logs/ar_tuning/kitchen_scale_2

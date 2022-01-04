@@ -6,9 +6,9 @@ N_rand = 256
 
 albedo_smooth
 
-beta_roughness_smooth = 0.001
-beta_albedo_smooth = 0.001
-beta_irradiance_smooth = 0.001
+beta_roughness_smooth = 0.01
+beta_albedo_smooth = 0.01
+beta_irradiance_smooth = 0.01
 
 smooth_weight_decay = 1
 smooth_weight_type = "normal"

@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba_scale_2/veach-ajar
+basedir = ../logs/ar_tuning/veach-ajar_scale_2
