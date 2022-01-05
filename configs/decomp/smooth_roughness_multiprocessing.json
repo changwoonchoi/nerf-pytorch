@@ -1,6 +1,8 @@
 {
-  "available_gpus" : [0,1,2,3,4,5,6,7],
+  "available_gpus" : [3,6,7],
   "config_lists":[
-    "../configs/decomp/roughness_smooth_compare_lambda0"
+    "../configs/decomp/roughness_smooth_compare_lambda0/kitchen/roughness_smooth_beta_1e-2_lambda_0.txt",
+    "../configs/decomp/roughness_smooth_compare_lambda0/kitchen/roughness_smooth_beta_1e-3_lambda_0.txt",
+    "../configs/decomp/roughness_smooth_compare_lambda0/kitchen/roughness_smooth_beta_1e-4_lambda_0.txt"
   ]
 }

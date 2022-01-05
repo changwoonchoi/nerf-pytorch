@@ -19,7 +19,7 @@ from utils.math_utils import get_TBN
 from nerf_models.microfacet import Microfacet
 
 
-def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3):
+def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=False):
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -28,6 +28,8 @@ def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3):
 
 	sigma = raw2sigma(raw[..., 0], dists)
 	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
+	if detach:
+		weights = weights.detach()
 
 	radiance = torch.sigmoid(raw[..., 6:6 + 3])
 	radiance_map = torch.sum(weights[..., None] * radiance, -2)
@@ -307,30 +309,32 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	if kwargs.get('approximate_radiance', False):
 		if kwargs.get('use_monte_carlo_integration', True):
 			microfacet = Microfacet()
-			with torch.no_grad():
-				target_binormal_map, target_tangent_map = get_TBN(target_normal_map)
-				target_TBNs = torch.stack([target_tangent_map, target_binormal_map, target_normal_map], dim=-1)
-				target_sampled_hemisphere_dirs = torch.tensordot(target_TBNs, hemisphere_samples, dims=[[2], [1]])
-				target_sampled_hemisphere_dirs = torch.permute(target_sampled_hemisphere_dirs, (0, 2, 1))
+			# with torch.no_grad():
+			target_binormal_map, target_tangent_map = get_TBN(target_normal_map)
+			target_TBNs = torch.stack([target_tangent_map, target_binormal_map, target_normal_map], dim=-1)
+			target_sampled_hemisphere_dirs = torch.tensordot(target_TBNs, hemisphere_samples, dims=[[2], [1]])
+			target_sampled_hemisphere_dirs = torch.permute(target_sampled_hemisphere_dirs, (0, 2, 1))
 
-				sampled_dirs = torch.reshape(target_sampled_hemisphere_dirs, [-1, 3])
-				sampled_pos = x_surface.repeat_interleave(hemisphere_samples.shape[0], dim=0)
+			sampled_dirs = torch.reshape(target_sampled_hemisphere_dirs, [-1, 3])
+			sampled_pos = x_surface.repeat_interleave(hemisphere_samples.shape[0], dim=0)
 
-				if not kwargs.get('use_monte_carlo_integration_with_depth_mlp', False):
-					z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
+			if not kwargs.get('use_monte_carlo_integration_with_depth_mlp', False):
+				z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
 
-					reflected_ray_raw = network_query_fn(sampled_pos[..., None, :], sampled_dirs, network_fn)
-					sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0)
-				else:
-					sampled_dir_depth_map = network_query_fn(sampled_pos[..., None, :], sampled_dirs, kwargs["depth_mlp"])
-					sampled_dir_depth_map = F.relu(sampled_dir_depth_map[..., 0])
-					sampled_dir_x_surface = sampled_pos + sampled_dirs * sampled_dir_depth_map
+				reflected_ray_raw = network_query_fn(sampled_pos[..., None, :], sampled_dirs, network_fn)
+				sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0, detach=True)
+			else:
+				sampled_dir_depth_map = network_query_fn(sampled_pos[..., None, :], sampled_dirs, kwargs["depth_mlp"])
+				sampled_dir_depth_map = F.relu(sampled_dir_depth_map[..., 0])
+				sampled_dir_x_surface = sampled_pos + sampled_dirs * sampled_dir_depth_map
 
-					reflected_ray_raw = network_query_fn(sampled_dir_x_surface[..., None, :], sampled_dirs, network_fn)
-					sampled_dir_radiance = torch.sigmoid(reflected_ray_raw[..., 6:6 + 3])
+				reflected_ray_raw = network_query_fn(sampled_dir_x_surface[..., None, :], sampled_dirs, network_fn)
+				sampled_dir_radiance = torch.sigmoid(reflected_ray_raw[..., 6:6 + 3])
 
 			sampled_dir_radiance = torch.reshape(sampled_dir_radiance, (-1, *hemisphere_samples.shape))
-			sampled_dir_radiance = sampled_dir_radiance.detach()
+			if not kwargs.get('use_gradient_for_incident_radiance', False):
+				sampled_dir_radiance = sampled_dir_radiance.detach()
+
 			brdf_specular, brdf_diffuse = microfacet(target_sampled_hemisphere_dirs, -rays_d, target_normal_map, target_albedo_map, target_roughness_map[..., None])
 
 			# Multiply solid angle corresponding to the lighting sample

@@ -1,6 +1,6 @@
 {
   "available_gpus" : [4, 5, 0, 2],
   "config_lists":[
-    "../configs/decomp/monte_carlo"
+    "../configs/decomp/monte_carlo_with_gradient_radiance"
   ]
 }

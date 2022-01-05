@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from pprint import pprint
 import sys
+import natsort
 
 
 def find_all_configs(directory):
@@ -55,7 +56,7 @@ class MultiProcessingRenderer:
 
 		# find all configs
 		config_files = find_all_configs(multiprocessing_configs["config_lists"])
-		# config_files.sort()
+		config_files = natsort.natsorted(config_files) #config_files.sort()
 		pprint(config_files)
 		gpu_ids = multiprocessing_configs.pop("available_gpus")
 
