@@ -1,0 +1,2 @@
+include = common.txt
+N_hemisphere_sample_sqrt = 4

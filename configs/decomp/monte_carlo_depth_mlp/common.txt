@@ -6,12 +6,12 @@ lindisp = True
 
 use_viewdirs = True
 lrate_decay = 500
-#lrate = 1e-4
+lrate = 1e-4
 
 N_samples = 64
 N_importance = 128
 N_rand = 512
-N_iter = 200000
+N_iter = 500000
 
 # if calculate normal chunk should be small !!
 chunk = 1024
@@ -63,4 +63,5 @@ cluster_merge_threshold = 0.05
 # calculate_all_analytic_normals
 # learn_albedo_from_oracle
 
-coarse_radiance_number = 3
+coarse_radiance_number = 0
+use_monte_carlo_integration_with_depth_mlp

@@ -6,7 +6,7 @@ lindisp = True
 
 use_viewdirs = True
 lrate_decay = 500
-#lrate = 1e-4
+#lrate = 1e-5
 
 N_samples = 64
 N_importance = 128
@@ -62,5 +62,8 @@ cluster_merge_threshold = 0.05
 # learn_normal_from_oracle
 # calculate_all_analytic_normals
 # learn_albedo_from_oracle
+N_iter_ignore_normal = 0
+N_iter_ignore_approximated_radiance = 10000
+N_iter_ignore_smooth = 15000
 
 coarse_radiance_number = 3

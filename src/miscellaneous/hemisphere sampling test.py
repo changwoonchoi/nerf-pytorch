@@ -5,6 +5,7 @@ from utils.math_utils import get_direction_from
 import matplotlib.pyplot as plt
 from nerf_models.microfacet import Microfacet
 import torch
+import torch.nn.functional as F
 
 
 def get_hemisphere_samples(N):
@@ -19,6 +20,8 @@ def get_hemisphere_samples(N):
 
 
 if __name__ == "__main__":
+	a = torch.Tensor([0, 0, 0])
+
 	# print(sys.path)
 	result = get_hemisphere_samples(16)
 	microfacet = Microfacet(f0=0.04)
@@ -36,11 +39,13 @@ if __name__ == "__main__":
 		albedo = albedo[None, ...]
 		roughness = roughness[None, ...]
 		l_dot_n = torch.sum(pts2l * normal, dim=-1, keepdim=True)
+		#l_dot_n = torch.clip(l_dot_n, 0, 1)
 
-		brdf = microfacet(pts2l, pts2c, normal, albedo, roughness)
+		brdf_d, brdf_s = microfacet(pts2l, pts2c, normal, albedo, roughness)
+		brdf = brdf_d + brdf_s
 		brdf = brdf.clone()
 
-		brdf *= l_dot_n
+		#brdf *= l_dot_n
 		brdf = brdf[0]
 
 		fig = plt.figure()

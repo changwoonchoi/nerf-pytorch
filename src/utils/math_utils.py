@@ -161,13 +161,15 @@ import torch.nn.functional as F
 
 
 def get_TBN(normal):
-	binormal = torch.zeros_like(normal)
-	binormal[..., 0] = -normal[..., 1]
-	binormal[..., 1] = normal[..., 0]
+	binormal = torch.zeros_like(normal).float()
+	#binormal[..., 0] = -normal[..., 1]
+	#binormal[..., 1] = normal[..., 0]
+	condition = normal[..., 0] > normal[..., 2]
 
-	# binormal[..., 0] = torch.where(normal[..., 0] > normal[..., 2], -normal[..., 1], float(0.0))
-	# binormal[..., 1] = torch.where(normal[..., 0] > normal[..., 2], normal[..., 0], -normal[..., 2])
-	# binormal[..., 2] = torch.where(normal[..., 0] > normal[..., 2], float(0.0), normal[..., 1])
+	binormal[..., 0] = torch.where(condition, -normal[..., 1], binormal[..., 0])
+	binormal[..., 1] = torch.where(condition, normal[..., 0], -normal[..., 2])
+	binormal[..., 2] = torch.where(condition, binormal[..., 2], normal[..., 1])
+
 	binormal = F.normalize(binormal, dim=-1)
 	tangent = torch.cross(binormal, normal, dim=-1)
 	return binormal, tangent

@@ -2,6 +2,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
+bias = 1e-5
+
 
 def fresnel_schlick_roughness(cosTheta, F0, roughness):
 	cosTheta = cosTheta[..., None]
@@ -52,71 +54,97 @@ class Microfacet:
 		f0 = self.f0 * (1-metallic) + albedo * metallic  #Nx3
 		f = self._get_f(pts2l, h, f0) # NxLx3
 		alpha = rough ** 2
-		d = self._get_d(h, normal, alpha=alpha) # NxL
-		g = self._get_g(pts2c, h, normal, alpha=alpha) # NxL
 		l_dot_n = torch.einsum('ijk,ik->ij', pts2l, normal)
 		v_dot_n = torch.einsum('ij,ij->i', pts2c, normal)
-		denom = 4 * torch.abs(l_dot_n) * torch.abs(v_dot_n)[:, None]
+		l_dot_n = torch.clip(l_dot_n, 0, 1)
+		v_dot_n = torch.clip(v_dot_n, 0, 1)
+		v_dot_n = v_dot_n[..., None]
+
+		d = self._get_d(h, normal, alpha=alpha) # NxL
+		g = self._get_g(v_dot_n, l_dot_n, alpha=alpha) # NxL
+
+		denom = 4 * l_dot_n * v_dot_n
 		g = g[...,None]
 		d = d[..., None]
 		denom = denom[...,None]
-		microfacet = torch.nan_to_num((f * g * d / denom)) # NxLx3
-		brdf_glossy = microfacet
-		# brdf_glossy = torch.tile(microfacet[:, :, None], (1, 1, 3)) # NxLx3
-		# Diffuse
+
+		if torch.any(d.isnan()).item() > 0:
+			print("d_nan")
+		if torch.any(g.isnan()).item() > 0:
+			print("g_nan")
+		if torch.any(f.isnan()).item() > 0:
+			print("f_nan")
+		if torch.any(denom.isnan()).item() > 0:
+			print("denom_nan")
+
+		brdf_glossy = (f * g * d / (denom + bias)) # NxLx3
+
 		lambert = albedo / np.pi # Nx3
 		brdf_diffuse = (1 - f) * lambert[:, None, :]
-		#torch.broadcast_to(
-		#	lambert[:, None, :], brdf_glossy.shape) # NxLx3
 		brdf_diffuse *= (1-metallic[..., None])
 
 		# Mix two shaders
-		# if self.lambert_only:
-		#	brdf = brdf_diffuse
-		#else:
-		brdf_glossy *= l_dot_n[...,None]
+		brdf_glossy *= l_dot_n[..., None]
 		brdf_diffuse *= l_dot_n[..., None]
 
 		#brdf = brdf_glossy + brdf_diffuse # TODO: energy conservation?
-		#brdf *= l_dot_n[...,None]
 		return brdf_glossy, brdf_diffuse # NxLx3
 
 	@staticmethod
-	def _get_g(v, m, n, alpha=0.1):
+	def _get_g_ggx(n_dot_v, r):
+		k = r * r / 2
+		denom = n_dot_v * (1-k) + k
+		return n_dot_v / (denom + bias)
+
+	@staticmethod
+	def _get_g(n_dot_v, n_dot_l, alpha=0.1):
 		"""Geometric function (GGX).
 		"""
-		cos_theta_v = torch.einsum('ij,ij->i', n, v)
-		cos_theta = torch.einsum('ijk,ik->ij', m, v)
-		denom = cos_theta_v[:, None]
-		div = torch.nan_to_num((cos_theta / denom))
-		chi = torch.where(div > 0, 1., 0.)
-		cos_theta_v_sq = torch.square(cos_theta_v)
-		cos_theta_v_sq = torch.clip(cos_theta_v_sq, 0., 1.)
-		denom = cos_theta_v_sq
-		tan_theta_v_sq = torch.nan_to_num((1 - cos_theta_v_sq) / denom)
-		tan_theta_v_sq = torch.clip(tan_theta_v_sq, 0., np.inf)
-		denom = 1 + torch.sqrt(1 + alpha ** 2 * tan_theta_v_sq[:, None])
-		g = torch.nan_to_num(chi * 2 / denom)
-		return g # (n_pts, n_lights)
+		ggx2 = Microfacet._get_g_ggx(n_dot_v, alpha)
+		ggx1 = Microfacet._get_g_ggx(n_dot_l, alpha)
+		return ggx1 * ggx2
+
+		# n_dot_v = torch.einsum('ij,ij->i', n, v)
+		# cos_theta = torch.einsum('ijk,ik->ij', m, v)
+		# denom = cos_theta_v[:, None]
+		# div = torch.nan_to_num((cos_theta / (denom + bias)))
+		# chi = torch.where(div > 0, 1., 0.)
+		# cos_theta_v_sq = torch.square(cos_theta_v)
+		# cos_theta_v_sq = torch.clip(cos_theta_v_sq, 0., 1.)
+		# denom = cos_theta_v_sq
+		# tan_theta_v_sq = torch.nan_to_num((1 - cos_theta_v_sq) / (denom + bias))
+		# tan_theta_v_sq = torch.clip(tan_theta_v_sq, 0., np.inf)
+		# denom = 1 + torch.sqrt(1 + alpha ** 2 * tan_theta_v_sq[:, None])
+		# g = torch.nan_to_num(chi * 2 / (denom + bias))
+		# return g # (n_pts, n_lights)
 
 	@staticmethod
 	def _get_d(m, n, alpha=0.1):
 		"""Microfacet distribution (GGX).
 		"""
 		cos_theta_m = torch.einsum('ijk,ik->ij', m, n)
-		chi = torch.where(cos_theta_m > 0, 1., 0.)
+		cos_theta_m = torch.clip(cos_theta_m, 0, 1)
 		cos_theta_m_sq = torch.square(cos_theta_m)
-		denom = cos_theta_m_sq
-		tan_theta_m_sq = torch.nan_to_num((1 - cos_theta_m_sq) / denom)
-		denom = np.pi * torch.square(cos_theta_m_sq) * torch.square(
-			alpha ** 2 + tan_theta_m_sq)
-		d = torch.nan_to_num(alpha ** 2 * chi / denom)
-		return d # (n_pts, n_lights)
+
+		a2 = alpha ** 2
+		num = a2
+		denom = np.pi * torch.square(cos_theta_m_sq * (a2 - 1) + 1)
+		return num / (denom + bias)
+
+		# chi = torch.where(cos_theta_m > 0, 1., 0.)
+		# cos_theta_m_sq = torch.square(cos_theta_m)
+		# denom = cos_theta_m_sq
+		# tan_theta_m_sq = torch.nan_to_num((1 - cos_theta_m_sq) / (denom + bias))
+		# denom = np.pi * torch.square(cos_theta_m_sq) * torch.square(
+		# 	alpha ** 2 + tan_theta_m_sq)
+		# d = torch.nan_to_num(alpha ** 2 * chi / (denom + bias))
+		# return d # (n_pts, n_lights)
 
 	def _get_f(self, l, m, f0):
 		"""Fresnel (Schlick's approximation).
 		"""
 		cos_theta = torch.einsum('ijk,ijk->ij', l, m)
+		cos_theta = torch.clip(cos_theta, 0, 1)
 		cos_theta = torch.stack([cos_theta] * 3, dim=-1)
 		f0 = f0[:, None,:]
 

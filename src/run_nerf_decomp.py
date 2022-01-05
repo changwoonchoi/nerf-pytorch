@@ -1,7 +1,7 @@
 # import os
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-# os.environ["CUDA_VISIBLE_DEVICES"] = str(2)
+# os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
 #import matplotlib
 #matplotlib.use('TkAgg')
 
@@ -287,6 +287,7 @@ def train():
             calculate_normal_from_depth_gradient_direction_epsilon=calculate_normal_from_depth_gradient_direction_epsilon,
             gt_values=target_info,
             hemisphere_samples=hemisphere_samples,
+            approximate_radiance=i>=args.N_iter_ignore_approximated_radiance,
             **render_kwargs_train
         )
 
@@ -296,17 +297,19 @@ def train():
                     dataset.height, dataset.width, K, chunk=args.chunk, rays=batch_rays_neigh, verbose=i < 10, retraw=True,
                     init_basecolor=dataset.init_basecolor,
                     is_neighbor=True,
+                    approximate_radiance=i >= args.N_iter_ignore_approximated_radiance,
                     **render_kwargs_train
                 )
 
 
         def calculate_loss(key_name, target="ground_truth_normal", loss_fn=mse_loss):
             if key_name not in result:
-                print("Key %s not in result" % key_name)
+                # print("Key %s not in result" % key_name)
                 return 0
 
             if not isinstance(target, str):
                 loss_from_target = loss_fn(result[key_name], target)
+
                 if key_name+'0' in result:
                     loss_from_target += loss_fn(result[key_name + '0'], target)
             else:
@@ -337,7 +340,7 @@ def train():
 
         # 2) albedo render loss
         loss_albedo_render = calculate_loss("albedo_map", target_chromaticity)
-        loss_roughness_render = calculate_loss("roughness_map", target_info.get("roughness", 1.0))
+        # loss_roughness_render = calculate_loss("roughness_map", target_info.get("roughness", 1.0))
 
         # 3) Depth map if required
         loss_depth = 0
@@ -360,11 +363,13 @@ def train():
 
             random_points = torch.stack([expected_points.reshape((-1, 3)), random_direction.reshape((-1, 3))], 0)
 
+            random_points = random_points[:, 0:args.N_depth_random_volume, :]
             # with torch.no_grad():
             result_random_volume = render_decomp(
                 dataset.height, dataset.width, K, chunk=args.chunk, rays=random_points, verbose=i < 10, retraw=True,
                 init_basecolor=dataset.init_basecolor,
                 is_depth_only=True,
+                approximate_radiance=False,
                 **render_kwargs_train
             )
 
@@ -522,7 +527,7 @@ def train():
             writer.add_scalar('Loss/Loss_render', loss_render, i)
 
             writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
-            writer.add_scalar('Loss/Loss_roughness_render', loss_roughness_render, i)
+            # writer.add_scalar('Loss/Loss_roughness_render', loss_roughness_render, i)
 
             writer.add_scalar('Loss/Loss_radiance_render', loss_render_radiance, i)
 
@@ -560,9 +565,21 @@ def train():
 
         decay_rate = 0.1
         decay_steps = args.lrate_decay * 1000
-        new_lrate = args.lrate * (decay_rate ** (global_step / decay_steps))
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = new_lrate
+
+        def set_lr(name, start_count):
+            for param_group in optimizer.param_groups:
+                if param_group['name'] == name and global_step > start_count:
+                    new_lrate = args.lrate * (decay_rate ** ((global_step - start_count) / decay_steps))
+                    param_group['lr'] = new_lrate
+
+        set_lr("coarse", 0)
+        set_lr("fine", 0)
+        set_lr("depth", args.N_iter_ignore_depth)
+        set_lr("normal", args.N_iter_ignore_normal)
+
+        # new_lrate = args.lrate * (decay_rate ** (global_step / decay_steps))
+        # for param_group in optimizer.param_groups:
+        #     param_group['lr'] = new_lrate
 
         # Export weight
         if i % args.i_weights == 0:
@@ -585,8 +602,9 @@ def train():
             testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(i))
             os.makedirs(testsavedir, exist_ok=True)
 
-            for var in grad_vars:
-                var.requires_grad = False
+            for param_group in optimizer.param_groups:
+                for var in param_group['params']:
+                    var.requires_grad = False
 
             # with torch.no_grad():
             # poses = torch.Tensor(dataset_val.poses).to(device)
@@ -595,7 +613,8 @@ def train():
                 render_factor=4, init_basecolor=dataset.init_basecolor,
                 calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
                 use_instance=use_instance_mask, label_encoder=label_encoder,
-                hemisphere_samples=hemisphere_samples
+                hemisphere_samples=hemisphere_samples,
+                approximate_radiance=True
             )
 
             def add_image_to_writer(key_name):
@@ -611,8 +630,9 @@ def train():
             for key in show_result_keys:
                 add_image_to_writer(key)
 
-            for var in grad_vars:
-                var.requires_grad = True
+            for param_group in optimizer.param_groups:
+                for var in param_group['params']:
+                    var.requires_grad = True
 
             logger_export.info('Saved test set')
 

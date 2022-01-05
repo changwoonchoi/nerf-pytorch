@@ -45,7 +45,7 @@ class PositionDirectionMLP(nn.Module):
 		self.feature_linear = nn.Linear(W, W)
 		self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W // 2)] + [nn.Linear(W // 2, W // 2) for _ in range(D // 2 - 1)])
 
-		self.distance_linear = nn.Linear(W // 2, out_ch)
+		self.final_linear = nn.Linear(W // 2, out_ch)
 
 	def forward(self, x):
 		if x.shape[-1] == self.input_ch + self.input_ch_views:
@@ -69,6 +69,6 @@ class PositionDirectionMLP(nn.Module):
 			h = self.views_linears[i](h)
 			h = F.relu(h)
 
-		h = self.distance_linear(h)
+		h = self.final_linear(h)
 
 		return h

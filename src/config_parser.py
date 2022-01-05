@@ -58,6 +58,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_rand", type=int, default=32 * 32 * 4,
 	                    help='batch size (number of random rays per gradient step)')
 	parser.add_argument("--ray_sample", type=str, default="pixel")
+	parser.add_argument("--N_depth_random_volume", type=int, default=256, help='N_depth_random_volume')
+
 	parser.add_argument("--CE_weight_type", type=str, default=None, help='weight type in CE Loss, bg_weakened/adaptive/equal or mse')
 	parser.add_argument("--N_iter_ignore_normal", type=int, default=15000, help="Ignore normal loss")
 	parser.add_argument("--N_iter_ignore_depth", type=int, default=15000, help="Ignore depth loss")
@@ -139,6 +141,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--infer_normal_target", type=str, default="normal_map_from_sigma_gradient", help='decompose mode one of all or binary')
 
 	parser.add_argument("--infer_depth", action='store_true', help='infer depth using additional MLP')
+	parser.add_argument("--use_monte_carlo_integration_with_depth_mlp", action='store_true', help='use_monte_carlo_integration_with_depth_mlp')
 
 	parser.add_argument("--learn_normal_from_oracle", action='store_true', help='learn_normal_from_oracle')
 	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')

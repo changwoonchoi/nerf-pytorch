@@ -224,7 +224,8 @@ def create_NeRFDecomp(args):
     ).to(args.device)
     logger.info(model)
 
-    grad_vars = list(model.parameters())
+    grad_vars = []
+    grad_vars.append({'params': model.parameters(), 'name': 'coarse'})
 
     model_fine = None
     if args.N_importance > 0:
@@ -237,8 +238,8 @@ def create_NeRFDecomp(args):
             coarse_radiance_number=args.coarse_radiance_number
         ).to(args.device)
         logger.info("NeRFDecomp fine model")
-        logger.info(model)
-        grad_vars += list(model_fine.parameters())
+        logger.info(model_fine)
+        grad_vars.append({'params': model_fine.parameters(), 'name': 'fine'})
 
     # Depth MLP
     depth_mlp = None
@@ -246,13 +247,13 @@ def create_NeRFDecomp(args):
         depth_mlp = PositionDirectionMLP(D=args.netdepth, W=args.netwidth,
                                          input_ch=input_ch, input_ch_views=input_ch_views,
                                          out_ch=1, skips=skips)
-        grad_vars += list(depth_mlp.parameters())
+        grad_vars.append({'params': depth_mlp.parameters(), 'name': 'depth_mlp'})
 
     # Normal MLP
     normal_mlp = None
     if args.infer_normal:
         normal_mlp = PositionMLP(D=args.netdepth, W=args.netwidth, input_ch=input_ch, out_ch=3, skips=skips)
-        grad_vars += list(normal_mlp.parameters())
+        grad_vars.append({'params': normal_mlp.parameters(), 'name': 'normal_mlp'})
 
     network_query_fn = lambda inputs, viewdirs, network_fn: run_network(
         inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn, netchunk=args.netchunk

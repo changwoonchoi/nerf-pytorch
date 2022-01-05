@@ -1,0 +1,2 @@
+include = common.txt
+beta_inferred_depth = 0.5

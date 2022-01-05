@@ -299,88 +299,111 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
 	n_dot_v = torch.clip(n_dot_v, 0, 1)
 
-	if kwargs.get('use_monte_carlo_integration', True):
-		microfacet = Microfacet()
-		target_binormal_map, target_tangent_map = get_TBN(target_normal_map)
-		target_TBNs = torch.stack([target_tangent_map, target_binormal_map, target_normal_map], dim=-1)
-		target_sampled_hemisphere_dirs = torch.tensordot(target_TBNs, hemisphere_samples, dims=[[2], [1]])
-		target_sampled_hemisphere_dirs = torch.permute(target_sampled_hemisphere_dirs, (0, 2, 1))
+	target_binormal_map = None
+	target_tangent_map = None
+	approximated_radiance_map = None
+	specular_map = None
+	diffuse_map = None
+	if kwargs.get('approximate_radiance', False):
+		if kwargs.get('use_monte_carlo_integration', True):
+			microfacet = Microfacet()
+			with torch.no_grad():
+				target_binormal_map, target_tangent_map = get_TBN(target_normal_map)
+				target_TBNs = torch.stack([target_tangent_map, target_binormal_map, target_normal_map], dim=-1)
+				target_sampled_hemisphere_dirs = torch.tensordot(target_TBNs, hemisphere_samples, dims=[[2], [1]])
+				target_sampled_hemisphere_dirs = torch.permute(target_sampled_hemisphere_dirs, (0, 2, 1))
 
-		sampled_dirs = torch.reshape(target_sampled_hemisphere_dirs, [-1, 3])
-		sampled_pos = x_surface.repeat_interleave(hemisphere_samples.shape[0], dim=0)
+				sampled_dirs = torch.reshape(target_sampled_hemisphere_dirs, [-1, 3])
+				sampled_pos = x_surface.repeat_interleave(hemisphere_samples.shape[0], dim=0)
 
-		with torch.no_grad():
-			sampled_dir_depth_map = network_query_fn(sampled_pos[..., None, :], sampled_dirs, kwargs["depth_mlp"])
-			sampled_dir_depth_map = F.relu(sampled_dir_depth_map[..., 0])
-			sampled_dir_x_surface = sampled_pos + sampled_dirs * sampled_dir_depth_map
+				if not kwargs.get('use_monte_carlo_integration_with_depth_mlp', False):
+					z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
 
-			reflected_ray_raw = network_query_fn(sampled_dir_x_surface[..., None, :], sampled_dirs, network_fn)
-			sampled_dir_radiance = torch.sigmoid(reflected_ray_raw[..., 6:6 + 3])
+					reflected_ray_raw = network_query_fn(sampled_pos[..., None, :], sampled_dirs, network_fn)
+					sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0)
+				else:
+					sampled_dir_depth_map = network_query_fn(sampled_pos[..., None, :], sampled_dirs, kwargs["depth_mlp"])
+					sampled_dir_depth_map = F.relu(sampled_dir_depth_map[..., 0])
+					sampled_dir_x_surface = sampled_pos + sampled_dirs * sampled_dir_depth_map
+
+					reflected_ray_raw = network_query_fn(sampled_dir_x_surface[..., None, :], sampled_dirs, network_fn)
+					sampled_dir_radiance = torch.sigmoid(reflected_ray_raw[..., 6:6 + 3])
+
 			sampled_dir_radiance = torch.reshape(sampled_dir_radiance, (-1, *hemisphere_samples.shape))
+			sampled_dir_radiance = sampled_dir_radiance.detach()
+			brdf_specular, brdf_diffuse = microfacet(target_sampled_hemisphere_dirs, -rays_d, target_normal_map, target_albedo_map, target_roughness_map[..., None])
 
-		brdf_specular, brdf_diffuse = microfacet(target_sampled_hemisphere_dirs, -rays_d, target_normal_map, target_albedo_map, target_roughness_map[..., None])
+			# Multiply solid angle corresponding to the lighting sample
+			# equal area sampling on hemisphere --> solid angle = 2 * pi / N_sample
+			specular_map = torch.mean(sampled_dir_radiance * brdf_specular, dim=1) * 2 * np.pi
+			diffuse_map = torch.mean(sampled_dir_radiance * brdf_diffuse, dim=1) * 2 * np.pi
+			approximated_radiance_map = specular_map + diffuse_map
 
-		# Multiply solid angle corresponding to the lighting sample
-		# equal area sampling on hemisphere --> solid angle = 2 * pi / N_sample
-		specular_map = torch.mean(sampled_dir_radiance * brdf_specular, dim=1) * 2 * np.pi
-		diffuse_map = torch.mean(sampled_dir_radiance * brdf_diffuse, dim=1) * 2 * np.pi
-		approximated_radiance_map = specular_map + diffuse_map
+			brdf_specular_nan = torch.any(brdf_specular.isnan())
+			brdf_diffuse_nan = torch.any(brdf_diffuse.isnan())
 
-		# print(target_sampled_hemisphere_dirs.shape, "target_sampled_hemisphere_dirs")
-		# sample_0 = target_sampled_hemisphere_dirs[1, ...]
-		# sample_0 = sample_0.detach().cpu().numpy()
-		# print(sample_0)
-		# print(target_normal_map[1,...], "NORMAL")
-		# fig = plt.figure()
-		# ax = fig.gca(projection='3d')
-		# ax.scatter(sample_0[:, 0], sample_0[:, 2], sample_0[:, 1])
-		# ax.set_xlim3d(-1, 1)
-		# ax.set_ylim3d(-1, 1)
-		# ax.set_zlim3d(-1, 1)
-		# plt.show()
-	else:
-		# (7) calculate color from split-sum approximation
+			if brdf_specular_nan.item() > 0:
+				print("brdf_specular_nan")
+			if brdf_diffuse_nan.item() > 0:
+				print("brdf_diffuse_nan")
+			#print("brdf_specular_nan", brdf_specular_nan)
+			#print("brdf_diffuse_nan", brdf_diffuse_nan)
 
-		# grid_sample input is  [-1, 1] x [-1, 1]
-		BRDF_2D_LUT_uv = torch.stack([2 * n_dot_v - 1, 2 * target_roughness_map - 1], -1)
-		envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
-		envBRDF = envBRDF.permute((0, 2, 3, 1))
-		envBRDF = envBRDF.squeeze()
+			# print(target_sampled_hemisphere_dirs.shape, "target_sampled_hemisphere_dirs")
+			# sample_0 = target_sampled_hemisphere_dirs[1, ...]
+			# sample_0 = sample_0.detach().cpu().numpy()
+			# print(sample_0)
+			# print(target_normal_map[1,...], "NORMAL")
+			# fig = plt.figure()
+			# ax = fig.gca(projection='3d')
+			# ax.scatter(sample_0[:, 0], sample_0[:, 2], sample_0[:, 1])
+			# ax.set_xlim3d(-1, 1)
+			# ax.set_ylim3d(-1, 1)
+			# ax.set_zlim3d(-1, 1)
+			# plt.show()
+		else:
+			# (7) calculate color from split-sum approximation
 
-		# dielectric
-		F0 = torch.tensor([0.04, 0.04, 0.04])
-		F0 = F0.repeat(*depth_map.shape, 1)
-		target_metallic_map = (1-target_roughness_map)[..., None]
-		F0 = F0 * (1-target_metallic_map) + target_albedo_map * target_metallic_map
+			# grid_sample input is  [-1, 1] x [-1, 1]
+			BRDF_2D_LUT_uv = torch.stack([2 * n_dot_v - 1, 2 * target_roughness_map - 1], -1)
+			envBRDF = F.grid_sample(brdf_lut[None, ...], BRDF_2D_LUT_uv[None, :, None, ...], align_corners=True)
+			envBRDF = envBRDF.permute((0, 2, 3, 1))
+			envBRDF = envBRDF.squeeze()
 
-		envBRDF_coefficient1 = envBRDF[..., 0]
-		envBRDF_coefficient0 = envBRDF[..., 1]
-		envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
-		fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, target_roughness_map)
-		specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+			# dielectric
+			F0 = torch.tensor([0.04, 0.04, 0.04])
+			F0 = F0.repeat(*depth_map.shape, 1)
+			target_metallic_map = (1-target_roughness_map)[..., None]
+			F0 = F0 * (1-target_metallic_map) + target_albedo_map * target_metallic_map
 
-		with torch.no_grad():
-			reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
-			x_surface = rays_o + rays_d * depth_map[..., None]
+			envBRDF_coefficient1 = envBRDF[..., 0]
+			envBRDF_coefficient0 = envBRDF[..., 1]
+			envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
+			fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, target_roughness_map)
+			specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
 
-			reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
-			reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-			reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
+			with torch.no_grad():
+				reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
+				x_surface = rays_o + rays_d * depth_map[..., None]
 
-			prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
+				reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
+				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
+				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs)
 
-		N_pref = len(reflected_coarse_radiance_map) + 1
-		mipmap_index1 = (roughness_map * (N_pref - 1)).long()
-		mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
-		mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
-		mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
-		prefiltered_reflected_map = \
-			(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
-			mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
+				prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
-		diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * irradiance_map[..., None]
-		specular_map = specular_map * prefiltered_reflected_map
-		approximated_radiance_map = diffuse_map + specular_map
+			N_pref = len(reflected_coarse_radiance_map) + 1
+			mipmap_index1 = (roughness_map * (N_pref - 1)).long()
+			mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
+			mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
+			mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
+			prefiltered_reflected_map = \
+				(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
+				mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
+
+			diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * irradiance_map[..., None]
+			specular_map = specular_map * prefiltered_reflected_map
+			approximated_radiance_map = diffuse_map + specular_map
 
 	# [N_rays, N_samples, 3]
 
@@ -410,6 +433,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["normal_map_from_depth_gradient_direction_epsilon"] = normal_map_from_depth_gradient_direction_epsilon
 
 	results["inferred_normal_map"] = inferred_normal_map
+	results["target_normal_map"] = target_normal_map
+	results["target_binormal_map"] = target_binormal_map
+	results["target_tangent_map"] = target_tangent_map
 
 	results["disp_map"] = disp_map
 	results["acc_map"] = acc_map
@@ -659,7 +685,7 @@ def render_decomp_path(
 			return
 		if out_name not in results:
 			results[out_name] = []
-		if "normal" in out_name:
+		if "normal" in out_name or 'tangent' in out_name:
 			result_image = (result_image + 1) * 0.5
 		elif "depth" in key_name:
 			# depth to disp
@@ -704,6 +730,9 @@ def render_decomp_path(
 		append_result(results_i, "normal_map_from_depth_gradient_direction_epsilon", i, "normal_map_from_depth_gradient_direction_epsilon")
 
 		append_result(results_i, "inferred_normal_map", i, "inferred_normal_map")
+		append_result(results_i, "target_normal_map", i, "target_normal_map")
+		append_result(results_i, "target_binormal_map", i, "target_binormal_map")
+		append_result(results_i, "target_tangent_map", i, "target_tangent_map")
 
 		append_result(results_i, "inferred_depth_map", i, "inferred_disp")
 

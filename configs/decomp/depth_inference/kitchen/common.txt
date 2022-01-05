@@ -3,3 +3,8 @@ datadir = ../data/mitsuba/kitchen
 basedir = ../logs/depth_inference/kitchen
 
 infer_depth
+
+N_iter_ignore_normal = 100000
+N_iter_ignore_approximated_radiance = 20000
+N_iter_ignore_smooth = 100000
+N_iter_ignore_depth = 10000
