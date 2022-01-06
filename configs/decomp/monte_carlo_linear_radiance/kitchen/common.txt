@@ -1,0 +1,4 @@
+include = ../common.txt
+datadir = ../data/mitsuba/kitchen
+basedir = ../logs/monte_carlo_linear_radiance/kitchen
+

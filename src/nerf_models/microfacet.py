@@ -84,11 +84,11 @@ class Microfacet:
 		brdf_diffuse *= (1-metallic[..., None])
 
 		# Mix two shaders
-		brdf_glossy *= l_dot_n[..., None]
-		brdf_diffuse *= l_dot_n[..., None]
+		# brdf_glossy *= l_dot_n[..., None]
+		# brdf_diffuse *= l_dot_n[..., None]
 
 		#brdf = brdf_glossy + brdf_diffuse # TODO: energy conservation?
-		return brdf_glossy, brdf_diffuse # NxLx3
+		return brdf_glossy, brdf_diffuse, l_dot_n[..., None] # NxLx3
 
 	@staticmethod
 	def _get_g_ggx(n_dot_v, r):

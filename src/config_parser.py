@@ -141,6 +141,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--infer_normal_target", type=str, default="normal_map_from_sigma_gradient", help='decompose mode one of all or binary')
 
 	parser.add_argument("--infer_depth", action='store_true', help='infer depth using additional MLP')
+	parser.add_argument("--use_radiance_linear", action='store_true', help='is_radiance_linear')
+
 	parser.add_argument("--use_gradient_for_incident_radiance", action='store_true', help='stop_gradient_for_incident_radiance')
 	parser.add_argument("--use_monte_carlo_integration_with_depth_mlp", action='store_true', help='use_monte_carlo_integration_with_depth_mlp')
 

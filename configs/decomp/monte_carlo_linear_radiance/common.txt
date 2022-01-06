@@ -65,12 +65,12 @@ cluster_merge_threshold = 0.05
 
 
 N_iter_ignore_normal = 0
-N_iter_ignore_approximated_radiance = 20000
+N_iter_ignore_approximated_radiance = 10000
 N_iter_ignore_smooth = 0
 N_iter_ignore_depth = 0
 
 # infer_depth
 use_monte_carlo_integration
-use_gradient_for_incident_radiance
+# use_gradient_for_incident_radiance
 use_radiance_linear
 coarse_radiance_number = 0
