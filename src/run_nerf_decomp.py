@@ -205,6 +205,19 @@ def train():
 
     mse_loss = torch.nn.MSELoss()
     l1_loss = torch.nn.L1Loss()
+
+    normal_target_keys = [
+        "normal_map_from_sigma_gradient",
+        "normal_map_from_sigma_gradient_surface",
+        "normal_map_from_depth_gradient",
+        "normal_map_from_depth_gradient_direction",
+        "normal_map_from_depth_gradient_epsilon",
+        "normal_map_from_depth_gradient_direction_epsilon"
+    ]
+
+    assert args.calculating_normal_type in normal_target_keys + ["ground_truth"]
+
+    """
     render_kwargs_test["calculate_normal_from_sigma_gradient"] = args.calculate_all_analytic_normals
     render_kwargs_test["calculate_normal_from_sigma_gradient_surface"] = args.calculate_all_analytic_normals
     render_kwargs_test["calculate_normal_from_depth_gradient"] = args.calculate_all_analytic_normals
@@ -215,17 +228,17 @@ def train():
     render_kwargs_test["epsilon_direction"] = 0.005
     render_kwargs_train["epsilon"] = 0.01
     render_kwargs_train["epsilon_direction"] = 0.005
+    """
+    render_kwargs_test["target_normal_map_for_radiance_calculation"] = args.calculating_normal_type
+    render_kwargs_train["target_normal_map_for_radiance_calculation"] = args.calculating_normal_type
+    render_kwargs_test["epsilon"] = 0.01
+    render_kwargs_test["epsilon_direction"] = 0.005
+    render_kwargs_train["epsilon"] = 0.01
+    render_kwargs_train["epsilon_direction"] = 0.005
 
-    normal_target_keys = [
-        "normal_map_from_sigma_gradient",
-        "normal_map_from_sigma_gradient_surface",
-        "normal_map_from_depth_gradient",
-        "normal_map_from_depth_gradient_direction",
-        "normal_map_from_depth_gradient_epsilon",
-        "normal_map_from_depth_gradient_direction_epsilon"
-    ]
-    if args.infer_normal:
-        assert args.infer_normal_target in normal_target_keys + ["ground_truth_normal"]
+    # we will not infer normal
+    # if args.infer_normal:
+    #     assert args.infer_normal_target in normal_target_keys + ["ground_truth_normal"]
 
     hemisphere_samples = get_hemisphere_samples(args.N_hemisphere_sample_sqrt)
     hemisphere_samples = torch.Tensor(hemisphere_samples).to(args.device)

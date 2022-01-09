@@ -139,12 +139,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				raw_noise_std=0., pytest=False,
 				is_neighbor=False,
 				is_depth_only=False,
-				calculate_normal_from_sigma_gradient=False,
-				calculate_normal_from_sigma_gradient_surface=False,
-				calculate_normal_from_depth_gradient=False,
-				calculate_normal_from_depth_gradient_direction=False,
-				calculate_normal_from_depth_gradient_epsilon=False,
-				calculate_normal_from_depth_gradient_direction_epsilon=False,
+				# calculate_normal_from_sigma_gradient=False,
+				# calculate_normal_from_sigma_gradient_surface=False,
+				# calculate_normal_from_depth_gradient=False,
+				# calculate_normal_from_depth_gradient_direction=False,
+				# calculate_normal_from_depth_gradient_epsilon=False,
+				# calculate_normal_from_depth_gradient_direction_epsilon=False,
 				infer_normal=False,
 				infer_normal_at_surface=False,
 				normal_mlp=None,
@@ -153,9 +153,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				epsilon_direction=0.01,
 				gt_values=None,
 				target_normal_map_for_radiance_calculation="ground_truth",
-				target_albedo_map_for_radiance_calculation="ground_truth",
-				target_roughness_map_for_radiance_calculation="ground_truth",
-				target_radiance_map_for_radiance_calculation="ground_truth",
+				# target_albedo_map_for_radiance_calculation="ground_truth",
+				# target_roughness_map_for_radiance_calculation="ground_truth",
+				# target_radiance_map_for_radiance_calculation="ground_truth",
 				use_instance=False, is_instance_label_logit=True,
 				hemisphere_samples=None,
 				**kwargs):
@@ -224,7 +224,48 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	x_surface = rays_o + rays_d * depth_map[..., None]
 	x_surface.detach_()
 
-	# (4A) calculate normal from sigma gradient
+	# (4A) calculate normal from sigma gradient or read ground_truth value
+	inferred_normal_map = None
+	if infer_normal:
+		if infer_normal_at_surface:
+			inferred_normal_map = network_query_fn(x_surface[..., None, :], None, normal_mlp)
+			inferred_normal_map = 2 * torch.sigmoid(inferred_normal_map) - 1
+			inferred_normal_map.squeeze_(-2)
+		else:
+			inferred_normal_raw = network_query_fn(pts, None, normal_mlp)
+			inferred_normal = 2 * torch.sigmoid(inferred_normal_raw) - 1
+			inferred_normal_map = torch.sum(weights_detached[..., None] * inferred_normal, -2)
+
+	target_normal_map = None
+	if target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient":
+		normal_map_from_sigma_gradient = get_normal_from_sigma_gradient(pts, weights_detached, network_query_fn, network_fn)
+		target_normal_map = normal_map_from_sigma_gradient
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient_surface":
+		normal_map_from_sigma_gradient_surface = get_normal_from_sigma_gradient_surface(x_surface, network_query_fn, network_fn)
+		target_normal_map = normal_map_from_sigma_gradient_surface
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient":
+		normal_map_from_depth_gradient = get_normal_from_depth_gradient(rays_o, rays_d, network_query_fn, network_fn, z_vals)
+		normal_map_from_depth_gradient.detach_()
+		target_normal_map = normal_map_from_depth_gradient
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_epsilon":
+		normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
+		normal_map_from_depth_gradient_epsilon.detach_()
+		target_normal_map = normal_map_from_depth_gradient_epsilon
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction":
+		normal_map_from_depth_gradient_direction = get_normal_from_depth_gradient_direction(rays_o, rays_d, network_query_fn, network_fn, z_vals)
+		normal_map_from_depth_gradient_direction.detach_()
+		target_normal_map = normal_map_from_depth_gradient_direction
+	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction_epsilon":
+		normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
+		normal_map_from_depth_gradient_direction_epsilon.dertach_()
+		target_normal_map = normal_map_from_depth_gradient_direction_epsilon
+	elif target_normal_map_for_radiance_calculation == "ground_truth":
+		target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
+	elif target_normal_map_for_radiance_calculation == "inferred_normal_map":
+		target_normal_map = inferred_normal_map
+	else:
+		raise ValueError
+	"""
 	# (4A-1) normal from sigma gradient at volume
 	normal_map_from_sigma_gradient = None
 	if calculate_normal_from_sigma_gradient:
@@ -259,6 +300,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	if calculate_normal_from_depth_gradient_direction_epsilon:
 		normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
 		normal_map_from_depth_gradient_direction_epsilon.detach_()
+	"""
 
 
 	# (5) other values
@@ -291,7 +333,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		coarse_radiance_map = torch.sum(weights_detached[..., None] * coarse_radiance, -2)
 		coarse_radiance_maps.append(coarse_radiance_map)
 		N += 3
-
+	"""
 	# (6) infer normal if necessary
 	inferred_normal_map = None
 	if infer_normal:
@@ -321,6 +363,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		target_normal_map = normal_map_from_depth_gradient_direction
 	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction_epsilon":
 		target_normal_map = normal_map_from_depth_gradient_direction_epsilon
+	"""
 
 	target_albedo_map = albedo_map
 	# if target_albedo_map_for_radiance_calculation == "ground_truth":
@@ -416,7 +459,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			envBRDF_coefficient0 = envBRDF[..., 1]
 			envBRDF_coefficient1 = torch.stack(3 * [envBRDF_coefficient1], -1)
 			fresnel_map = fresnel_schlick_roughness(n_dot_v, F0, target_roughness_map)
-			specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+			if kwargs.get('lut_coefficient') == 'F':
+				specular_map = fresnel_map * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+			elif kwargs.get('lut_coefficient') == 'F0':
+				specular_map = F0 * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
+			else:
+				raise ValueError
 
 			with torch.no_grad():
 				reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
@@ -467,12 +515,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["n_dot_v_map"] = n_dot_v
 	results["instance_map"] = instance_map
 
-	results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
-	results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
-	results["normal_map_from_depth_gradient"] = normal_map_from_depth_gradient
-	results["normal_map_from_depth_gradient_direction"] = normal_map_from_depth_gradient_direction
-	results["normal_map_from_depth_gradient_epsilon"] = normal_map_from_depth_gradient_epsilon
-	results["normal_map_from_depth_gradient_direction_epsilon"] = normal_map_from_depth_gradient_direction_epsilon
+	# results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
+	# results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
+	# results["normal_map_from_depth_gradient"] = normal_map_from_depth_gradient
+	# results["normal_map_from_depth_gradient_direction"] = normal_map_from_depth_gradient_direction
+	# results["normal_map_from_depth_gradient_epsilon"] = normal_map_from_depth_gradient_epsilon
+	# results["normal_map_from_depth_gradient_direction_epsilon"] = normal_map_from_depth_gradient_direction_epsilon
 
 	results["inferred_normal_map"] = inferred_normal_map
 	results["target_normal_map"] = target_normal_map
@@ -764,12 +812,12 @@ def render_decomp_path(
 		append_result(results_i, "diffuse_map", i, "diffuse")
 		append_result(results_i, "n_dot_v_map", i, "n_dot_v")
 
-		append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
-		append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
-		append_result(results_i, "normal_map_from_depth_gradient", i, "normal_map_from_depth_gradient")
-		append_result(results_i, "normal_map_from_depth_gradient_direction", i, "normal_map_from_depth_gradient_direction")
-		append_result(results_i, "normal_map_from_depth_gradient_epsilon", i, "normal_map_from_depth_gradient_epsilon")
-		append_result(results_i, "normal_map_from_depth_gradient_direction_epsilon", i, "normal_map_from_depth_gradient_direction_epsilon")
+		# append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
+		# append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
+		# append_result(results_i, "normal_map_from_depth_gradient", i, "normal_map_from_depth_gradient")
+		# append_result(results_i, "normal_map_from_depth_gradient_direction", i, "normal_map_from_depth_gradient_direction")
+		# append_result(results_i, "normal_map_from_depth_gradient_epsilon", i, "normal_map_from_depth_gradient_epsilon")
+		# append_result(results_i, "normal_map_from_depth_gradient_direction_epsilon", i, "normal_map_from_depth_gradient_direction_epsilon")
 
 		append_result(results_i, "inferred_normal_map", i, "inferred_normal_map")
 		append_result(results_i, "target_normal_map", i, "target_normal_map")

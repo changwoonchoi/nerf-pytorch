@@ -150,9 +150,12 @@ def config_parser(default_files=None):
 	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')
 
 	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
+	parser.add_argument("--calculating_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, ground_truth]')
 
 	parser.add_argument("--N_hemisphere_sample_sqrt", type=int, default=16, help='N_hemisphere_sample_sqrt')
 	parser.add_argument("--use_monte_carlo_integration", action='store_true', help='use_monte_carlo_integration')
+
+	parser.add_argument("--lut_coefficient", type=str, default="F", help='lut coefficient type, F or F0')
 
 	# training options
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')
