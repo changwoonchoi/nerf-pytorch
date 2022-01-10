@@ -85,6 +85,7 @@ def train():
         }
         dataset = load_dataset_split("train", **load_params)
         dataset_val = load_dataset_split("test", skip=10, **load_params)
+        dataset_test = load_dataset_split("test", skip=1, **load_params)
 
         # calculate base color
         dataset.get_base_color(
@@ -110,6 +111,7 @@ def train():
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
         dataset.to_tensor(args.device)
         dataset_val.to_tensor(args.device)
+        dataset_test.to_tensor(args.device)
 
         # Load BRDF LUT
         brdf_lut_path = "../data/ibl_brdf_lut.png"
@@ -205,6 +207,19 @@ def train():
 
     mse_loss = torch.nn.MSELoss()
     l1_loss = torch.nn.L1Loss()
+
+    normal_target_keys = [
+        "normal_map_from_sigma_gradient",
+        "normal_map_from_sigma_gradient_surface",
+        "normal_map_from_depth_gradient",
+        "normal_map_from_depth_gradient_direction",
+        "normal_map_from_depth_gradient_epsilon",
+        "normal_map_from_depth_gradient_direction_epsilon"
+    ]
+
+    assert args.calculating_normal_type in normal_target_keys + ["ground_truth"]
+
+    """
     render_kwargs_test["calculate_normal_from_sigma_gradient"] = args.calculate_all_analytic_normals
     render_kwargs_test["calculate_normal_from_sigma_gradient_surface"] = args.calculate_all_analytic_normals
     render_kwargs_test["calculate_normal_from_depth_gradient"] = args.calculate_all_analytic_normals
@@ -215,17 +230,17 @@ def train():
     render_kwargs_test["epsilon_direction"] = 0.005
     render_kwargs_train["epsilon"] = 0.01
     render_kwargs_train["epsilon_direction"] = 0.005
+    """
+    render_kwargs_test["target_normal_map_for_radiance_calculation"] = args.calculating_normal_type
+    render_kwargs_train["target_normal_map_for_radiance_calculation"] = args.calculating_normal_type
+    render_kwargs_test["epsilon"] = 0.01
+    render_kwargs_test["epsilon_direction"] = 0.005
+    render_kwargs_train["epsilon"] = 0.01
+    render_kwargs_train["epsilon_direction"] = 0.005
 
-    normal_target_keys = [
-        "normal_map_from_sigma_gradient",
-        "normal_map_from_sigma_gradient_surface",
-        "normal_map_from_depth_gradient",
-        "normal_map_from_depth_gradient_direction",
-        "normal_map_from_depth_gradient_epsilon",
-        "normal_map_from_depth_gradient_direction_epsilon"
-    ]
-    if args.infer_normal:
-        assert args.infer_normal_target in normal_target_keys + ["ground_truth_normal"]
+    # we will not infer normal
+    # if args.infer_normal:
+    #     assert args.infer_normal_target in normal_target_keys + ["ground_truth_normal"]
 
     hemisphere_samples = get_hemisphere_samples(args.N_hemisphere_sample_sqrt)
     hemisphere_samples = torch.Tensor(hemisphere_samples).to(args.device)
@@ -611,14 +626,24 @@ def train():
 
             # with torch.no_grad():
             # poses = torch.Tensor(dataset_val.poses).to(device)
-            render_decomp_path_results = render_decomp_path(
-                dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-                render_factor=4, init_basecolor=dataset.init_basecolor,
-                calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
-                use_instance=use_instance_mask, label_encoder=label_encoder,
-                hemisphere_samples=hemisphere_samples,
-                approximate_radiance=True
-            )
+            if i % 50000 == 0:
+                render_decomp_path_results = render_decomp_path(
+                    dataset_test, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+                    render_factor=1, init_basecolor=dataset.init_basecolor,
+                    calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
+                    use_instance=use_instance_mask, label_encoder=label_encoder,
+                    hemisphere_samples=hemisphere_samples,
+                    approximate_radiance=True
+                )
+            else:
+                render_decomp_path_results = render_decomp_path(
+                    dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+                    render_factor=4, init_basecolor=dataset.init_basecolor,
+                    calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
+                    use_instance=use_instance_mask, label_encoder=label_encoder,
+                    hemisphere_samples=hemisphere_samples,
+                    approximate_radiance=True
+                )
 
             def add_image_to_writer(key_name):
                 if key_name not in render_decomp_path_results:

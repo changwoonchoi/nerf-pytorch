@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba/living-room-2
+basedir = ../logs/albedo_roughness_smooth/living-room-2
