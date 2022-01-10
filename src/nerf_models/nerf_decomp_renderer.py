@@ -25,19 +25,27 @@ def tonemap(x):
 	else:
 		return x / (1 + x)
 
+
+def high_dynamic_range_radiance_f(x):
+	return F.relu(x)
+
+
 def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=False, is_radiance_sigmoid=True):
 	if is_radiance_sigmoid:
 		radiance_f = torch.sigmoid
 	else:
-		radiance_f = F.relu
+		radiance_f = high_dynamic_range_radiance_f
 
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
+	#print(dists.shape, "DISTs")
+	#print(dists[0], "DISTS")
 	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
 	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
 
 	sigma = raw2sigma(raw[..., 0], dists)
+
 	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
 	if detach:
 		weights = weights.detach()
@@ -56,12 +64,11 @@ def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=Fal
 
 	return radiance_map, coarse_radiance_maps
 
-
 def raw2outputs_neigh(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, is_radiance_sigmoid):
 	if is_radiance_sigmoid:
 		radiance_f = torch.sigmoid
 	else:
-		radiance_f = F.relu
+		radiance_f = high_dynamic_range_radiance_f
 
 	# sample points
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
@@ -105,10 +112,10 @@ def raw2outputs_neigh(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn,
 	return results
 
 
-def raw2outputs_depth(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std):
+def raw2outputs_depth(rays_o, rays_d, z_vals, network_query_fn, network_fn, raw_noise_std):
 	# sample points
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
-	raw = network_query_fn(pts, rays_d, network_fn)
+	raw = network_query_fn(pts, None, network_fn)
 
 	# distances
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -124,13 +131,16 @@ def raw2outputs_depth(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn,
 	sigma = raw2sigma(raw[..., 0] + noise, dists)
 
 	# (1) get weight from sigma
-	weights = sigma * torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)[:, :-1]
+	visibility_cum = torch.cumprod(torch.cat([torch.ones((sigma.shape[0], 1)), 1. - sigma + 1e-10], -1), -1)
+	visibility = visibility_cum[:, -1]
+	weights = sigma * visibility_cum[:, :-1]
 
 	depth_map = torch.sum(weights * z_vals, -1)
 
 	results = {}
 	results["depth_map"] = depth_map
 	results["weights"] = weights
+	results['visibility'] = visibility
 	return results
 
 
@@ -179,7 +189,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	if is_radiance_sigmoid:
 		radiance_f = torch.sigmoid
 	else:
-		radiance_f = F.relu
+		radiance_f = high_dynamic_range_radiance_f
 
 
 	if is_neighbor:
@@ -245,8 +255,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# (4B-2) normal from numerical depth gradient w.r.t position
 	normal_map_from_depth_gradient_epsilon = None
 	if calculate_normal_from_depth_gradient_epsilon:
-		normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
-		normal_map_from_depth_gradient_epsilon.detach_()
+		with torch.no_grad():
+			normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
+		# normal_map_from_depth_gradient_epsilon.detach_()
 
 	# (4B-3) normal from depth gradient w.r.t direction
 	normal_map_from_depth_gradient_direction = None
@@ -257,8 +268,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# (4B-4) normal from numerical depth gradient w.r.t direction
 	normal_map_from_depth_gradient_direction_epsilon = None
 	if calculate_normal_from_depth_gradient_direction_epsilon:
-		normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
-		normal_map_from_depth_gradient_direction_epsilon.detach_()
+		with torch.no_grad():
+			normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
+		# normal_map_from_depth_gradient_direction_epsilon.detach_()
 
 
 	# (5) other values
@@ -337,6 +349,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	approximated_radiance_map = None
 	specular_map = None
 	diffuse_map = None
+	min_irradiance_map = None
+	max_irradiance_map = None
+
 	if kwargs.get('approximate_radiance', False):
 		if kwargs.get('use_monte_carlo_integration', True):
 			microfacet = Microfacet()
@@ -348,21 +363,50 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 			sampled_dirs = torch.reshape(target_sampled_hemisphere_dirs, [-1, 3])
 			sampled_pos = x_surface.repeat_interleave(hemisphere_samples.shape[0], dim=0)
-
-			if not kwargs.get('use_monte_carlo_integration_with_depth_mlp', False):
+			monte_carlo_integration_method = kwargs.get('monte_carlo_integration_method', 'surface')
+			if monte_carlo_integration_method=='volume':
+				# use only have of z_vals
+				z_vals_constant = z_vals_constant[...,::2]
 				z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
 
-				reflected_ray_raw = network_query_fn(sampled_pos[..., None, :], sampled_dirs, network_fn)
+				pts = sampled_pos[..., None, :] + sampled_dirs[..., None, :] * z_vals_constant_repeated[..., :, None]
+				reflected_ray_raw = network_query_fn(pts, sampled_dirs, network_fn)
 				sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0, detach=True, is_radiance_sigmoid=is_radiance_sigmoid)
-			else:
+			elif monte_carlo_integration_method == 'surface':
+				# calculate surface point
+				z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
+
+				with torch.no_grad():
+					result = raw2outputs_depth(sampled_pos, sampled_dirs, z_vals_constant_repeated, network_query_fn, network_fn, raw_noise_std)
+					x2_surface = sampled_pos + sampled_dirs * result['depth_map'][..., None]
+
+				reflected_ray_raw = network_query_fn(x2_surface[..., None, :], sampled_dirs, network_fn)
+				sampled_dir_radiance = radiance_f(reflected_ray_raw[..., 6:6 + 3])
+
+			elif monte_carlo_integration_method == 'depth_mlp':
 				sampled_dir_depth_map = network_query_fn(sampled_pos[..., None, :], sampled_dirs, kwargs["depth_mlp"])
 				sampled_dir_depth_map = F.relu(sampled_dir_depth_map[..., 0])
 				sampled_dir_x_surface = sampled_pos + sampled_dirs * sampled_dir_depth_map
 
 				reflected_ray_raw = network_query_fn(sampled_dir_x_surface[..., None, :], sampled_dirs, network_fn)
-				sampled_dir_radiance = torch.sigmoid(reflected_ray_raw[..., 6:6 + 3])
+				sampled_dir_radiance = radiance_f(reflected_ray_raw[..., 6:6 + 3])
+
+			elif monte_carlo_integration_method == 'env_map':
+				z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
+				with torch.no_grad():
+					result = raw2outputs_depth(sampled_pos, sampled_dirs, z_vals_constant_repeated, network_query_fn, network_fn, raw_noise_std)
+					visibility = result['visibility']
+				env_map = kwargs.get('env_map')
+				radiance = env_map.get_radiance(sampled_pos, sampled_dirs)
+				sampled_dir_radiance = visibility[..., None] * radiance
+			else:
+				sampled_dir_radiance = None
 
 			sampled_dir_radiance = torch.reshape(sampled_dir_radiance, (-1, *hemisphere_samples.shape))
+			# sampled_pos2 = torch.reshape(sampled_pos, (-1, *hemisphere_samples.shape))
+			# print(sampled_pos2.shape, 'sampled_pos2')
+			# print(sampled_dir_radiance[0,0:10,:])
+
 			if not kwargs.get('use_gradient_for_incident_radiance', False):
 				sampled_dir_radiance = sampled_dir_radiance.detach()
 
@@ -373,6 +417,41 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			specular_map = torch.mean(sampled_dir_radiance * brdf_specular * l_dot_n, dim=1) * 2 * np.pi
 			diffuse_map = torch.mean(sampled_dir_radiance * brdf_diffuse * l_dot_n, dim=1) * 2 * np.pi
 			irradiance_map = torch.mean(sampled_dir_radiance * l_dot_n, dim=1) * 2 * np.pi
+			max_irradiance_map = torch.amax(sampled_dir_radiance * l_dot_n, dim=1) * 2 * np.pi
+			min_irradiance_map = torch.amin(sampled_dir_radiance * l_dot_n, dim=1) * 2 * np.pi
+
+			# i = 22
+			# brdf = ((brdf_specular + brdf_diffuse) * l_dot_n)[i]
+			# result = target_sampled_hemisphere_dirs[i]
+			# dir_vec = -rays_d[i]
+			# normal_vec = target_normal_map[i]
+			# brdf = brdf.cpu().detach().numpy()
+			# result = result.cpu().detach().numpy()
+			# dir_vec = dir_vec.cpu().detach().numpy()
+			# normal_vec = normal_vec.cpu().detach().numpy()
+			#
+			# print(brdf.shape, "brdf")
+			# print(result.shape, "result")
+			#
+			# fig = plt.figure()
+			# ax = fig.gca(projection='3d')
+			# ax.scatter(result[:, 0], result[:, 1], result[:, 2], c=brdf[:, 0])
+			# ax.plot([0, dir_vec[0]], [0, dir_vec[1]], [0, dir_vec[2]], 'r')
+			# ax.plot([0, normal_vec[0]], [0, normal_vec[1]], [0, normal_vec[2]], 'g')
+			#
+			# ax.set_xlim3d(-1, 1)
+			# ax.set_ylim3d(-1, 1)
+			# ax.set_zlim3d(-1, 1)
+			# plt.show()
+			#
+			# print(brdf_specular[0, ...], "brdf_specular")
+			# print(brdf_diffuse[0, ...], "brdf_diffuse")
+
+			#print(torch.min(irradiance_map), "irradiance MIN")
+			#print(torch.max(irradiance_map), "irradiance MAX")
+
+			# irradiance_map = torch.mean(sampled_dir_radiance * l_dot_n, dim=1) * 2 * np.pi
+
 			approximated_radiance_map = specular_map + diffuse_map
 
 			brdf_specular_nan = torch.any(brdf_specular.isnan())
@@ -460,6 +539,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		results["radiance_map_%d" % (k + 1)] = radiance_to_ldr(coarse_radiance_maps[k])
 
 	results["irradiance_map"] = radiance_to_ldr(irradiance_map)
+	results["min_irradiance_map"] = radiance_to_ldr(min_irradiance_map)
+	results["max_irradiance_map"] = radiance_to_ldr(max_irradiance_map)
+
 	results["albedo_map"] = albedo_map
 	results["roughness_map"] = roughness_map
 	results["specular_map"] = radiance_to_ldr(specular_map)
@@ -757,6 +839,9 @@ def render_decomp_path(
 			append_result(results_i, "radiance_map_%d" % (k+1), i, "radiance_%d" % (k+1))
 
 		append_result(results_i, "irradiance_map", i, "irradiance")
+		append_result(results_i, "max_irradiance_map", i, "max_irradiance")
+		append_result(results_i, "min_irradiance_map", i, "min_irradiance")
+
 		append_result(results_i, "albedo_map", i, "albedo")
 
 		append_result(results_i, "roughness_map", i, "roughness")

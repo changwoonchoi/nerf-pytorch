@@ -77,7 +77,7 @@ def mapUVToDirection(uv, flipy=False):
 		ay = - math.cos(theta)
 	else:
 		ay = math.cos(theta)
-	return (math.sin(theta) * math.cos(phi), ay, - math.sin(theta) * math.sin(phi))
+	return (math.sin(theta) * math.cos(phi), math.sin(theta) * math.sin(phi), ay)
 
 
 def mapDirectionToUV(direction):
@@ -142,7 +142,7 @@ def get_direction_from(index, offset, size):
 	v_index_r = (float(v_index) + offset[1]) / (float(sy))
 	rx, ry, rz = mapUVToDirection((u_index_r, v_index_r))
 	if inverted:
-		return rx, -ry, rz
+		return rx, ry, -rz
 	else:
 		return rx, ry, rz
 

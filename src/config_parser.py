@@ -144,7 +144,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--use_radiance_linear", action='store_true', help='is_radiance_linear')
 
 	parser.add_argument("--use_gradient_for_incident_radiance", action='store_true', help='stop_gradient_for_incident_radiance')
-	parser.add_argument("--use_monte_carlo_integration_with_depth_mlp", action='store_true', help='use_monte_carlo_integration_with_depth_mlp')
+	parser.add_argument("--monte_carlo_integration_method", type=str, default="surface", help='decompose mode one of all or binary')
+	parser.add_argument("--use_environment_map", action='store_true', help='use_environment_map')
 
 	parser.add_argument("--learn_normal_from_oracle", action='store_true', help='learn_normal_from_oracle')
 	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')
@@ -152,6 +153,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
 
 	parser.add_argument("--N_hemisphere_sample_sqrt", type=int, default=16, help='N_hemisphere_sample_sqrt')
+	parser.add_argument("--N_envmap_size", type=int, default=16, help='N_envmap_size')
 	parser.add_argument("--use_monte_carlo_integration", action='store_true', help='use_monte_carlo_integration')
 
 	# training options

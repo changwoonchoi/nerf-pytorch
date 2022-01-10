@@ -7,6 +7,8 @@ import utils.logging_utils
 from nerf_models.positional_embedder import get_embedder
 import os
 from networks.MLP import *
+from nerf_models.envmap import EnvironmentMap
+
 
 # Model
 class NeRFDecomp(nn.Module):
@@ -259,6 +261,11 @@ def create_NeRFDecomp(args):
         inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn, netchunk=args.netchunk
     )
 
+    env_map = None
+    if args.use_environment_map:
+        env_map = EnvironmentMap(n=args.N_envmap_size)
+        grad_vars.append({'params': env_map.emission, 'name': 'env_map'})
+
     optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
     # optimizer_depth = torch.optim.Adam(params=depth_mlp.parameters(), lr=args.lrate, betas=(0.9, 0.999))
 
@@ -273,7 +280,6 @@ def create_NeRFDecomp(args):
         ckpts = [os.path.join (basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
 
     logger.info('Found ckpts: ' + str(ckpts))
-
 
     if len(ckpts) > 0 and not args.no_reload:
         ckpt_path = ckpts[-1]
@@ -290,7 +296,8 @@ def create_NeRFDecomp(args):
             normal_mlp.load_state_dict(ckpt['normal_mlp'])
         if model_fine is not None:
             model_fine.load_state_dict(ckpt['network_fine_state_dict'])
-
+        if args.use_environment_map:
+            env_map.emission.data = ckpt['env_map']
 
     render_kwargs_train = {
         'network_query_fn': network_query_fn,
@@ -312,7 +319,10 @@ def create_NeRFDecomp(args):
         "coarse_radiance_number": args.coarse_radiance_number,
         "use_monte_carlo_integration": args.use_monte_carlo_integration,
         "use_gradient_for_incident_radiance": args.use_gradient_for_incident_radiance,
-        "use_radiance_linear": args.use_radiance_linear
+        "use_radiance_linear": args.use_radiance_linear,
+        "monte_carlo_integration_method": args.monte_carlo_integration_method,
+        'use_environment_map': args.use_environment_map,
+        "env_map": env_map
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

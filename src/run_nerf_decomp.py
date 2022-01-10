@@ -2,8 +2,8 @@
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
-#import matplotlib
-#matplotlib.use('TkAgg')
+import matplotlib
+matplotlib.use('TkAgg')
 
 import numpy as np
 import torch
@@ -594,6 +594,9 @@ def train():
                 save_target['depth_mlp'] = render_kwargs_train['depth_mlp'].state_dict()
             if args.infer_normal:
                 save_target['normal_mlp'] = render_kwargs_train['normal_mlp'].state_dict()
+            if args.use_environment_map:
+                save_target['env_map'] = render_kwargs_train['env_map'].emission
+
             torch.save(save_target, path)
             print('Saved checkpoints at', path)
 
