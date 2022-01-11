@@ -8,6 +8,9 @@ import torch
 from utils.color_utils import get_basecolor
 from torchvision import transforms
 
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 class NerfDataset(Dataset, ABC):
 	def __init__(self, name, **kwargs):
@@ -32,12 +35,14 @@ class NerfDataset(Dataset, ABC):
 		self.albedos = []
 		self.roughness = []
 		self.edited_roughness = []
+		self.edited_normal = []
 		self.instances = []
 
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
 		self.load_roughness = kwargs.get("load_roughness", False)
 		self.load_edited_roughness = kwargs.get("edit_roughness", False)
+		self.load_edited_normal = kwargs.get("edit_normal", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -85,7 +90,11 @@ class NerfDataset(Dataset, ABC):
 
 		if self.load_edited_roughness:
 			edited_roughness_temp = self.edited_roughness[i].permute((2,0,1))
-			result["edited_roughness"] = t(edited_roughness_temp).permute((1,2,0))
+			result["edited_roughness"] = t(edited_roughness_temp).permute((1, 2, 0))
+
+		if self.load_edited_normal:
+			edited_normal_tmp = self.edited_normal[i].permute((2, 0, 1))
+			result["edited_normal"] = t(edited_normal_tmp).permute((1, 2, 0))
 
 		return result
 
@@ -163,6 +172,8 @@ class NerfDataset(Dataset, ABC):
 				self.roughness.append(data["roughness"][0])
 			if self.load_edited_roughness:
 				self.edited_roughness.append(data["edited_roughness"][0])
+			if self.load_edited_normal:
+				self.edited_normal.append(data["edited_normal"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -178,6 +189,10 @@ class NerfDataset(Dataset, ABC):
 			self.albedos = torch.stack(self.albedos, 0).to(device)
 		if self.load_roughness:
 			self.roughness = torch.stack(self.roughness, 0).to(device)
+		if self.load_edited_roughness:
+			self.edited_roughness = torch.stack(self.edited_roughness, 0).to(device)
+		if self.load_edited_normal:
+			self.edited_normal = torch.stack(self.edited_normal, 0).to(device)
 
 	def __getitem__(self, item):
 		pass

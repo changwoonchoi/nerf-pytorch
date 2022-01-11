@@ -74,6 +74,7 @@ class MitsubaDataset(NerfDataset):
 		albedo_file_path = os.path.join(self.basedir, self.split, "%d_albedo.png" % (self.skip * index + 1))
 		roughness_file_path = os.path.join(self.basedir, self.split, "%d_roughness.png" % (self.skip * index + 1))
 		edited_roughness_file_path = os.path.join(self.basedir, self.split, "%d_edited_roughness.png" % (self.skip * index + 1))
+		edited_normal_file_path = normal_file_path
 
 		# (1) load RGB Image
 		sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
@@ -87,6 +88,8 @@ class MitsubaDataset(NerfDataset):
 			sample["roughness"] = load_image_from_path(roughness_file_path, scale=self.scale)[..., 0:1]
 		if self.load_edited_roughness:
 			sample["edited_roughness"] = load_image_from_path(edited_roughness_file_path, scale=self.scale)[..., 0:1]
+		if self.load_edited_normal:
+			sample["edited_normal"] = load_image_from_path(edited_normal_file_path, scale=self.scale)
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:

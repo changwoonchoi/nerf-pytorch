@@ -157,7 +157,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				# target_roughness_map_for_radiance_calculation="ground_truth",
 				# target_radiance_map_for_radiance_calculation="ground_truth",
 				use_instance=False, is_instance_label_logit=True,
-				hemisphere_samples=None, edit_roughness=False,
+				hemisphere_samples=None, edit_roughness=False, edit_normal=False,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -373,6 +373,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	target_roughness_map = roughness_map
 	if edit_roughness:
 		target_roughness_map = gt_values["edited_roughness"][:, 0]
+		editing_sample_mask = target_roughness_map == 0
+		target_roughness_map = torch.minimum(roughness_map, target_roughness_map)
+	if edit_normal:
+		editing_normal_map = normalize(2 * gt_values["edited_normal"] - 1, dim=-1)
+		target_normal_map[editing_sample_mask] = editing_normal_map[editing_sample_mask]
+
 	# if target_roughness_map_for_radiance_calculation == "ground_truth":
 	# 	target_roughness_map = gt_values["roughness"][...,0]
 	n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
@@ -480,10 +486,10 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
 			N_pref = len(reflected_coarse_radiance_map) + 1
-			mipmap_index1 = (roughness_map * (N_pref - 1)).long()
+			mipmap_index1 = (target_roughness_map * (N_pref - 1)).long()
 			mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
 			mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
-			mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
+			mipmap_remainder = ((target_roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
 			prefiltered_reflected_map = \
 				(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
 				mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
@@ -513,10 +519,14 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["irradiance_map"] = radiance_to_ldr(irradiance_map)
 	results["albedo_map"] = albedo_map
 	results["roughness_map"] = roughness_map
+	results["target_roughness_map"] = target_roughness_map
 	results["specular_map"] = radiance_to_ldr(specular_map)
 	results["diffuse_map"] = radiance_to_ldr(diffuse_map)
 	results["n_dot_v_map"] = n_dot_v
 	results["instance_map"] = instance_map
+
+	results["prefiltered_reflected_map"] = prefiltered_reflected_map
+	results["reflected_radiance_map"] = reflected_radiance_map
 
 	# results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
 	# results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
@@ -811,9 +821,13 @@ def render_decomp_path(
 		append_result(results_i, "albedo_map", i, "albedo")
 
 		append_result(results_i, "roughness_map", i, "roughness")
+		append_result(results_i, "target_roughness_map", i, "target_roughness")
 		append_result(results_i, "specular_map", i, "specular")
 		append_result(results_i, "diffuse_map", i, "diffuse")
 		append_result(results_i, "n_dot_v_map", i, "n_dot_v")
+
+		append_result(results_i, "prefiltered_reflected_map", i, "prefiltered_reflected")
+		append_result(results_i, "reflected_radiance_map", i, "reflected_radiance")
 
 		# append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
 		# append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
