@@ -370,11 +370,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	target_albedo_map = albedo_map
 	# if target_albedo_map_for_radiance_calculation == "ground_truth":
 	# 	target_albedo_map = gt_values["albedo"]
-
 	target_roughness_map = roughness_map
 	if edit_roughness:
-		breakpoint()
-		target_roughness_map = gt_values["edited_roughness"]
+		target_roughness_map = gt_values["edited_roughness"][:, 0]
 	# if target_roughness_map_for_radiance_calculation == "ground_truth":
 	# 	target_roughness_map = gt_values["roughness"][...,0]
 	n_dot_v = torch.sum(-rays_d * target_normal_map, -1)

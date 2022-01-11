@@ -11,6 +11,7 @@ from torch.distributions.categorical import Categorical
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
+torch.manual_seed(0)
 DEBUG = False
 
 from config_parser import export_config

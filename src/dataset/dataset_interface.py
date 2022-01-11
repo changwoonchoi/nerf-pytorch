@@ -31,6 +31,7 @@ class NerfDataset(Dataset, ABC):
 		self.normals = []
 		self.albedos = []
 		self.roughness = []
+		self.edited_roughness = []
 		self.instances = []
 
 		self.load_normal = kwargs.get("load_normal", False)
@@ -81,6 +82,10 @@ class NerfDataset(Dataset, ABC):
 		if self.load_roughness:
 			roughness_temp = self.roughness[i].permute((2,0,1))
 			result["roughness"] = t(roughness_temp).permute((1,2,0))
+
+		if self.load_edited_roughness:
+			edited_roughness_temp = self.edited_roughness[i].permute((2,0,1))
+			result["edited_roughness"] = t(edited_roughness_temp).permute((1,2,0))
 
 		return result
 
@@ -156,6 +161,8 @@ class NerfDataset(Dataset, ABC):
 				self.albedos.append(data["albedo"][0])
 			if self.load_roughness:
 				self.roughness.append(data["roughness"][0])
+			if self.load_edited_roughness:
+				self.edited_roughness.append(data["edited_roughness"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
