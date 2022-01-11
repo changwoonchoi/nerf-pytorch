@@ -168,6 +168,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--dataset_type", type=str, default='llff', help='options: llff / blender / deepvoxels')
 	parser.add_argument("--testskip", type=int, default=8,
 	                    help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
+	parser.add_argument("--edit_roughness", action='store_true', help='use edited roughness')
 
 	# clustering options
 	parser.add_argument("--cluster_image_number", type=int, default=-1, help='how many images will be used for clustering? -1 to use all')

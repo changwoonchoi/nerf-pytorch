@@ -157,7 +157,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				# target_roughness_map_for_radiance_calculation="ground_truth",
 				# target_radiance_map_for_radiance_calculation="ground_truth",
 				use_instance=False, is_instance_label_logit=True,
-				hemisphere_samples=None,
+				hemisphere_samples=None, edit_roughness=False,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -248,9 +248,11 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		normal_map_from_depth_gradient.detach_()
 		target_normal_map = normal_map_from_depth_gradient
 	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_epsilon":
-		normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
-		normal_map_from_depth_gradient_epsilon.detach_()
-		target_normal_map = normal_map_from_depth_gradient_epsilon
+		with torch.no_grad():
+			normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
+			target_normal_map = normal_map_from_depth_gradient_epsilon
+		# normal_map_from_depth_gradient_epsilon.detach_()
+		# target_normal_map = normal_map_from_depth_gradient_epsilon
 	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction":
 		normal_map_from_depth_gradient_direction = get_normal_from_depth_gradient_direction(rays_o, rays_d, network_query_fn, network_fn, z_vals)
 		normal_map_from_depth_gradient_direction.detach_()
@@ -370,6 +372,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# 	target_albedo_map = gt_values["albedo"]
 
 	target_roughness_map = roughness_map
+	if edit_roughness:
+		breakpoint()
+		target_roughness_map = gt_values["edited_roughness"]
 	# if target_roughness_map_for_radiance_calculation == "ground_truth":
 	# 	target_roughness_map = gt_values["roughness"][...,0]
 	n_dot_v = torch.sum(-rays_d * target_normal_map, -1)

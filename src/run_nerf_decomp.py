@@ -81,11 +81,14 @@ def train():
             "load_albedo": args.learn_albedo_from_oracle,
             "sample_length": args.sample_length,
             "coarse_radiance_number": args.coarse_radiance_number,
-            "load_instance_label_mask": args.instance_mask
+            "load_instance_label_mask": args.instance_mask,
         }
+        load_params_test = {k: load_params[k] for k in load_params}
+        load_params_test["edit_roughness"] = args.edit_roughness
+
         dataset = load_dataset_split("train", **load_params)
         dataset_val = load_dataset_split("test", skip=10, **load_params)
-        dataset_test = load_dataset_split("test", skip=1, **load_params)
+        dataset_test = load_dataset_split("test", skip=1, **load_params_test)
 
         # calculate base color
         dataset.get_base_color(
@@ -623,14 +626,14 @@ def train():
 
             # with torch.no_grad():
             # poses = torch.Tensor(dataset_val.poses).to(device)
-            if i % 50000 == 0:
+            if i % 200000 == 0:
                 render_decomp_path_results = render_decomp_path(
                     dataset_test, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
                     render_factor=1, init_basecolor=dataset.init_basecolor,
                     calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
                     use_instance=use_instance_mask, label_encoder=label_encoder,
                     hemisphere_samples=hemisphere_samples,
-                    approximate_radiance=True
+                    approximate_radiance=True, edit_roughness=args.edit_roughness
                 )
             else:
                 render_decomp_path_results = render_decomp_path(

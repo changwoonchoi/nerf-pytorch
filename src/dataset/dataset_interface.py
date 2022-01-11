@@ -36,6 +36,7 @@ class NerfDataset(Dataset, ABC):
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
 		self.load_roughness = kwargs.get("load_roughness", False)
+		self.load_edited_roughness = kwargs.get("edit_roughness", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
