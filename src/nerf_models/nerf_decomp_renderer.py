@@ -157,7 +157,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				# target_roughness_map_for_radiance_calculation="ground_truth",
 				# target_radiance_map_for_radiance_calculation="ground_truth",
 				use_instance=False, is_instance_label_logit=True,
-				hemisphere_samples=None, edit_roughness=False, edit_normal=False,
+				hemisphere_samples=None, edit_roughness=False, edit_normal=False, editing_roughness_scale=0,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -372,9 +372,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# 	target_albedo_map = gt_values["albedo"]
 	target_roughness_map = roughness_map
 	if edit_roughness:
-		target_roughness_map = gt_values["edited_roughness"][:, 0]
-		editing_sample_mask = target_roughness_map == 0
-		target_roughness_map = torch.minimum(roughness_map, target_roughness_map)
+		editing_roughness_map = gt_values["edited_roughness"][:, 0]
+		editing_sample_mask = editing_roughness_map == 0
+		target_roughness_map[editing_sample_mask] = editing_roughness_map[editing_sample_mask] + editing_roughness_scale
 	if edit_normal:
 		editing_normal_map = normalize(2 * gt_values["edited_normal"] - 1, dim=-1)
 		target_normal_map[editing_sample_mask] = editing_normal_map[editing_sample_mask]
@@ -780,7 +780,7 @@ def render_decomp_path(
 
 	results = {}
 
-	def append_result(render_decomp_results, key_name, index, out_name, label_encoder=None):
+	def append_result(render_decomp_results, key_name, index, out_name, label_encoder=None, ):
 		if key_name not in render_decomp_results:
 			return
 		result_image = render_decomp_results[key_name]
@@ -804,54 +804,55 @@ def render_decomp_path(
 			imageio.imwrite(filename, result_image_8bit)
 
 	for i, c2w in enumerate(tqdm(render_poses)):
+		for roughness_level in range(kwargs.get('editing_roughness_level', 30)):
+			gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
+			for k in gt_values.keys():
+				gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
+			results_i = render_decomp(
+				H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
+				use_instance=use_instance, label_encoder=label_encoder, editing_roughness_scale=1-roughness_level/float(kwargs.get('editing_roughness_level', 10) - 1),
+				**render_kwargs, **kwargs
+			)
+			append_result(results_i, "color_map", i, "rgb_{}".format(roughness_level))
+			append_result(results_i, "radiance_map", i, "radiance")
+			for k in range(render_kwargs["coarse_radiance_number"]):
+				append_result(results_i, "radiance_map_%d" % (k+1), i, "radiance_%d" % (k+1))
 
-		gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
-		for k in gt_values.keys():
-			gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
-		results_i = render_decomp(
-			H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
-			use_instance=use_instance, label_encoder=label_encoder, **render_kwargs, **kwargs
-		)
-		append_result(results_i, "color_map", i, "rgb")
-		append_result(results_i, "radiance_map", i, "radiance")
-		for k in range(render_kwargs["coarse_radiance_number"]):
-			append_result(results_i, "radiance_map_%d" % (k+1), i, "radiance_%d" % (k+1))
+			append_result(results_i, "irradiance_map", i, "irradiance")
+			append_result(results_i, "albedo_map", i, "albedo")
 
-		append_result(results_i, "irradiance_map", i, "irradiance")
-		append_result(results_i, "albedo_map", i, "albedo")
+			append_result(results_i, "roughness_map", i, "roughness_{}".format(roughness_level))
+			append_result(results_i, "target_roughness_map", i, "target_roughness")
+			append_result(results_i, "specular_map", i, "specular_{}".format(roughness_level))
+			append_result(results_i, "diffuse_map", i, "diffuse_{}".format(roughness_level))
+			append_result(results_i, "n_dot_v_map", i, "n_dot_v")
 
-		append_result(results_i, "roughness_map", i, "roughness")
-		append_result(results_i, "target_roughness_map", i, "target_roughness")
-		append_result(results_i, "specular_map", i, "specular")
-		append_result(results_i, "diffuse_map", i, "diffuse")
-		append_result(results_i, "n_dot_v_map", i, "n_dot_v")
+			# append_result(results_i, "prefiltered_reflected_map", i, "prefiltered_reflected")
+			# append_result(results_i, "reflected_radiance_map", i, "reflected_radiance")
 
-		append_result(results_i, "prefiltered_reflected_map", i, "prefiltered_reflected")
-		append_result(results_i, "reflected_radiance_map", i, "reflected_radiance")
+			# append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
+			# append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
+			# append_result(results_i, "normal_map_from_depth_gradient", i, "normal_map_from_depth_gradient")
+			# append_result(results_i, "normal_map_from_depth_gradient_direction", i, "normal_map_from_depth_gradient_direction")
+			# append_result(results_i, "normal_map_from_depth_gradient_epsilon", i, "normal_map_from_depth_gradient_epsilon")
+			# append_result(results_i, "normal_map_from_depth_gradient_direction_epsilon", i, "normal_map_from_depth_gradient_direction_epsilon")
 
-		# append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
-		# append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
-		# append_result(results_i, "normal_map_from_depth_gradient", i, "normal_map_from_depth_gradient")
-		# append_result(results_i, "normal_map_from_depth_gradient_direction", i, "normal_map_from_depth_gradient_direction")
-		# append_result(results_i, "normal_map_from_depth_gradient_epsilon", i, "normal_map_from_depth_gradient_epsilon")
-		# append_result(results_i, "normal_map_from_depth_gradient_direction_epsilon", i, "normal_map_from_depth_gradient_direction_epsilon")
+			append_result(results_i, "inferred_normal_map", i, "inferred_normal_map")
+			append_result(results_i, "target_normal_map", i, "target_normal_map")
+			append_result(results_i, "target_binormal_map", i, "target_binormal_map")
+			append_result(results_i, "target_tangent_map", i, "target_tangent_map")
 
-		append_result(results_i, "inferred_normal_map", i, "inferred_normal_map")
-		append_result(results_i, "target_normal_map", i, "target_normal_map")
-		append_result(results_i, "target_binormal_map", i, "target_binormal_map")
-		append_result(results_i, "target_tangent_map", i, "target_tangent_map")
+			append_result(results_i, "inferred_depth_map", i, "inferred_disp")
 
-		append_result(results_i, "inferred_depth_map", i, "inferred_disp")
+			append_result(results_i, "disp_map", i, "disp")
+			append_result(results_i, "depth_map", i, "depth")
 
-		append_result(results_i, "disp_map", i, "disp")
-		append_result(results_i, "depth_map", i, "depth")
+			append_result(results_i, "instance_map", i, "instance_map", label_encoder=label_encoder)
 
-		append_result(results_i, "instance_map", i, "instance_map", label_encoder=label_encoder)
-
-		depth_image = results_i["depth_map"]
-		results_i["normal_map_from_depth_map"] = depth_to_normal_image_space(depth_image, c2w[:3, :4], K)
-		append_result(results_i, "normal_map_from_depth_map", i, "normal_from_depth")
-
+			depth_image = results_i["depth_map"]
+			results_i["normal_map_from_depth_map"] = depth_to_normal_image_space(depth_image, c2w[:3, :4], K)
+			append_result(results_i, "normal_map_from_depth_map", i, "normal_from_depth")
+		breakpoint()
 	for k, v in results.items():
 		results[k] = np.stack(v, 0)
 	return results

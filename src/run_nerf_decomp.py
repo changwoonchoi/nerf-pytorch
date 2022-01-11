@@ -636,6 +636,7 @@ def train():
                     use_instance=use_instance_mask, label_encoder=label_encoder,
                     hemisphere_samples=hemisphere_samples,
                     approximate_radiance=True, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal,
+                    editing_roughness_level=10
                 )
             else:
                 render_decomp_path_results = render_decomp_path(
