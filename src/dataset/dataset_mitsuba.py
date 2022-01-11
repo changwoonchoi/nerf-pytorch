@@ -54,7 +54,7 @@ class MitsubaDataset(NerfDataset):
 		Load near and far plane
 		:return:
 		"""
-		self.near = 1
+		self.near = 0.1
 		self.far = 20
 
 	def __len__(self):
