@@ -2,7 +2,7 @@ basedir = ../logs/mitsuba
 dataset_type = mitsuba
 
 no_batching = True
-lindisp = True
+lindisp = False
 
 use_viewdirs = True
 lrate_decay = 500
