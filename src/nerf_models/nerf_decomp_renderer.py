@@ -14,7 +14,6 @@ from utils.depth_to_normal_utils import depth_to_normal_image_space
 from nerf_models.normal_from_depth import *
 from nerf_models.normal_from_sigma import *
 
-import matplotlib.pyplot as plt
 from utils.math_utils import get_TBN
 from nerf_models.microfacet import Microfacet
 

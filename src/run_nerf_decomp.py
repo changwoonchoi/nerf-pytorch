@@ -2,8 +2,6 @@
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
-import matplotlib
-matplotlib.use('TkAgg')
 
 import numpy as np
 import torch

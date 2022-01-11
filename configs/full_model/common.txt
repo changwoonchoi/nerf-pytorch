@@ -69,3 +69,5 @@ N_iter_ignore_smooth = 15000
 coarse_radiance_number = 3
 
 calculating_normal_type = normal_map_from_depth_gradient_epsilon
+
+N_iter = 500000
