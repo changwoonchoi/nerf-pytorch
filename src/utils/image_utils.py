@@ -15,6 +15,15 @@ def load_image_from_path(image_file_path, scale=1):
 	return image
 
 
+def load_numpy_from_path(image_file_path, scale=1):
+	image = np.load(image_file_path)
+	if scale != 1:
+		image = cv2.resize(image, None, fx=scale, fy=scale)
+	image = image.astype(np.float32)
+
+	return image
+
+
 def texture(image, u, v):
 	width, height, channel = image.shape
 	u_d = (width - 1) * u

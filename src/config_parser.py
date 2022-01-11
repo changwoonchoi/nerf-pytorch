@@ -156,6 +156,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_hemisphere_sample_sqrt", type=int, default=16, help='N_hemisphere_sample_sqrt')
 	parser.add_argument("--N_envmap_size", type=int, default=16, help='N_envmap_size')
 	parser.add_argument("--use_monte_carlo_integration", action='store_true', help='use_monte_carlo_integration')
+	parser.add_argument("--depth_map_from_ground_truth", action='store_true', help='depth_map_from_ground_truth')
 
 	parser.add_argument("--lut_coefficient", type=str, default="F", help='lut coefficient type, F or F0')
 

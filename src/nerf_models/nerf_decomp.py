@@ -322,9 +322,9 @@ def create_NeRFDecomp(args):
         "use_radiance_linear": args.use_radiance_linear,
         "monte_carlo_integration_method": args.monte_carlo_integration_method,
         'use_environment_map': args.use_environment_map,
-        "env_map": env_map
-        "use_radiance_linear": args.use_radiance_linear,
-        "lut_coefficient": args.lut_coefficient
+        "env_map": env_map,
+        "lut_coefficient": args.lut_coefficient,
+        "depth_map_from_ground_truth": args.depth_map_from_ground_truth
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

@@ -14,7 +14,7 @@ from dataset.dataset_interface import NerfDataset
 from torchvision import transforms
 import cv2
 import math
-from utils.image_utils import load_image_from_path
+from utils.image_utils import *
 
 
 class MitsubaDataset(NerfDataset):
@@ -73,6 +73,7 @@ class MitsubaDataset(NerfDataset):
 		normal_file_path = os.path.join(self.basedir, self.split, "%d_normal.png" % (self.skip * index + 1))
 		albedo_file_path = os.path.join(self.basedir, self.split, "%d_albedo.png" % (self.skip * index + 1))
 		roughness_file_path = os.path.join(self.basedir, self.split, "%d_roughness.png" % (self.skip * index + 1))
+		depth_file_path = os.path.join(self.basedir, self.split, "%d_depth.npy" % (self.skip * index + 1))
 
 		# (1) load RGB Image
 		sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
@@ -84,6 +85,8 @@ class MitsubaDataset(NerfDataset):
 			sample["albedo"] = albedo_rgb
 		if self.load_roughness:
 			sample["roughness"] = load_image_from_path(roughness_file_path, scale=self.scale)[..., 0:1]
+		if self.load_depth:
+			sample["depth"] = load_numpy_from_path(depth_file_path, scale=self.scale)[..., None]
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:

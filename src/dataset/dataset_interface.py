@@ -32,10 +32,12 @@ class NerfDataset(Dataset, ABC):
 		self.albedos = []
 		self.roughness = []
 		self.instances = []
+		self.depths = []
 
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
 		self.load_roughness = kwargs.get("load_roughness", False)
+		self.load_depth = kwargs.get("load_depth", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -80,6 +82,10 @@ class NerfDataset(Dataset, ABC):
 		if self.load_roughness:
 			roughness_temp = self.roughness[i].permute((2,0,1))
 			result["roughness"] = t(roughness_temp).permute((1,2,0))
+
+		if self.load_depth:
+			depth_temp = self.depths[i].permute((2,0,1))
+			result["depth"] = t(depth_temp).permute((1, 2, 0))
 
 		return result
 
@@ -126,7 +132,8 @@ class NerfDataset(Dataset, ABC):
 			pixel_info["label"] = self.masks[image_index][v, u]
 		if self.load_roughness:
 			pixel_info["roughness"] = self.roughness[image_index][v, u]
-
+		if self.load_depth:
+			pixel_info["depth"] = self.depths[image_index][v, u]
 		return pixel_info
 
 	def get_near_far_plane(self):
@@ -155,6 +162,8 @@ class NerfDataset(Dataset, ABC):
 				self.albedos.append(data["albedo"][0])
 			if self.load_roughness:
 				self.roughness.append(data["roughness"][0])
+			if self.load_depth:
+				self.depths.append(data["depth"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -170,6 +179,8 @@ class NerfDataset(Dataset, ABC):
 			self.albedos = torch.stack(self.albedos, 0).to(device)
 		if self.load_roughness:
 			self.roughness = torch.stack(self.roughness, 0).to(device)
+		if self.load_depth:
+			self.depths = torch.stack(self.depths, 0).to(device)
 
 	def __getitem__(self, item):
 		pass

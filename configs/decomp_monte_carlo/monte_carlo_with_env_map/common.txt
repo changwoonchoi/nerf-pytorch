@@ -78,3 +78,5 @@ coarse_radiance_number = 0
 use_environment_map
 monte_carlo_integration_method = env_map
 N_envmap_size = 16
+
+calculating_normal_type = normal_map_from_depth_gradient_epsilon

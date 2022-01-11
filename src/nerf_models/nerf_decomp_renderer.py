@@ -39,8 +39,6 @@ def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=Fal
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
-	#print(dists.shape, "DISTs")
-	#print(dists[0], "DISTS")
 	dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[..., :1].shape)], -1)  # [N_rays, N_samples]
 	dists = dists * torch.norm(rays_d[..., None, :], dim=-1)
 
@@ -191,13 +189,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	else:
 		radiance_f = high_dynamic_range_radiance_f
 
-
 	if is_neighbor:
 		return raw2outputs_neigh(
 			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, is_radiance_sigmoid
 		)
 	elif is_depth_only:
-		return raw2outputs_depth(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std)
+		return raw2outputs_depth(rays_o, rays_d, z_vals, network_query_fn, network_fn, raw_noise_std)
 	# sample points
 	pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples, 3]
 	raw = network_query_fn(pts, rays_d, network_fn)
@@ -226,7 +223,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	weights_detached = weights.detach()
 
 	# (2) get depth / disp / acc map
-	depth_map = torch.sum(weights * z_vals, -1)
+	if kwargs.get("depth_map_from_ground_truth", False):
+		depth_map = gt_values["depth"][..., 0]
+		# depth_map = torch.clip(depth_map, 1, 20)
+	else:
+		depth_map = torch.sum(weights * z_vals, -1)
+
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
 	acc_map = torch.sum(weights, -1)
 
@@ -258,16 +260,16 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		normal_map_from_depth_gradient.detach_()
 		target_normal_map = normal_map_from_depth_gradient
 	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_epsilon":
-		normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
-		normal_map_from_depth_gradient_epsilon.detach_()
+		with torch.no_grad():
+			normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
 		target_normal_map = normal_map_from_depth_gradient_epsilon
 	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction":
 		normal_map_from_depth_gradient_direction = get_normal_from_depth_gradient_direction(rays_o, rays_d, network_query_fn, network_fn, z_vals)
 		normal_map_from_depth_gradient_direction.detach_()
 		target_normal_map = normal_map_from_depth_gradient_direction
 	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction_epsilon":
-		normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
-		normal_map_from_depth_gradient_direction_epsilon.dertach_()
+		with torch.no_grad():
+			normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
 		target_normal_map = normal_map_from_depth_gradient_direction_epsilon
 	elif target_normal_map_for_radiance_calculation == "ground_truth":
 		target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
@@ -545,7 +547,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 			with torch.no_grad():
 				reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
-				x_surface = rays_o + rays_d * depth_map[..., None]
+				# x_surface = rays_o + rays_d * depth_map[..., None]
 
 				reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
 				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
