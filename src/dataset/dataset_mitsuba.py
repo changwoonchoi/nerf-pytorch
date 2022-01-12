@@ -47,15 +47,17 @@ class MitsubaDataset(NerfDataset):
 		self.height = int(self.original_height * self.scale)
 		self.width = int(self.original_width * self.scale)
 		self.focal = .5 * self.width / np.tan(0.5 * self.camera_angle_x)
-		self.load_near_far_plane()
 
-	def load_near_far_plane(self):
-		"""
-		Load near and far plane
-		:return:
-		"""
-		self.near = 1
-		self.far = 20
+
+	# 	self.load_near_far_plane()
+	#
+	# def load_near_far_plane(self):
+	# 	"""
+	# 	Load near and far plane
+	# 	:return:
+	# 	"""
+	# 	self.near = 1
+	# 	self.far = 20
 
 	def __len__(self):
 		return len(self.meta['frames'][::self.skip])

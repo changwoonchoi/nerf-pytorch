@@ -249,34 +249,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			inferred_normal_map = torch.sum(weights_detached[..., None] * inferred_normal, -2)
 
 	target_normal_map = None
-	if target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient":
-		normal_map_from_sigma_gradient = get_normal_from_sigma_gradient(pts, weights_detached, network_query_fn, network_fn)
-		target_normal_map = normal_map_from_sigma_gradient
-	elif target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient_surface":
-		normal_map_from_sigma_gradient_surface = get_normal_from_sigma_gradient_surface(x_surface, network_query_fn, network_fn)
-		target_normal_map = normal_map_from_sigma_gradient_surface
-	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient":
-		normal_map_from_depth_gradient = get_normal_from_depth_gradient(rays_o, rays_d, network_query_fn, network_fn, z_vals)
-		normal_map_from_depth_gradient.detach_()
-		target_normal_map = normal_map_from_depth_gradient
-	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_epsilon":
-		with torch.no_grad():
-			normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
-		target_normal_map = normal_map_from_depth_gradient_epsilon
-	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction":
-		normal_map_from_depth_gradient_direction = get_normal_from_depth_gradient_direction(rays_o, rays_d, network_query_fn, network_fn, z_vals)
-		normal_map_from_depth_gradient_direction.detach_()
-		target_normal_map = normal_map_from_depth_gradient_direction
-	elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction_epsilon":
-		with torch.no_grad():
-			normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
-		target_normal_map = normal_map_from_depth_gradient_direction_epsilon
-	elif target_normal_map_for_radiance_calculation == "ground_truth":
-		target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
-	elif target_normal_map_for_radiance_calculation == "inferred_normal_map":
-		target_normal_map = inferred_normal_map
-	else:
-		raise ValueError
+
 	"""
 	# (4A-1) normal from sigma gradient at volume
 	normal_map_from_sigma_gradient = None
@@ -384,8 +357,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	target_roughness_map = roughness_map
 	# if target_roughness_map_for_radiance_calculation == "ground_truth":
 	# 	target_roughness_map = gt_values["roughness"][...,0]
-	n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
-	n_dot_v = torch.clip(n_dot_v, 0, 1)
+
 
 	target_binormal_map = None
 	target_tangent_map = None
@@ -394,8 +366,44 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	diffuse_map = None
 	min_irradiance_map = None
 	max_irradiance_map = None
+	visibility_average_map = None
+	n_dot_v = None
 
 	if kwargs.get('approximate_radiance', False):
+
+		# calculate normal only approximate radiance
+		if target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient":
+			normal_map_from_sigma_gradient = get_normal_from_sigma_gradient(pts, weights_detached, network_query_fn, network_fn)
+			target_normal_map = normal_map_from_sigma_gradient
+		elif target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient_surface":
+			normal_map_from_sigma_gradient_surface = get_normal_from_sigma_gradient_surface(x_surface, network_query_fn, network_fn)
+			target_normal_map = normal_map_from_sigma_gradient_surface
+		elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient":
+			normal_map_from_depth_gradient = get_normal_from_depth_gradient(rays_o, rays_d, network_query_fn, network_fn, z_vals)
+			normal_map_from_depth_gradient.detach_()
+			target_normal_map = normal_map_from_depth_gradient
+		elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_epsilon":
+			with torch.no_grad():
+				normal_map_from_depth_gradient_epsilon = get_normal_from_depth_gradient_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon)
+			target_normal_map = normal_map_from_depth_gradient_epsilon
+		elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction":
+			normal_map_from_depth_gradient_direction = get_normal_from_depth_gradient_direction(rays_o, rays_d, network_query_fn, network_fn, z_vals)
+			normal_map_from_depth_gradient_direction.detach_()
+			target_normal_map = normal_map_from_depth_gradient_direction
+		elif target_normal_map_for_radiance_calculation == "normal_map_from_depth_gradient_direction_epsilon":
+			with torch.no_grad():
+				normal_map_from_depth_gradient_direction_epsilon = get_normal_from_depth_gradient_direction_epsilon(rays_o, rays_d, network_query_fn, network_fn, z_vals, epsilon=epsilon_direction)
+			target_normal_map = normal_map_from_depth_gradient_direction_epsilon
+		elif target_normal_map_for_radiance_calculation == "ground_truth":
+			target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
+		elif target_normal_map_for_radiance_calculation == "inferred_normal_map":
+			target_normal_map = inferred_normal_map
+		else:
+			raise ValueError
+
+		n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
+		n_dot_v = torch.clip(n_dot_v, 0, 1)
+
 		if kwargs.get('use_monte_carlo_integration', True):
 			microfacet = Microfacet()
 			# with torch.no_grad():
@@ -442,13 +450,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				env_map = kwargs.get('env_map')
 				radiance = env_map.get_radiance(sampled_pos, sampled_dirs)
 				sampled_dir_radiance = visibility[..., None] * radiance
+				visibility_average_map = torch.reshape(visibility, [-1, hemisphere_samples.shape[0]])
+				visibility_average_map = torch.mean(visibility_average_map, dim=-1)
 			else:
 				sampled_dir_radiance = None
 
 			sampled_dir_radiance = torch.reshape(sampled_dir_radiance, (-1, *hemisphere_samples.shape))
-			# sampled_pos2 = torch.reshape(sampled_pos, (-1, *hemisphere_samples.shape))
-			# print(sampled_pos2.shape, 'sampled_pos2')
-			# print(sampled_dir_radiance[0,0:10,:])
 
 			if not kwargs.get('use_gradient_for_incident_radiance', False):
 				sampled_dir_radiance = sampled_dir_radiance.detach()
@@ -504,21 +511,6 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				print("brdf_specular_nan")
 			if brdf_diffuse_nan.item() > 0:
 				print("brdf_diffuse_nan")
-			#print("brdf_specular_nan", brdf_specular_nan)
-			#print("brdf_diffuse_nan", brdf_diffuse_nan)
-
-			# print(target_sampled_hemisphere_dirs.shape, "target_sampled_hemisphere_dirs")
-			# sample_0 = target_sampled_hemisphere_dirs[1, ...]
-			# sample_0 = sample_0.detach().cpu().numpy()
-			# print(sample_0)
-			# print(target_normal_map[1,...], "NORMAL")
-			# fig = plt.figure()
-			# ax = fig.gca(projection='3d')
-			# ax.scatter(sample_0[:, 0], sample_0[:, 2], sample_0[:, 1])
-			# ax.set_xlim3d(-1, 1)
-			# ax.set_ylim3d(-1, 1)
-			# ax.set_zlim3d(-1, 1)
-			# plt.show()
 		else:
 			# (7) calculate color from split-sum approximation
 
@@ -547,7 +539,6 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 			with torch.no_grad():
 				reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
-				# x_surface = rays_o + rays_d * depth_map[..., None]
 
 				reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
 				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
@@ -596,6 +587,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["diffuse_map"] = radiance_to_ldr(diffuse_map)
 	results["n_dot_v_map"] = n_dot_v
 	results["instance_map"] = instance_map
+	results["visibility_average_map"] = visibility_average_map
 
 	# results["normal_map_from_sigma_gradient"] = normal_map_from_sigma_gradient
 	# results["normal_map_from_sigma_gradient_surface"] = normal_map_from_sigma_gradient_surface
@@ -908,6 +900,7 @@ def render_decomp_path(
 		append_result(results_i, "target_normal_map", i, "target_normal_map")
 		append_result(results_i, "target_binormal_map", i, "target_binormal_map")
 		append_result(results_i, "target_tangent_map", i, "target_tangent_map")
+		append_result(results_i, "visibility_average_map", i, "visibility_average_map")
 
 		append_result(results_i, "inferred_depth_map", i, "inferred_disp")
 

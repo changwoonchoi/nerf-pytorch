@@ -80,6 +80,8 @@ def sample_generator_single_image(
     n_iters = initial_iters
     while True:
         random_image_index = np.random.randint(0, len(dataset), 1)[0]
+        # print("Random index :", random_image_index, "RANDOM!!!")
+
         H = dataset.height
         W = dataset.width
         if n_iters < precrop_iters:

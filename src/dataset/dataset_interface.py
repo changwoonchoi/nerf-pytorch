@@ -60,6 +60,9 @@ class NerfDataset(Dataset, ABC):
 
 		self.coarse_resize_scale = 4
 
+		self.near = kwargs.get("near_plane", 1)
+		self.far = kwargs.get("far_plane", 20)
+
 	def get_focal_matrix(self):
 		K = np.array([
 			[self.focal, 0, 0.5 * self.width],

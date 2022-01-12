@@ -251,6 +251,13 @@ def create_NeRFDecomp(args):
                                          out_ch=1, skips=skips)
         grad_vars.append({'params': depth_mlp.parameters(), 'name': 'depth_mlp'})
 
+    visibility_mlp = None
+    if args.infer_visibility:
+        visibility_mlp = PositionDirectionMLP(D=args.netdepth, W=args.netwidth,
+                                         input_ch=input_ch, input_ch_views=input_ch_views,
+                                         out_ch=1, skips=skips)
+        grad_vars.append({'params': depth_mlp.parameters(), 'name': 'visibility_mlp'})
+
     # Normal MLP
     normal_mlp = None
     if args.infer_normal:
@@ -264,7 +271,7 @@ def create_NeRFDecomp(args):
     env_map = None
     if args.use_environment_map:
         env_map = EnvironmentMap(n=args.N_envmap_size)
-        grad_vars.append({'params': env_map.emission, 'name': 'env_map'})
+        grad_vars.append({'params': env_map.emission, 'name': 'env_map', 'lr': args.lrate_env_map})
 
     optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
     # optimizer_depth = torch.optim.Adam(params=depth_mlp.parameters(), lr=args.lrate, betas=(0.9, 0.999))
@@ -312,8 +319,10 @@ def create_NeRFDecomp(args):
         'ndc': False,
         'lindisp': args.lindisp,
         "depth_mlp": depth_mlp,
+        "visibility_mlp": visibility_mlp,
         "normal_mlp": normal_mlp,
         "infer_depth": args.infer_depth,
+        "infer_visibility": args.infer_visibility,
         "infer_normal": args.infer_normal,
         "infer_normal_at_surface": args.infer_normal_at_surface,
         "coarse_radiance_number": args.coarse_radiance_number,
@@ -324,7 +333,10 @@ def create_NeRFDecomp(args):
         'use_environment_map': args.use_environment_map,
         "env_map": env_map,
         "lut_coefficient": args.lut_coefficient,
-        "depth_map_from_ground_truth": args.depth_map_from_ground_truth
+        "depth_map_from_ground_truth": args.depth_map_from_ground_truth,
+        "target_normal_map_for_radiance_calculation": args.calculating_normal_type,
+        "epsilon": args.epsilon_for_numerical_normal,
+        "epsilon_direction": args.epsilon_direction_for_numerical_normal,
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

@@ -89,6 +89,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--smooth_weight_type", type=str, default="color")
 	parser.add_argument("--beta_instance", type=float, default=1.)
 	parser.add_argument("--beta_instancewise_constant", type=float, default=0.1)
+	parser.add_argument("--beta_sigma_depth", type=float, default=1)
+
 	parser.add_argument("--albedo_instance_constant", action='store_true')
 	parser.add_argument("--irradiance_instance_constant", action='store_true')
 
@@ -98,6 +100,8 @@ def config_parser(default_files=None):
 
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
+	parser.add_argument("--lrate_env_map", type=float, default=5e-4, help='learning rate for env_map')
+
 	parser.add_argument("--lrate_decay", type=int, default=250,
 	                    help='exponential learning rate decay (in 1000 steps)')
 	parser.add_argument("--chunk", type=int, default=1024*16,
@@ -142,6 +146,7 @@ def config_parser(default_files=None):
 
 	parser.add_argument("--infer_depth", action='store_true', help='infer depth using additional MLP')
 	parser.add_argument("--use_radiance_linear", action='store_true', help='is_radiance_linear')
+	parser.add_argument("--infer_visibility", action='store_true', help='infer_visibility')
 
 	parser.add_argument("--use_gradient_for_incident_radiance", action='store_true', help='stop_gradient_for_incident_radiance')
 	parser.add_argument("--monte_carlo_integration_method", type=str, default="surface", help='decompose mode one of all or binary')
@@ -163,9 +168,15 @@ def config_parser(default_files=None):
 	# training options
 	parser.add_argument("--precrop_iters", type=int, default=0, help='number of steps to train on central crops')
 	parser.add_argument("--precrop_frac", type=float, default=.5, help='fraction of img taken for central crops')
+	parser.add_argument("--epsilon_for_numerical_normal", type=float, default=.01, help='epsilon_for_numerical_normal')
+	parser.add_argument("--epsilon_direction_for_numerical_normal", type=float, default=.005, help='epsilon_direction_for_numerical_normal')
+	parser.add_argument("--time_limit_in_minute", type=float, default=-1, help='time_limit_in_hour')
 
 	# test options
 	parser.add_argument("--extract_mesh", action='store_true', help='extract mesh')
+
+	parser.add_argument("--train_depth_from_ground_truth", action='store_true', help='train_depth_from_ground_truth')
+
 
 	# dataset options
 	parser.add_argument("--dataset_type", type=str, default='llff', help='options: llff / blender / deepvoxels')
@@ -181,6 +192,8 @@ def config_parser(default_files=None):
 
 	# clevr options
 	parser.add_argument("--sample_length", type=float, default=8, help='sampling length along ray')
+	parser.add_argument("--near_plane", type=float, default=1, help='near_plane')
+	parser.add_argument("--far_plane", type=float, default=20, help='far_plane')
 
 	## deepvoxels flags
 	parser.add_argument("--shape", type=str, default='greek',
