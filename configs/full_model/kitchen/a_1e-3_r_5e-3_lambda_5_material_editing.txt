@@ -12,3 +12,4 @@ smooth_weight_decay = 5
 
 edit_roughness
 edit_normal
+edit_albedo

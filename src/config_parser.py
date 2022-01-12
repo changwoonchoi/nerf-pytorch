@@ -169,6 +169,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--testskip", type=int, default=8,
 	                    help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
 	parser.add_argument("--edit_roughness", action='store_true', help='use edited roughness')
+	parser.add_argument("--edit_albedo", action='store_true', help='use edited albedo')
 	parser.add_argument("--edit_normal", action='store_true', help='use edited normal')
 
 	# clustering options

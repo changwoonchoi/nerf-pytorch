@@ -35,6 +35,7 @@ class NerfDataset(Dataset, ABC):
 		self.albedos = []
 		self.roughness = []
 		self.edited_roughness = []
+		self.edited_albedo = []
 		self.edited_normal = []
 		self.instances = []
 
@@ -42,6 +43,7 @@ class NerfDataset(Dataset, ABC):
 		self.load_albedo = kwargs.get("load_albedo", False)
 		self.load_roughness = kwargs.get("load_roughness", False)
 		self.load_edited_roughness = kwargs.get("edit_roughness", False)
+		self.load_edited_albedo = kwargs.get("edit_albedo", False)
 		self.load_edited_normal = kwargs.get("edit_normal", False)
 
 		self.instance_color_list = []
@@ -91,6 +93,10 @@ class NerfDataset(Dataset, ABC):
 		if self.load_edited_roughness:
 			edited_roughness_temp = self.edited_roughness[i].permute((2,0,1))
 			result["edited_roughness"] = t(edited_roughness_temp).permute((1, 2, 0))
+
+		if self.load_edited_albedo:
+			edited_albedo_temp = self.edited_albedo[i].permute((2, 0, 1))
+			result["edited_albedo"] = t(edited_albedo_temp).permute((1, 2, 0))
 
 		if self.load_edited_normal:
 			edited_normal_tmp = self.edited_normal[i].permute((2, 0, 1))
@@ -172,6 +178,8 @@ class NerfDataset(Dataset, ABC):
 				self.roughness.append(data["roughness"][0])
 			if self.load_edited_roughness:
 				self.edited_roughness.append(data["edited_roughness"][0])
+			if self.load_edited_albedo:
+				self.edited_albedo.append(data['edited_albedo'][0])
 			if self.load_edited_normal:
 				self.edited_normal.append(data["edited_normal"][0])
 		self.full_data_loaded = True
@@ -191,6 +199,8 @@ class NerfDataset(Dataset, ABC):
 			self.roughness = torch.stack(self.roughness, 0).to(device)
 		if self.load_edited_roughness:
 			self.edited_roughness = torch.stack(self.edited_roughness, 0).to(device)
+		if self.load_edited_albedo:
+			self.edited_albedo = torch.stack(self.edited_albedo, 0).to(device)
 		if self.load_edited_normal:
 			self.edited_normal = torch.stack(self.edited_normal, 0).to(device)
 

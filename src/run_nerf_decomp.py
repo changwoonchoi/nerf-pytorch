@@ -87,6 +87,7 @@ def train():
         load_params_test = {k: load_params[k] for k in load_params}
         load_params_test["edit_roughness"] = args.edit_roughness
         load_params_test["edit_normal"] = args.edit_normal
+        load_params_test["edit_albedo"] = args.edit_albedo
 
         dataset = load_dataset_split("train", **load_params)
         dataset_val = load_dataset_split("test", skip=10, **load_params)
@@ -636,6 +637,7 @@ def train():
                     use_instance=use_instance_mask, label_encoder=label_encoder,
                     hemisphere_samples=hemisphere_samples,
                     approximate_radiance=True, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal,
+                    edit_albedo=args.edit_albedo,
                     editing_roughness_level=10
                 )
             else:

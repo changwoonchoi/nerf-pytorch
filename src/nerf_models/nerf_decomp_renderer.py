@@ -157,7 +157,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				# target_roughness_map_for_radiance_calculation="ground_truth",
 				# target_radiance_map_for_radiance_calculation="ground_truth",
 				use_instance=False, is_instance_label_logit=True,
-				hemisphere_samples=None, edit_roughness=False, edit_normal=False, editing_roughness_scale=0,
+				hemisphere_samples=None, edit_roughness=False, edit_normal=False, edit_albedo=False,
+				editing_roughness_scale=0,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -373,11 +374,15 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	target_roughness_map = roughness_map
 	if edit_roughness:
 		editing_roughness_map = gt_values["edited_roughness"][:, 0]
-		editing_sample_mask = editing_roughness_map == 0
-		target_roughness_map[editing_sample_mask] = editing_roughness_map[editing_sample_mask] + editing_roughness_scale
+		roughness_editing_sample_mask = editing_roughness_map == 0
+		target_roughness_map[roughness_editing_sample_mask] = editing_roughness_map[roughness_editing_sample_mask] + editing_roughness_scale
 	if edit_normal:
 		editing_normal_map = normalize(2 * gt_values["edited_normal"] - 1, dim=-1)
-		target_normal_map[editing_sample_mask] = editing_normal_map[editing_sample_mask]
+		target_normal_map[roughness_editing_sample_mask] = editing_normal_map[roughness_editing_sample_mask]
+	if edit_albedo:
+		albedo_editing_sample_mask = torch.logical_not(torch.logical_and(torch.logical_and(gt_values["edited_albedo"][:, 0]==1, gt_values["edited_albedo"][:,1]==1),gt_values["edited_albedo"][:,2]==1))
+		editing_albedo_map = gt_values["edited_albedo"]
+		target_albedo_map[albedo_editing_sample_mask] = editing_albedo_map[albedo_editing_sample_mask]
 
 	# if target_roughness_map_for_radiance_calculation == "ground_truth":
 	# 	target_roughness_map = gt_values["roughness"][...,0]
@@ -804,7 +809,7 @@ def render_decomp_path(
 			imageio.imwrite(filename, result_image_8bit)
 
 	for i, c2w in enumerate(tqdm(render_poses)):
-		for roughness_level in range(kwargs.get('editing_roughness_level', 30)):
+		for roughness_level in range(kwargs.get('editing_roughness_level', 10)):
 			gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
 			for k in gt_values.keys():
 				gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
