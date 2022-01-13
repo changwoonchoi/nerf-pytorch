@@ -72,10 +72,10 @@ class NeRFDecomp(nn.Module):
 
         self.coarse_radiance_number = coarse_radiance_number
         self.additional_radiance_feature_linear = nn.ModuleList(
-            [nn.Linear(W, W // 2)] * coarse_radiance_number
+            [nn.Linear(W, W // 2) for _ in range(coarse_radiance_number)]
         )
         self.additional_radiance_linear = nn.ModuleList(
-            [nn.Linear(W // 2, 3)] * coarse_radiance_number
+            [nn.Linear(W // 2, 3) for _ in range(coarse_radiance_number)]
         )
         #
         # if coarse_radiance_number > 0:
