@@ -117,9 +117,6 @@ def sample_generator_single_image(
             neigh_info["rgb"] = dataset.get_info(
                 random_image_index, random_uv_neigh[..., 0].reshape(-1,), random_uv_neigh[..., 1].reshape(-1,)
             )['rgb'].reshape(-1, 8, 3)
-            neigh_info["normal"] = dataset.get_info(
-                random_image_index, random_uv_neigh[..., 0].reshape(-1,), random_uv_neigh[..., 1].reshape(-1,)
-            )['normal'].reshape(-1, 8, 3)
 
         pixel_info = dataset.get_info(random_image_index, random_u, random_v)
 

@@ -2,8 +2,6 @@
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
-import matplotlib
-matplotlib.use('TkAgg')
 import random
 import numpy as np
 import torch
@@ -86,18 +84,22 @@ def train():
 			"sample_length": args.sample_length,
 			"coarse_radiance_number": args.coarse_radiance_number,
 			"load_instance_label_mask": args.instance_mask,
-			"near_plane": args.near_plane,
-			"far_plane": args.far_plane
+			# "near_plane": args.near_plane,
+			# "far_plane": args.far_plane
 		}
 		dataset = load_dataset_split("train", **load_params)
 
 		# force load albedo & normal for test set
-		load_params["load_albedo"] = True
-		load_params["load_normal"] = True
-		dataset_val = load_dataset_split("test", skip=10, **load_params)
+		if not args.dataset_type == "real":
+			load_params["load_albedo"] = True
+			load_params["load_normal"] = True
+			dataset_val = load_dataset_split("test", skip=10, **load_params)
+		else:
+			dataset_val = load_dataset_split("train", skip=10, **load_params)
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
 
 		# calculate base color
+		"""
 		dataset.get_base_color(
 			learn_from_gt_albedo_map=args.learn_albedo_from_oracle,
 			cluster_image_number=args.cluster_image_number,
@@ -114,6 +116,7 @@ def train():
 			np.savetxt(os.path.join(args.basedir, args.expname, 'init_basecolor.txt'), dataset.init_basecolor)
 		init_basecolor = dataset.init_basecolor
 		dataset_val.init_basecolor = init_basecolor
+		"""
 
 		hwf = [dataset.height, dataset.width, dataset.focal]
 
@@ -208,11 +211,12 @@ def train():
 		colored_label_gt = colored_label_gt.permute((0, 3, 1, 2))
 		writer.add_images('test/gt_instance_colored', colored_label_gt, 0)
 
-	normal_gt = dataset_val.normals.permute((0, 3, 1, 2))
-	writer.add_images('test/gt_normal', normal_gt, 0)
+	if not args.dataset_type == "real":
+		normal_gt = dataset_val.normals.permute((0, 3, 1, 2))
+		writer.add_images('test/gt_normal', normal_gt, 0)
 
-	albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
-	writer.add_images('test/gt_albedo', albedo_gt, 0)
+		albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
+		writer.add_images('test/gt_albedo', albedo_gt, 0)
 
 	mse_loss = torch.nn.MSELoss()
 	l1_loss = torch.nn.L1Loss()
@@ -426,7 +430,8 @@ def train():
 					loss_render_coarse_radiance.append(loss_render_radiance_i)
 
 				# 2) albedo render loss
-				loss_albedo_render = calculate_loss("albedo_map", target_chromaticity)
+				if not args.dataset_type == 'real':
+					loss_albedo_render = calculate_loss("albedo_map", target_chromaticity)
 				# loss_roughness_render = calculate_loss("roughness_map", target_info.get("roughness", 1.0))
 
 				# 3) Depth map if required
@@ -628,7 +633,8 @@ def train():
 					writer.add_scalar('Loss/Total_Loss', total_loss, i)
 					writer.add_scalar('Loss/Loss_render', loss_render, i)
 
-					writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
+					if not args.dataset_type == 'real':
+						writer.add_scalar('Loss/Loss_albedo_render', loss_albedo_render, i)
 					# writer.add_scalar('Loss/Loss_roughness_render', loss_roughness_render, i)
 
 					writer.add_scalar('Loss/Loss_radiance_render', loss_render_radiance, i)

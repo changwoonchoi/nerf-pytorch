@@ -249,9 +249,12 @@ class NerfDataset(Dataset, ABC):
 def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_clevr import ClevrDataset
 	from dataset.dataset_mitsuba import MitsubaDataset
+	from dataset.dataset_real import RealDataset
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
 	elif dataset_type == "mitsuba":
 		return MitsubaDataset(basedir, **kwargs)
+	elif dataset_type == "real":
+		return RealDataset(basedir, **kwargs)
 	#elif dataset_type == "clevr_decomp":
 	#	return ClevrDecompDataset(basedir, **kwargs)
