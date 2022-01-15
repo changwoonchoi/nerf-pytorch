@@ -10,13 +10,13 @@ near_plane = 0.1
 use_viewdirs = True
 lrate_decay = 500
 # lrate = 1e-4
-lrate_env_map = 5e-3
+# lrate_env_map = 5e-3
 
 
 N_samples = 64
 N_importance = 128
 N_rand = 512
-N_iter = 100000
+N_iter = 200000
 
 # if calculate normal chunk should be small !!
 chunk = 1024
@@ -86,4 +86,4 @@ N_envmap_size = 16
 
 # calculating_normal_type = normal_map_from_depth_gradient_epsilon
 calculating_normal_type = ground_truth
-depth_map_from_ground_truth
+# depth_map_from_ground_truth

@@ -71,14 +71,26 @@ class NeRFDecomp(nn.Module):
 
         # x, d dependent
         self.radiance_linear = nn.Linear(W, 3)
-
         self.coarse_radiance_number = coarse_radiance_number
+        # for i in range(self.coarse_radiance_number):
+        #     self.__setattr__("additional_radiance_feature_linear_%d" % i, nn.Linear(W, W//2))
+        #     self.__setattr__("additional_radiance_linear_%d" % i, nn.Linear(W // 2, 3))
+
+        # self.coarse_radiance_number = coarse_radiance_number
+        # self.additional_radiance_feature_linear_1 = nn.Linear(W, W // 2)
+        # self.additional_radiance_linear_1 = nn.Linear(W // 2, 3)
+        # self.additional_radiance_feature_linear_2 = nn.Linear(W, W // 2)
+        # self.additional_radiance_linear_2 = nn.Linear(W // 2, 3)
+        # self.additional_radiance_feature_linear_3 = nn.Linear(W, W // 2)
+        # self.additional_radiance_linear_3 = nn.Linear(W // 2, 3)
+
         self.additional_radiance_feature_linear = nn.ModuleList(
-            [nn.Linear(W, W // 2)] * coarse_radiance_number
+            [nn.Linear(W, W // 2) for _ in range(coarse_radiance_number)]
         )
         self.additional_radiance_linear = nn.ModuleList(
-            [nn.Linear(W // 2, 3)] * coarse_radiance_number
+            [nn.Linear(W // 2, 3) for _ in range(coarse_radiance_number)]
         )
+
         #
         # if coarse_radiance_number > 0:
         #
@@ -109,10 +121,12 @@ class NeRFDecomp(nn.Module):
 
         # (1) position
         for i, l in enumerate(self.positions_linears):
+            # print(self.positions_linears[i].parameters(), i, "Position linears")
             h = self.positions_linears[i](h)
             h = F.relu(h)
             if i in self.skips:
                 h = torch.cat([input_pts, h], dim=-1)
+            # print(h, i, "H at position!!!!!1")
 
         # (2) dependent only to position
         # (2-1) sigma
@@ -150,7 +164,32 @@ class NeRFDecomp(nn.Module):
         radiance = self.radiance_linear(h)
         ret = [sigma, albedo, roughness, irradiance, radiance]
 
-        for i in range(self.coarse_radiance_number):
+        # for i in range(self.coarse_radiance_number):
+        #     radiance_i = self.__getattr__("additional_radiance_feature_linear_%d" % i)(h)
+        #     radiance_i = F.relu(radiance_i)
+        #     radiance_i = self.__getattr__("additional_radiance_linear_%d" % i)(radiance_i)
+        #     ret.append(radiance_i)
+            # print(radiance_i, i)
+
+        # radiance_1 = self.additional_radiance_feature_linear_1(h)
+        # radiance_1 = F.relu(radiance_1)
+        # radiance_1 = self.additional_radiance_linear_1(radiance_1)
+        #
+        # radiance_2 = self.additional_radiance_feature_linear_2(h)
+        # radiance_2 = F.relu(radiance_2)
+        # radiance_2 = self.additional_radiance_linear_2(radiance_2)
+        #
+        # radiance_3 = self.additional_radiance_feature_linear_3(h)
+        # radiance_3 = F.relu(radiance_3)
+        # radiance_3 = self.additional_radiance_linear_3(radiance_3)
+
+        #print(radiance_1, 1)
+        #print(radiance_2, 2)
+        #print(radiance_3, 3)
+
+        # ret += [radiance_1, radiance_2, radiance_3]
+
+        for i, l in enumerate(self.additional_radiance_feature_linear):
             radiance_i = self.additional_radiance_feature_linear[i](h)
             radiance_i = F.relu(radiance_i)
             radiance_i = self.additional_radiance_linear[i](radiance_i)
@@ -337,6 +376,7 @@ def create_NeRFDecomp(args):
         "target_normal_map_for_radiance_calculation": args.calculating_normal_type,
         "epsilon": args.epsilon_for_numerical_normal,
         "epsilon_direction": args.epsilon_direction_for_numerical_normal,
+        "N_hemisphere_sample_sqrt": args.N_hemisphere_sample_sqrt
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

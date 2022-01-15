@@ -6,6 +6,8 @@ from pathlib import Path
 from pprint import pprint
 import sys
 import natsort
+import torch
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 
 def find_all_configs(directory):
@@ -44,6 +46,10 @@ def run_single_process(gpu_id, queue, lock):
 		print(command)
 		subprocess.run(command.split(" "))
 
+		# try:
+		#
+		# except Exception:
+		# 	pass
 
 class MultiProcessingRenderer:
 	def __init__(self, config_file):

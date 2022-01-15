@@ -17,7 +17,7 @@ from nerf_models.normal_from_sigma import *
 import matplotlib.pyplot as plt
 from utils.math_utils import get_TBN
 from nerf_models.microfacet import Microfacet
-
+from utils.math_utils import *
 
 def tonemap(x):
 	if x is None:
@@ -165,7 +165,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				target_roughness_map_for_radiance_calculation="ground_truth",
 				target_radiance_map_for_radiance_calculation="ground_truth",
 				use_instance=False, is_instance_label_logit=True,
-				hemisphere_samples=None,
+				N_hemisphere_sample_sqrt=0, hemisphere_samples = None,
 				**kwargs):
 	"""Transforms model's predictions to semantically meaningful values.
 	Args:
@@ -223,17 +223,16 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	weights_detached = weights.detach()
 
 	# (2) get depth / disp / acc map
+	depth_map = torch.sum(weights * z_vals, -1)
+	target_depth_map = depth_map
 	if kwargs.get("depth_map_from_ground_truth", False):
-		depth_map = gt_values["depth"][..., 0]
-		# depth_map = torch.clip(depth_map, 1, 20)
-	else:
-		depth_map = torch.sum(weights * z_vals, -1)
+		target_depth_map = gt_values["depth"][..., 0]
 
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
 	acc_map = torch.sum(weights, -1)
 
 	# (3) get surface point surface_x
-	x_surface = rays_o + rays_d * depth_map[..., None]
+	x_surface = rays_o + rays_d * target_depth_map[..., None]
 	x_surface.detach_()
 
 	# (4A) calculate normal from sigma gradient or read ground_truth value
@@ -317,6 +316,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		coarse_radiance = radiance_f(raw[..., N:N + 3])
 		coarse_radiance_map = torch.sum(weights_detached[..., None] * coarse_radiance, -2)
 		coarse_radiance_maps.append(coarse_radiance_map)
+
 		N += 3
 	"""
 	# (6) infer normal if necessary
@@ -405,6 +405,11 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		n_dot_v = torch.clip(n_dot_v, 0, 1)
 
 		if kwargs.get('use_monte_carlo_integration', True):
+			# N_hemisphere_sample = N_hemisphere_sample_sqrt * N_hemisphere_sample_sqrt
+			#hemisphere_samples = get_hemisphere_samples(N_hemisphere_sample_sqrt)
+			#hemisphere_samples = torch.Tensor(hemisphere_samples)
+
+			# print(hemisphere_samples.shape, "HEMI SHAPEEEEEEEEEEEEEEEEEE")
 			microfacet = Microfacet()
 			# with torch.no_grad():
 			target_binormal_map, target_tangent_map = get_TBN(target_normal_map)
@@ -604,6 +609,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["disp_map"] = disp_map
 	results["acc_map"] = acc_map
 	results["depth_map"] = depth_map
+	results["target_depth_map"] = target_depth_map
+
 	results["weights"] = weights
 
 	return results
@@ -906,6 +913,7 @@ def render_decomp_path(
 
 		append_result(results_i, "disp_map", i, "disp")
 		append_result(results_i, "depth_map", i, "depth")
+		append_result(results_i, "target_depth_map", i, "target_depth")
 
 		append_result(results_i, "instance_map", i, "instance_map", label_encoder=label_encoder)
 

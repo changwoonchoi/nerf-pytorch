@@ -60,6 +60,8 @@ class NerfDataset(Dataset, ABC):
 
 		self.coarse_resize_scale = 4
 
+
+
 		self.near = kwargs.get("near_plane", 1)
 		self.far = kwargs.get("far_plane", 20)
 
@@ -145,7 +147,7 @@ class NerfDataset(Dataset, ABC):
 	def get_test_render_poses(self):
 		pass
 
-	def load_all_data(self, num_of_workers=10):
+	def load_all_data(self, num_of_workers=4):
 		"""
 		Load all data using multiprocessing
 		:param num_of_workers: number of multiprocess
@@ -249,6 +251,7 @@ class NerfDataset(Dataset, ABC):
 def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_clevr import ClevrDataset
 	from dataset.dataset_mitsuba import MitsubaDataset
+
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
 	elif dataset_type == "mitsuba":

@@ -110,18 +110,22 @@ def sample_generator_single_image(
         random_uv = np.stack([random_u, random_v], 1)  # (N_rand, 2)
         uv_t = torch.Tensor(random_uv)
         random_uv_neigh = None
+        pixel_info = dataset.get_info(random_image_index, random_u, random_v)
+
         neigh_info = {}
         if ray_sample == "patch":
             random_uv_neigh = get_neighbor_coord(random_uv)  # (N_rand, 8, 2)
             uv_neigh_t = torch.Tensor(random_uv_neigh)
-            neigh_info["rgb"] = dataset.get_info(
-                random_image_index, random_uv_neigh[..., 0].reshape(-1,), random_uv_neigh[..., 1].reshape(-1,)
-            )['rgb'].reshape(-1, 8, 3)
-            neigh_info["normal"] = dataset.get_info(
-                random_image_index, random_uv_neigh[..., 0].reshape(-1,), random_uv_neigh[..., 1].reshape(-1,)
-            )['normal'].reshape(-1, 8, 3)
+            if "rgb" in pixel_info:
+                neigh_info["rgb"] = dataset.get_info(
+                    random_image_index, random_uv_neigh[..., 0].reshape(-1,), random_uv_neigh[..., 1].reshape(-1,)
+                )['rgb'].reshape(-1, 8, 3)
 
-        pixel_info = dataset.get_info(random_image_index, random_u, random_v)
+            if "normal" in pixel_info:
+                neigh_info["normal"] = dataset.get_info(
+                    random_image_index, random_uv_neigh[..., 0].reshape(-1,), random_uv_neigh[..., 1].reshape(-1,)
+                )['normal'].reshape(-1, 8, 3)
+
 
         pose = dataset.poses[random_image_index]
         # image = dataset.images[random_image_index]

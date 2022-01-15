@@ -157,6 +157,30 @@ def get_hemisphere_samples(N):
 
 	return input_array
 
+
+import random
+def get_hemisphere_samples_random(N):
+	input_array = np.zeros((N * N, 3), dtype=np.float32)
+	for i in range(N * N):
+		v = get_direction_from(i, (random.random(), random.random()), (N, N))
+		input_array[i][0] = v[0]
+		input_array[i][1] = v[1]
+		input_array[i][2] = v[2]
+
+	return input_array
+
+
+def get_uniform_hemisphere_samples(N):
+
+	random_us = torch.rand(N, 2)
+
+	z = random_us[..., 0]
+	r = torch.sqrt(torch.clip(1 - z * z, 0, 1))
+	phi = 2 * np.pi * random_us[..., 1]
+	hemisphere_samples = torch.stack([r * torch.cos(phi), r * torch.sin(phi), z], dim=1)
+
+	return hemisphere_samples
+
 import torch.nn.functional as F
 
 

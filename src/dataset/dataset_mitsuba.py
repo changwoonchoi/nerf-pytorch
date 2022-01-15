@@ -22,6 +22,13 @@ class MitsubaDataset(NerfDataset):
 		super().__init__("mitsuba", **kwargs)
 		self.scene_name = basedir.split("/")[-1]
 
+		with open(os.path.join(basedir, 'min_max_depth.json'), 'r') as fp:
+			f = json.load(fp)
+			self.near = f["min_depth"] * 0.9
+			self.far = f["max_depth"] * 1.1
+			# print("NEAR", self.near)
+			# print("FAR", self.far)
+
 		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
 			self.meta = json.load(fp)
 
