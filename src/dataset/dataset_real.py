@@ -16,10 +16,11 @@ class RealDataset(NerfDataset):
 
         with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
             self.meta = json.load(fp)
-
         self.skip = kwargs.get("skip", 1)
         if self.split == "train":
             self.skip = 1
+        # if kwargs.get("force_skip", False):
+        #     self.skip = kwargs.get("skip", 1)
 
         image0_path = os.path.join(self.basedir, 'train/1.png')
         image0 = imageio.imread(image0_path, pilmode='RGB')

@@ -95,7 +95,7 @@ def train():
 			load_params["load_normal"] = True
 			dataset_val = load_dataset_split("test", skip=10, **load_params)
 		else:
-			dataset_val = load_dataset_split("train", skip=10, **load_params)
+			dataset_val = load_dataset_split("test", skip=1, **load_params)
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
 
 		# calculate base color

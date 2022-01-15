@@ -1,7 +1,7 @@
 include = common.txt
 
 ray_sample = "patch"
-N_rand = 512
+N_rand = 2048
 
 roughness_smooth
 
@@ -11,4 +11,5 @@ smooth_weight_decay = 5
 
 lindisp = True
 
-N_iter_ignore_approximated_radiance = 15000
+N_iter_ignore_approximated_radiance = 50000
+N_iter = 400000
