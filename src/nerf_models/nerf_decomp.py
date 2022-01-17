@@ -316,7 +316,7 @@ def create_NeRFDecomp(args):
         'use_viewdirs': args.use_viewdirs,
         'white_bkgd': args.white_bkgd,
         'raw_noise_std': args.raw_noise_std,
-        'ndc': False,
+        'ndc': args.ndc,
         'lindisp': args.lindisp,
         "depth_mlp": depth_mlp,
         "visibility_mlp": visibility_mlp,

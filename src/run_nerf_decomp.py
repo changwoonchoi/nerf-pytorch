@@ -84,6 +84,7 @@ def train():
 			"sample_length": args.sample_length,
 			"coarse_radiance_number": args.coarse_radiance_number,
 			"load_instance_label_mask": args.instance_mask,
+			"ndc": args.ndc,
 			# "near_plane": args.near_plane,
 			# "far_plane": args.far_plane
 		}

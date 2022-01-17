@@ -28,9 +28,13 @@ class RealDataset(NerfDataset):
 
         self.height = int(self.original_height * self.scale)
         self.width = int(self.original_width * self.scale)
-
-        self.near = self.meta["near"]
-        self.far = self.meta["far"]
+        self.ndc = kwargs.get("ndc", False)
+        if self.ndc:
+            self.near = 0.
+            self.far = 1.
+        else:
+            self.near = self.meta["near"]
+            self.far = self.meta["far"]
 
         self.focal = self.meta["focal"] * self.scale
 
