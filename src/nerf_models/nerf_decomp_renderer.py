@@ -368,7 +368,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	max_irradiance_map = None
 	visibility_average_map = None
 	n_dot_v = None
-
+	reflected_radiance_map = None
+	prefiltered_reflected_map = None
 	if kwargs.get('approximate_radiance', False):
 
 		# calculate normal only approximate radiance
@@ -541,11 +542,17 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				specular_map = F0 * envBRDF_coefficient1 + envBRDF_coefficient0[..., None]
 			else:
 				raise ValueError
+			reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
+			reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
 
-			with torch.no_grad():
-				reflected_dirs = rays_d - 2 * torch.sum(target_normal_map * rays_d, -1, keepdim=True) * target_normal_map
+			if not kwargs.get('use_gradient_for_incident_radiance', False):
 
-				reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
+				with torch.no_grad():
+					reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
+					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, is_radiance_sigmoid=is_radiance_sigmoid)
+
+					prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
+			else:
 				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
 				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, is_radiance_sigmoid=is_radiance_sigmoid)
 
@@ -585,6 +592,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["irradiance_map"] = radiance_to_ldr(irradiance_map)
 	results["min_irradiance_map"] = radiance_to_ldr(min_irradiance_map)
 	results["max_irradiance_map"] = radiance_to_ldr(max_irradiance_map)
+	results["reflected_radiance_map"] = radiance_to_ldr(reflected_radiance_map)
+	results["prefiltered_reflected_map"] = radiance_to_ldr(prefiltered_reflected_map)
 
 	results["albedo_map"] = albedo_map
 	results["roughness_map"] = roughness_map
@@ -890,6 +899,8 @@ def render_decomp_path(
 		append_result(results_i, "min_irradiance_map", i, "min_irradiance")
 
 		append_result(results_i, "albedo_map", i, "albedo")
+		append_result(results_i, "reflected_radiance_map", i, "reflected_radiance")
+		append_result(results_i, "prefiltered_reflected_map", i, "prefiltered_reflected")
 
 		append_result(results_i, "roughness_map", i, "roughness")
 		append_result(results_i, "specular_map", i, "specular")

@@ -2,7 +2,35 @@ import cv2
 import numpy as np
 from sklearn.preprocessing import normalize
 import torch
+import os
+from PIL import Image
 
+
+def convert_image_to_uint(image):
+	x = np.copy(image)
+	x *= 255
+	x = np.clip(x, 0, 255)
+	x = x.astype('uint8')
+	return x
+
+
+def save_pred_images(images, file_path):
+	x = convert_image_to_uint(images)
+
+	new_im = Image.fromarray(x)
+	dirname = os.path.dirname(file_path)
+	if not os.path.exists(dirname):
+		os.makedirs(dirname)
+	if file_path.endswith(".png"):
+		new_im.save(file_path)
+	else:
+		new_im.save("%s.png" % file_path)
+
+def save_pred_numpy(images, file_path):
+	dirname = os.path.dirname(file_path)
+	if not os.path.exists(dirname):
+		os.makedirs(dirname)
+	np.save(file_path, images)
 
 def load_image_from_path(image_file_path, scale=1):
 	image = cv2.imread(image_file_path)
@@ -12,6 +40,14 @@ def load_image_from_path(image_file_path, scale=1):
 	image = image.astype(np.float32)
 	image /= 255.0
 
+	return image
+
+def load_image(path):
+	image = Image.open(path)
+	image = np.asarray(image, dtype=np.float32)
+	if image.shape[-1] == 4:
+		image = image[:, :, 0:3]
+	image /= 255.0
 	return image
 
 

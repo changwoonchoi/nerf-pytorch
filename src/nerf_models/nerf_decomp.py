@@ -17,7 +17,8 @@ class NeRFDecomp(nn.Module):
             instance_label_dimension=0, num_cluster=10, use_basecolor_score_feature_layer=True,
             use_illumination_feature_layer=False,
             use_instance_feature_layer=False,
-            coarse_radiance_number=0
+            coarse_radiance_number=0,
+            is_color_independent_to_direction=True,
     ):
         """
         NeRFDecomp Model
@@ -99,6 +100,7 @@ class NeRFDecomp(nn.Module):
         #     self.additional_radiance_linear = None
         #for i in range(self.coarse_radiance_number):
         #    self.additional_radiance_linear.append(nn.Linear(W, 3))
+        self.is_color_independent_to_direction = is_color_independent_to_direction
 
     def __str__(self):
         logs = ["[NeRFDecomp"]
@@ -155,39 +157,15 @@ class NeRFDecomp(nn.Module):
             instance = self.instance_linear(instance_feature)
 
         # (3) position + direction
-        feature = self.feature_linear(h)
-        h = torch.cat([feature, input_views], dim=-1)
-        for i, l in enumerate(self.views_linears):
-            h = self.views_linears[i](h)
-            h = F.relu(h)
+        if not self.is_color_independent_to_direction:
+            feature = self.feature_linear(h)
+            h = torch.cat([feature, input_views], dim=-1)
+            for i, l in enumerate(self.views_linears):
+                h = self.views_linears[i](h)
+                h = F.relu(h)
 
         radiance = self.radiance_linear(h)
         ret = [sigma, albedo, roughness, irradiance, radiance]
-
-        # for i in range(self.coarse_radiance_number):
-        #     radiance_i = self.__getattr__("additional_radiance_feature_linear_%d" % i)(h)
-        #     radiance_i = F.relu(radiance_i)
-        #     radiance_i = self.__getattr__("additional_radiance_linear_%d" % i)(radiance_i)
-        #     ret.append(radiance_i)
-            # print(radiance_i, i)
-
-        # radiance_1 = self.additional_radiance_feature_linear_1(h)
-        # radiance_1 = F.relu(radiance_1)
-        # radiance_1 = self.additional_radiance_linear_1(radiance_1)
-        #
-        # radiance_2 = self.additional_radiance_feature_linear_2(h)
-        # radiance_2 = F.relu(radiance_2)
-        # radiance_2 = self.additional_radiance_linear_2(radiance_2)
-        #
-        # radiance_3 = self.additional_radiance_feature_linear_3(h)
-        # radiance_3 = F.relu(radiance_3)
-        # radiance_3 = self.additional_radiance_linear_3(radiance_3)
-
-        #print(radiance_1, 1)
-        #print(radiance_2, 2)
-        #print(radiance_3, 3)
-
-        # ret += [radiance_1, radiance_2, radiance_3]
 
         for i, l in enumerate(self.additional_radiance_feature_linear):
             radiance_i = self.additional_radiance_feature_linear[i](h)
@@ -261,7 +239,8 @@ def create_NeRFDecomp(args):
         num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
         use_illumination_feature_layer=args.use_illumination_feature_layer,
         use_instance_feature_layer=args.use_instance_feature_layer,
-        coarse_radiance_number=args.coarse_radiance_number
+        coarse_radiance_number=args.coarse_radiance_number,
+        is_color_independent_to_direction=args.color_independent_to_direction
     ).to(args.device)
     logger.info(model)
 
@@ -276,7 +255,8 @@ def create_NeRFDecomp(args):
             num_cluster=args.num_cluster, use_basecolor_score_feature_layer=args.use_basecolor_score_feature_layer,
             use_illumination_feature_layer=args.use_illumination_feature_layer,
             use_instance_feature_layer=args.use_instance_feature_layer,
-            coarse_radiance_number=args.coarse_radiance_number
+            coarse_radiance_number=args.coarse_radiance_number,
+            is_color_independent_to_direction=args.color_independent_to_direction
         ).to(args.device)
         logger.info("NeRFDecomp fine model")
         logger.info(model_fine)
@@ -318,6 +298,7 @@ def create_NeRFDecomp(args):
     start = 0
     basedir = args.basedir
     expname = args.expname
+    elapsed_time = 0
 
     # Load Checkpoint
     if args.ft_path is not None and args.ft_path != 'None':
@@ -333,6 +314,8 @@ def create_NeRFDecomp(args):
         ckpt = torch.load(ckpt_path)
 
         start = ckpt['global_step']
+        elapsed_time = ckpt['elapsed_time']
+
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
         model.load_state_dict(ckpt['network_fn_state_dict'])
@@ -383,4 +366,4 @@ def create_NeRFDecomp(args):
     render_kwargs_test['perturb'] = False
     render_kwargs_test['raw_noise_std'] = 0
 
-    return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer
+    return render_kwargs_train, render_kwargs_test, start, elapsed_time, grad_vars, optimizer

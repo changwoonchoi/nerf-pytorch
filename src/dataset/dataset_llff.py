@@ -17,25 +17,10 @@ import math
 from utils.image_utils import *
 
 
-class MitsubaDataset(NerfDataset):
+class LLFFDataset(NerfDataset):
 	def __init__(self, basedir, **kwargs):
-		super().__init__("mitsuba", **kwargs)
+		super().__init__("llff", **kwargs)
 		self.scene_name = basedir.split("/")[-1]
-
-		# with open(os.path.join(basedir, 'min_max_depth.json'), 'r') as fp:
-		# 	f = json.load(fp)
-		# 	self.near = f["min_depth"] * 0.9
-		# 	self.far = f["max_depth"] * 1.1
-
-		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
-			self.meta = json.load(fp)
-
-		if self.load_instance_label_mask:
-			self.instance_color_list = np.loadtxt(os.path.join(basedir, 'instance_label.txt'))
-			self.instance_num = len(self.instance_color_list)
-		else:
-			self.instance_color_list = []
-			self.instance_num = 0
 
 		self.basedir = basedir
 
@@ -52,17 +37,6 @@ class MitsubaDataset(NerfDataset):
 		self.height = int(self.original_height * self.scale)
 		self.width = int(self.original_width * self.scale)
 		self.focal = .5 * self.width / np.tan(0.5 * self.camera_angle_x)
-
-
-	# 	self.load_near_far_plane()
-	#
-	# def load_near_far_plane(self):
-	# 	"""
-	# 	Load near and far plane
-	# 	:return:
-	# 	"""
-	# 	self.near = 1
-	# 	self.far = 20
 
 	def __len__(self):
 		return len(self.meta['frames'][::self.skip])
@@ -81,8 +55,6 @@ class MitsubaDataset(NerfDataset):
 		albedo_file_path = os.path.join(self.basedir, self.split, "%d_albedo.png" % (self.skip * index + 1))
 		roughness_file_path = os.path.join(self.basedir, self.split, "%d_roughness.png" % (self.skip * index + 1))
 		depth_file_path = os.path.join(self.basedir, self.split, "%d_depth.npy" % (self.skip * index + 1))
-		diffuse_file_path = os.path.join(self.basedir, self.split, "%d_diffuse.png" % (self.skip * index + 1))
-		specular_file_path = os.path.join(self.basedir, self.split, "%d_specular.png" % (self.skip * index + 1))
 
 		# (1) load RGB Image
 		sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
@@ -96,9 +68,6 @@ class MitsubaDataset(NerfDataset):
 			sample["roughness"] = load_image_from_path(roughness_file_path, scale=self.scale)[..., 0:1]
 		if self.load_depth:
 			sample["depth"] = load_numpy_from_path(depth_file_path, scale=self.scale)[..., None]
-		if self.load_diffuse_specular:
-			sample["diffuse"] = load_image_from_path(diffuse_file_path, scale=self.scale)
-			sample["specular"] = load_image_from_path(specular_file_path, scale=self.scale)
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:

@@ -29,17 +29,11 @@ def find_all_configs(directory):
 	return configs
 
 
-def run_single_process(gpu_id, queue, lock):
+def run_single_process(gpu_id, configs):
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 	os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-
-	while True:
-		with lock:
-			if queue.empty():
-				print("queue is empty!!")
-				break
-			else:
-				config_file = queue.get()
+	# print(gpu_id, configs)
+	for config_file in configs:
 
 		command = "python run_nerf_decomp.py --config %s" % config_file
 
@@ -69,24 +63,25 @@ class MultiProcessingRenderer:
 		pprint(config_files)
 		gpu_ids = multiprocessing_configs.pop("available_gpus")
 
-		queue = Queue()
-		for config in config_files:
-			queue.put(config)
-
 		procs = []
-		lock = Lock()
+		gpu_configs = [[] for _ in range(len(gpu_ids))]
+		index = 0
+		for config in config_files:
+			gpu_configs[index].append(config)
+			index += 1
+			index %= len(gpu_ids)
 
 		if len(gpu_ids) > 1:
 			for i in range(len(gpu_ids)):
 				gpu_id = gpu_ids[i]
-				proc = Process(target=run_single_process, args=(gpu_id, queue, lock))
+				proc = Process(target=run_single_process, args=(gpu_id, gpu_configs[i]))
 				procs.append(proc)
 				proc.start()
 
 			for proc in procs:
 				proc.join()
 		else:
-			run_single_process(gpu_ids[0], queue, lock)
+			run_single_process(gpu_ids[0], config_files)
 
 
 if __name__ == '__main__':

@@ -2,8 +2,8 @@
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
-import matplotlib
-matplotlib.use('TkAgg')
+#import matplotlib
+#matplotlib.use('TkAgg')
 import random
 import numpy as np
 import torch
@@ -155,7 +155,7 @@ def train():
 
 		# create nerf model
 		args.num_cluster = dataset.num_cluster
-		render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_NeRFDecomp(args)
+		render_kwargs_train, render_kwargs_test, start, elapsed_time, grad_vars, optimizer = create_NeRFDecomp(args)
 		global_step = start
 
 		# update near / far plane
@@ -319,7 +319,6 @@ def train():
 	# try:
 	# 	with timeout(time_limit_in_sec):
 
-	training_time = 0
 	for i in trange(start, N_iters):
 		ith_train_start_time = time.time()
 
@@ -637,6 +636,8 @@ def train():
 		# print(loss_albedo_render, "Loss_albedo_render!!")
 
 		if i % args.summary_step == 0:
+			writer.add_scalar("elapsed_time", elapsed_time, i)
+
 			writer.add_scalar('Loss/Total_Loss', total_loss, i)
 			writer.add_scalar('Loss/Loss_render', loss_render, i)
 
@@ -697,10 +698,10 @@ def train():
 		set_lr("normal", args.N_iter_ignore_normal)
 
 		ith_train_time = time.time() - ith_train_start_time
-		training_time += ith_train_time
+		elapsed_time += ith_train_time
 
-		if time_limit_in_sec > 0 and training_time > time_limit_in_sec:
-			print("%f sec is over" % time_limit_in_sec, training_time)
+		if time_limit_in_sec > 0 and elapsed_time > time_limit_in_sec:
+			print("%f sec is over" % time_limit_in_sec, elapsed_time)
 			run_test_dataset(i, render_factor=4)
 			save_file(i)
 			break
@@ -750,7 +751,7 @@ def train():
 	path = os.path.join(basedir, expname, 'train_info.json')
 	with open(str(path), "w") as f:
 		data = {
-			"training_time" : training_time,
+			"training_time" : elapsed_time,
 			"global_step" : global_step
 		}
 		json.dump(data, f, indent=4)

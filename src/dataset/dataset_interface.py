@@ -33,11 +33,14 @@ class NerfDataset(Dataset, ABC):
 		self.roughness = []
 		self.instances = []
 		self.depths = []
+		self.diffuses = []
+		self.speculars = []
 
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
 		self.load_roughness = kwargs.get("load_roughness", False)
 		self.load_depth = kwargs.get("load_depth", False)
+		self.load_diffuse_specular = kwargs.get("load_diffuse_specular", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -60,10 +63,8 @@ class NerfDataset(Dataset, ABC):
 
 		self.coarse_resize_scale = 4
 
-
-
 		self.near = kwargs.get("near_plane", 1)
-		self.far = kwargs.get("far_plane", 20)
+		self.far = kwargs.get("far_plane", 10)
 
 	def get_focal_matrix(self):
 		K = np.array([
@@ -158,7 +159,8 @@ class NerfDataset(Dataset, ABC):
 		data_loader = DataLoader(self, num_workers=num_of_workers, batch_size=1)
 		for i, data in enumerate(data_loader):
 			self.images.append(data["image"][0])
-			self.poses.append(data["pose"][0])
+			if "pose" in data:
+				self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
 				self.masks.append(data["mask"][0])
 			if self.load_normal:
@@ -169,11 +171,16 @@ class NerfDataset(Dataset, ABC):
 				self.roughness.append(data["roughness"][0])
 			if self.load_depth:
 				self.depths.append(data["depth"][0])
+			if self.load_diffuse_specular:
+				self.diffuses.append(data["diffuse"][0])
+				self.speculars.append(data["specular"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
-		self.images = torch.stack(self.images, 0).to(device)
-		self.poses = torch.stack(self.poses, 0).to(device)
+		if len(self.images) > 0:
+			self.images = torch.stack(self.images, 0).to(device)
+		if len(self.poses) > 0:
+			self.poses = torch.stack(self.poses, 0).to(device)
 		if self.init_basecolor is not None:
 			self.init_basecolor = torch.from_numpy(self.init_basecolor).to(device)
 		if self.load_instance_label_mask:
@@ -186,6 +193,9 @@ class NerfDataset(Dataset, ABC):
 			self.roughness = torch.stack(self.roughness, 0).to(device)
 		if self.load_depth:
 			self.depths = torch.stack(self.depths, 0).to(device)
+		if self.load_diffuse_specular:
+			self.diffuses = torch.stack(self.diffuses, 0).to(device)
+			self.speculars = torch.stack(self.speculars, 0).to(device)
 
 	def __getitem__(self, item):
 		pass
@@ -251,10 +261,14 @@ class NerfDataset(Dataset, ABC):
 def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_clevr import ClevrDataset
 	from dataset.dataset_mitsuba import MitsubaDataset
+	from dataset.dataset_mitsuba_eval import MitsubaEvalDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
 	elif dataset_type == "mitsuba":
 		return MitsubaDataset(basedir, **kwargs)
-	#elif dataset_type == "clevr_decomp":
+	elif dataset_type == "mitsuba_eval":
+		return MitsubaEvalDataset(basedir, **kwargs)
+
+#elif dataset_type == "clevr_decomp":
 	#	return ClevrDecompDataset(basedir, **kwargs)

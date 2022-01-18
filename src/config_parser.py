@@ -15,7 +15,6 @@ def load_all_include(config_file):
 	else:
 		return include
 
-
 def recursive_config_parser():
 	parser = config_parser()
 	args = parser.parse_args()
@@ -93,6 +92,7 @@ def config_parser(default_files=None):
 
 	parser.add_argument("--albedo_instance_constant", action='store_true')
 	parser.add_argument("--irradiance_instance_constant", action='store_true')
+	parser.add_argument("--color_independent_to_direction", action='store_true')
 
 	parser.add_argument("--roughness_smooth", action='store_true')
 	parser.add_argument("--albedo_smooth", action='store_true')
