@@ -314,7 +314,7 @@ def create_NeRFDecomp(args):
         ckpt = torch.load(ckpt_path)
 
         start = ckpt['global_step']
-        elapsed_time = ckpt['elapsed_time']
+        elapsed_time = ckpt.get('elapsed_time', 0)
 
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 

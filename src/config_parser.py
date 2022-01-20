@@ -36,6 +36,7 @@ def config_parser(default_files=None):
 
 	parser.add_argument("--expname", type=str, default=None, help='experiment name')
 	parser.add_argument("--basedir", type=str, default='./logs/', help='where to store ckpts and logs')
+	parser.add_argument("--export_basedir", type=str, default=None, help='where to export images')
 	parser.add_argument("--datadir", type=str, default='./data/llff/fern', help='input data directory')
 
 	# training options
@@ -89,10 +90,14 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_instance", type=float, default=1.)
 	parser.add_argument("--beta_instancewise_constant", type=float, default=0.1)
 	parser.add_argument("--beta_sigma_depth", type=float, default=1)
+	parser.add_argument("--beta_roughness_render", type=float, default=1)
 
 	parser.add_argument("--albedo_instance_constant", action='store_true')
 	parser.add_argument("--irradiance_instance_constant", action='store_true')
 	parser.add_argument("--color_independent_to_direction", action='store_true')
+
+	parser.add_argument("--initialize_roughness", action='store_true')
+	parser.add_argument("--roughness_init", type=float, default=0.5)
 
 	parser.add_argument("--roughness_smooth", action='store_true')
 	parser.add_argument("--albedo_smooth", action='store_true')
@@ -227,9 +232,8 @@ def config_parser(default_files=None):
 	return parser
 
 
-def export_config(args):
+def export_config(args, basedir):
 	# Create log dir and copy the config file
-	basedir = args.basedir
 	expname = args.expname
 
 	os.makedirs(os.path.join(basedir, expname), exist_ok=True)

@@ -34,24 +34,130 @@ from torch.nn.functional import normalize
 from utils.math_utils import *
 
 
-def test():
-	raise NotImplementedError
+def test(args):
+	# (0) Print train phase overview
+	logger_dataset = load_logger("Dataset Info")
+	logger_export = load_logger("Export Logger")
+	use_instance_mask = args.instance_mask
+	logger_dataset.info("Instance mask: " + str(use_instance_mask))
+	logger_dataset.info("Instance mask encoding: " + str(args.instance_label_encoding))
+	logger_dataset.info("Infer normal: " + str(args.infer_normal))
+	logger_dataset.info("Learn normal from oracle: " + str(args.learn_normal_from_oracle))
+	logger_dataset.info("Learn albedo from oracle: " + str(args.learn_albedo_from_oracle))
+
+	# (1) Load dataset
+	with time_measure("[1] Data load"):
+		def load_dataset_split(split="train", do_logging=True, **kwargs):
+			# create dataset config
+			target_dataset = load_dataset(args.dataset_type, args.datadir, split=split, **kwargs)
+			target_dataset.load_instance_label_mask = use_instance_mask
+
+			# real data load using multiprocessing(torch DataLoader) --> load all at once
+			# TODO : if dataset is too large, it may not be loaded at once.
+			target_dataset.load_all_data(num_of_workers=1)
+			if do_logging:
+				logger_dataset.info(target_dataset)
+			return target_dataset
+
+		# load train and validation dataset
+		load_normal = args.learn_normal_from_oracle or args.calculating_normal_type == "ground_truth"
+		load_params = {
+			"image_scale": args.image_scale,
+			"load_image": False,
+			"load_normal": load_normal,
+			"load_depth": False,
+			"load_roughness": False,
+			"load_albedo": False,
+			"sample_length": args.sample_length,
+			"coarse_radiance_number": args.coarse_radiance_number,
+			"load_instance_label_mask": args.instance_mask,
+			"near_plane": args.near_plane,
+			"far_plane": args.far_plane
+		}
+
+		dataset = load_dataset_split("test", skip=1, **load_params)
+
+		hwf = [dataset.height, dataset.width, dataset.focal]
+
+		# move data to GPU side
+		torch.set_default_tensor_type('torch.cuda.FloatTensor')
+		dataset.to_tensor(args.device)
+
+		# Load BRDF LUT
+		brdf_lut_path = "../data/ibl_brdf_lut.png"
+		brdf_lut = cv2.imread(brdf_lut_path)
+		brdf_lut = cv2.cvtColor(brdf_lut, cv2.COLOR_BGR2RGB)
+
+		brdf_lut = brdf_lut.astype(np.float32)
+		brdf_lut /= 255.0
+		brdf_lut = torch.tensor(brdf_lut).to(args.device)
+		brdf_lut = brdf_lut.permute((2, 0, 1))
+
+	# (2) Create log file / folder
+	with time_measure("[2] Log file create"):
+		# Create log dir and copy the config file
+		expname = args.expname
+		export_config(args, args.export_basedir)
+
+	# (3) Create nerf model
+	with time_measure("[3] NeRFDecomp load"):
+		# set instance label dimension
+		label_encoder = None
+		if use_instance_mask:
+			label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding,
+											  args.instance_label_dimension)
+			args.instance_label_dimension = label_encoder.get_dimension()
+		else:
+			args.instance_label_dimension = 0
+
+		# create nerf model
+		args.num_cluster = dataset.num_cluster
+		render_kwargs_train, render_kwargs_test, start, elapsed_time, grad_vars, optimizer = create_NeRFDecomp(args)
+		global_step = start
+
+		# update near / far plane
+		bds_dict = dataset.get_near_far_plane()
+		render_kwargs_train.update(bds_dict)
+		render_kwargs_test.update(bds_dict)
+
+		render_kwargs_train['brdf_lut'] = brdf_lut
+		render_kwargs_test['brdf_lut'] = brdf_lut
+		is_instance_label_logit = False
+		if use_instance_mask:
+			is_instance_label_logit = isinstance(label_encoder, OneHotLabelEncoder) and (args.CE_weight_type != "mse")
+			render_kwargs_train["is_instance_label_logit"] = is_instance_label_logit
+			render_kwargs_test["is_instance_label_logit"] = is_instance_label_logit
+		logger_render_options = load_logger("Render Kwargs")
+		logs = ["[Render Kwargs (simple only)]"]
+		for k, v in render_kwargs_train.items():
+			if isinstance(v, (str, float, int, bool)):
+				logs += ["\t-%s : %s" % (k, str(v))]
+		logger_render_options.info("\n".join(logs))
+
+	# (5) Main eval loop
+	K = dataset.get_focal_matrix()
+
+	hemisphere_samples = get_hemisphere_samples(args.N_hemisphere_sample_sqrt)
+	hemisphere_samples = torch.Tensor(hemisphere_samples).to(args.device)
+
+	def run_test_dataset(_i, render_factor=4):
+		testsavedir = os.path.join(args.export_basedir, expname, 'testset_{:06d}'.format(_i))
+		os.makedirs(testsavedir, exist_ok=True)
+
+		render_decomp_path(
+			dataset, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+			render_factor=render_factor, init_basecolor=dataset.init_basecolor,
+			calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
+			use_instance=use_instance_mask, label_encoder=label_encoder,
+			hemisphere_samples=hemisphere_samples,
+			approximate_radiance=True
+		)
+
+	with torch.no_grad():
+		run_test_dataset(global_step, render_factor=1)
 
 
-def train():
-	parser = recursive_config_parser()
-	args = parser.parse_args()
-	args.device = device
-
-	if args.expname is None:
-		expname = args.config.split("/")[-1]
-		expname = expname.split(".")[0]
-		args.expname = expname
-
-	if args.render_only:
-		test()
-		return
-
+def train(args):
 	# (0) Print train phase overview
 	logger_dataset = load_logger("Dataset Info")
 	logger_export = load_logger("Export Logger")
@@ -96,6 +202,7 @@ def train():
 		load_params["load_albedo"] = True
 		load_params["load_normal"] = True
 		dataset_val = load_dataset_split("test", skip=10, **load_params)
+		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
 
 		# calculate base color
@@ -138,7 +245,7 @@ def train():
 		# Create log dir and copy the config file
 		basedir = args.basedir
 		expname = args.expname
-		export_config(args)
+		export_config(args, basedir)
 
 		# Create Tensorboard writer
 		writer = SummaryWriter(log_dir=os.path.join(basedir, expname))
@@ -269,7 +376,8 @@ def train():
 			'global_step': global_step,
 			'network_fn_state_dict': render_kwargs_train['network_fn'].state_dict(),
 			'network_fine_state_dict': render_kwargs_train['network_fine'].state_dict(),
-			'optimizer_state_dict': optimizer.state_dict()
+			'optimizer_state_dict': optimizer.state_dict(),
+			'elapsed_time': elapsed_time
 		}
 		if args.infer_depth:
 			save_target['depth_mlp'] = render_kwargs_train['depth_mlp'].state_dict()
@@ -399,8 +507,12 @@ def train():
 			if key_name not in result:
 				# print("Key %s not in result" % key_name)
 				return 0
+			if isinstance(target, float):
+				loss_from_target = torch.mean((result[key_name]-target) ** 2)
 
-			if not isinstance(target, str):
+				if key_name + '0' in result:
+					loss_from_target += torch.mean((result[key_name + '0']-target) ** 2)
+			elif not isinstance(target, str):
 				loss_from_target = loss_fn(result[key_name], target)
 
 				if key_name + '0' in result:
@@ -436,7 +548,6 @@ def train():
 
 		# 2) albedo render loss
 		loss_albedo_render = calculate_loss("albedo_map", target_chromaticity)
-		# loss_roughness_render = calculate_loss("roughness_map", target_info.get("roughness", 1.0))
 
 		# 3) Depth map if required
 		loss_depth = 0
@@ -604,6 +715,9 @@ def train():
 		for k in range(args.coarse_radiance_number):
 			total_loss += args.beta_radiance_render * loss_render_coarse_radiance[k]
 
+		if args.initialize_roughness and i < args.N_iter_ignore_approximated_radiance:
+			total_loss += args.beta_roughness_render * calculate_loss("roughness_map", args.roughness_init)
+
 		# (b) normal loss
 		if i >= args.N_iter_ignore_normal:
 			total_loss += args.beta_inferred_normal * loss_inferred_normal
@@ -717,51 +831,37 @@ def train():
 		# export images
 		if i % args.i_testset == 0 and i > 0:
 			run_test_dataset(i, render_factor=4)
-			# testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(i))
-			# os.makedirs(testsavedir, exist_ok=True)
-			#
-			# for param_group in optimizer.param_groups:
-			# 	for var in param_group['params']:
-			# 		var.requires_grad = False
-			#
-			# # with torch.no_grad():
-			#
-			# render_decomp_path_results = render_decomp_path(
-			# 	dataset_val, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-			# 	render_factor=4, init_basecolor=dataset.init_basecolor,
-			# 	calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
-			# 	use_instance=use_instance_mask, label_encoder=label_encoder,
-			# 	hemisphere_samples=hemisphere_samples,
-			# 	approximate_radiance=True
-			# )
-			#
-			# add_image_to_writer(i, render_decomp_path_results)
-			#
-			# for param_group in optimizer.param_groups:
-			# 	for var in param_group['params']:
-			# 		var.requires_grad = True
-			#
-			# logger_export.info('Saved test set')
 
 		global_step += 1
-	#writer.add_scalar("elapsed_time", training_time, global_step)
-	#train_data = {"elapsed time" : training_time, "step" : global_step}
-	#train_data_df = pd.DataFrame.from_dict(train_data)
 
-	path = os.path.join(basedir, expname, 'train_info.json')
+	path = os.path.join(basedir, expname, 'train_info_step_time.json')
 	with open(str(path), "w") as f:
 		data = {
-			"training_time" : elapsed_time,
-			"global_step" : global_step
+			"training_time": elapsed_time,
+			"global_step": global_step
 		}
 		json.dump(data, f, indent=4)
-		#f.write("elapsed_time : %f\n" % training_time)
-		#f.write("global_step : %d\n" % global_step)
+
+	#f.write("elapsed_time : %f\n" % training_time)
+	#f.write("global_step : %d\n" % global_step)
 
 	#except TimeoutError:
 
 
-
-
 if __name__ == '__main__':
-	train()
+	parser = recursive_config_parser()
+	args = parser.parse_args()
+	args.device = device
+
+	if args.expname is None:
+		expname = args.config.split("/")[-1]
+		expname = expname.split(".")[0]
+		args.expname = expname
+
+	if args.export_basedir is None:
+		args.export_basedir = args.basedir.replace("logs", "logs_eval")
+
+	if args.render_only:
+		test(args)
+	else:
+		train(args)

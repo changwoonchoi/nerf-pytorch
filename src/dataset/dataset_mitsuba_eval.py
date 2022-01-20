@@ -37,13 +37,19 @@ class MitsubaEvalDataset(NerfDataset):
 		:param index: data index
 		"""
 		rgb_file_path = os.path.join(self.basedir, "rgb_{:03d}.png".format(index))
-		diffuse_file_path = os.path.join(self.basedir, "specular_{:03d}.png".format(index))
-		specular_file_path = os.path.join(self.basedir, "diffuse_{:03d}.png".format(index))
+		diffuse_file_path = os.path.join(self.basedir, "diffuse_{:03d}.png".format(index))
+		specular_file_path = os.path.join(self.basedir, "specular_{:03d}.png".format(index))
+		irradiance_file_path = os.path.join(self.basedir, "irradiance_{:03d}.png".format(index))
+		roughness_file_path = os.path.join(self.basedir, "roughness_{:03d}.png".format(index))
+		albedo_file_path = os.path.join(self.basedir, "albedo_{:03d}.png".format(index))
 
 		# (1) load RGB Image
 		sample["image"] = load_image_from_path(rgb_file_path, scale=1)
 		sample["diffuse"] = load_image_from_path(diffuse_file_path, scale=1)
 		sample["specular"] = load_image_from_path(specular_file_path, scale=1)
+		sample["irradiance"] = load_image_from_path(irradiance_file_path, scale=1)
+		sample["roughness"] = load_image_from_path(roughness_file_path, scale=1)
+		sample["albedo"] = load_image_from_path(albedo_file_path, scale=1)
 
 		return sample
 

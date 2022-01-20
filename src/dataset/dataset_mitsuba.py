@@ -83,9 +83,11 @@ class MitsubaDataset(NerfDataset):
 		depth_file_path = os.path.join(self.basedir, self.split, "%d_depth.npy" % (self.skip * index + 1))
 		diffuse_file_path = os.path.join(self.basedir, self.split, "%d_diffuse.png" % (self.skip * index + 1))
 		specular_file_path = os.path.join(self.basedir, self.split, "%d_specular.png" % (self.skip * index + 1))
+		irradiance_file_path = os.path.join(self.basedir, self.split, "%d_irradiance.png" % (self.skip * index + 1))
 
 		# (1) load RGB Image
-		sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
+		if self.load_image:
+			sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
 		if self.load_normal:
 			sample["normal"] = load_image_from_path(normal_file_path, scale=self.scale)
 		if self.load_albedo:
@@ -96,6 +98,9 @@ class MitsubaDataset(NerfDataset):
 			sample["roughness"] = load_image_from_path(roughness_file_path, scale=self.scale)[..., 0:1]
 		if self.load_depth:
 			sample["depth"] = load_numpy_from_path(depth_file_path, scale=self.scale)[..., None]
+		if self.load_irradiance:
+			sample["irradiance"] = load_image_from_path(irradiance_file_path, scale=self.scale)
+
 		if self.load_diffuse_specular:
 			sample["diffuse"] = load_image_from_path(diffuse_file_path, scale=self.scale)
 			sample["specular"] = load_image_from_path(specular_file_path, scale=self.scale)

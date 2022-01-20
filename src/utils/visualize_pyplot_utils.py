@@ -9,10 +9,11 @@ def visualize_images_vertical(images, use_colorbar=True,\
         plt.suptitle(title)
 
     n = len(images)
+    print("Image number", n)
     for i in range(n):
         image = images[i]
         if isinstance(image, torch.Tensor):
-            image = image.cpu().numpy()[0]
+            image = image.cpu().numpy()
 
         if horizontal:
             plt.subplot(1, n, i+1)

@@ -370,6 +370,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	n_dot_v = None
 	reflected_radiance_map = None
 	prefiltered_reflected_map = None
+	reflected_coarse_radiance_map = []
 	if kwargs.get('approximate_radiance', False):
 
 		# calculate normal only approximate radiance
@@ -588,6 +589,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["radiance_map"] = radiance_to_ldr(radiance_map)
 	for k in range(len(coarse_radiance_maps)):
 		results["radiance_map_%d" % (k + 1)] = radiance_to_ldr(coarse_radiance_maps[k])
+	for k in range(len(reflected_coarse_radiance_map)):
+		results["reflected_coarse_radiance_map_%d" % (k + 1)] = radiance_to_ldr(reflected_coarse_radiance_map[k])
 
 	results["irradiance_map"] = radiance_to_ldr(irradiance_map)
 	results["min_irradiance_map"] = radiance_to_ldr(min_irradiance_map)
@@ -893,6 +896,8 @@ def render_decomp_path(
 		append_result(results_i, "radiance_map", i, "radiance")
 		for k in range(render_kwargs["coarse_radiance_number"]):
 			append_result(results_i, "radiance_map_%d" % (k+1), i, "radiance_%d" % (k+1))
+			append_result(results_i, "reflected_coarse_radiance_map_%d" % (k + 1), i, "reflected_coarse_radiance_%d" % (k + 1))
+
 
 		append_result(results_i, "irradiance_map", i, "irradiance")
 		append_result(results_i, "max_irradiance_map", i, "max_irradiance")

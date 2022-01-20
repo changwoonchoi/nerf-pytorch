@@ -35,12 +35,15 @@ class NerfDataset(Dataset, ABC):
 		self.depths = []
 		self.diffuses = []
 		self.speculars = []
+		self.irradiances = []
 
+		self.load_image = kwargs.get("load_image", True)
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
 		self.load_roughness = kwargs.get("load_roughness", False)
 		self.load_depth = kwargs.get("load_depth", False)
 		self.load_diffuse_specular = kwargs.get("load_diffuse_specular", False)
+		self.load_irradiance = kwargs.get("load_irradiance", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -158,7 +161,8 @@ class NerfDataset(Dataset, ABC):
 			return
 		data_loader = DataLoader(self, num_workers=num_of_workers, batch_size=1)
 		for i, data in enumerate(data_loader):
-			self.images.append(data["image"][0])
+			if "image" in data:
+				self.images.append(data["image"][0])
 			if "pose" in data:
 				self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
@@ -174,6 +178,8 @@ class NerfDataset(Dataset, ABC):
 			if self.load_diffuse_specular:
 				self.diffuses.append(data["diffuse"][0])
 				self.speculars.append(data["specular"][0])
+			if self.load_irradiance:
+				self.irradiances.append(data["irradiance"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -196,7 +202,8 @@ class NerfDataset(Dataset, ABC):
 		if self.load_diffuse_specular:
 			self.diffuses = torch.stack(self.diffuses, 0).to(device)
 			self.speculars = torch.stack(self.speculars, 0).to(device)
-
+		if self.load_irradiance:
+			self.irradiances = torch.stack(self.irradiances, 0).to(device)
 	def __getitem__(self, item):
 		pass
 

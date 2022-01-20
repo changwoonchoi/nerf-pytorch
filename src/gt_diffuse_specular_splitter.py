@@ -125,12 +125,14 @@ def split_sum_approximation(folder, i, out_path=None):
 
 	F = F0 + F1 * np.power(np.clip(1-n_dot_v, 0, 1), 5)
 	specular_coeff = F * envBRDF1 + envBRDF0
-	diffuse = roughness * (1-F) * albedo * irradiance
+	diffuse = albedo * irradiance
 	prefiltered_value = mirror #mirror * (1-roughness) + mirror_blurred * roughness
 
 	specular = specular_coeff * prefiltered_value
+	diffuse = np.where(radiance < diffuse, radiance, diffuse)
 
 	specular = radiance - diffuse
+
 	diffuse = tonemap_and_gamma(diffuse)
 	specular = tonemap_and_gamma(specular)
 
