@@ -37,6 +37,7 @@ class NerfDataset(Dataset, ABC):
 		self.edited_roughness = []
 		self.edited_albedo = []
 		self.edited_normal = []
+		self.edited_irradiance = []
 		self.instances = []
 
 		self.load_normal = kwargs.get("load_normal", False)
@@ -45,6 +46,7 @@ class NerfDataset(Dataset, ABC):
 		self.load_edited_roughness = kwargs.get("edit_roughness", False)
 		self.load_edited_albedo = kwargs.get("edit_albedo", False)
 		self.load_edited_normal = kwargs.get("edit_normal", False)
+		self.load_edited_irradiance = kwargs.get("edit_irradiance", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -101,6 +103,10 @@ class NerfDataset(Dataset, ABC):
 		if self.load_edited_normal:
 			edited_normal_tmp = self.edited_normal[i].permute((2, 0, 1))
 			result["edited_normal"] = t(edited_normal_tmp).permute((1, 2, 0))
+
+		if self.load_edited_irradiance:
+			edited_irradiance_tmp = self.edited_irradiance[i].permute((2, 0, 1))
+			result["edited_irradiance"] = t(edited_irradiance_tmp).permute((1, 2, 0))
 
 		return result
 
@@ -182,6 +188,8 @@ class NerfDataset(Dataset, ABC):
 				self.edited_albedo.append(data['edited_albedo'][0])
 			if self.load_edited_normal:
 				self.edited_normal.append(data["edited_normal"][0])
+			if self.load_edited_irradiance:
+				self.edited_irradiance.append(data["edited_irradiance"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):

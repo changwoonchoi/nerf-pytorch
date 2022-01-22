@@ -171,6 +171,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--edit_roughness", action='store_true', help='use edited roughness')
 	parser.add_argument("--edit_albedo", action='store_true', help='use edited albedo')
 	parser.add_argument("--edit_normal", action='store_true', help='use edited normal')
+	parser.add_argument("--edit_irradiance", action='store_true', help='use edited_irradiance')
 
 	# clustering options
 	parser.add_argument("--cluster_image_number", type=int, default=-1, help='how many images will be used for clustering? -1 to use all')

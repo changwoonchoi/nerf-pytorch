@@ -1,0 +1,8 @@
+include = ../common.txt
+datadir = ../data/mitsuba/bedroom
+basedir = ../logs/material_editing/bedroom
+
+edit_roughness
+edit_normal
+edit_albedo
+edit_irradiance

@@ -1,0 +1,7 @@
+include = ../common.txt
+datadir = ../data/mitsuba/kitchen
+basedir = ../logs/material_editing/kitchen
+
+edit_roughness
+edit_normal
+edit_albedo
