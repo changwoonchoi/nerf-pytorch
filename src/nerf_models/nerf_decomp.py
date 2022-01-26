@@ -303,6 +303,8 @@ def create_NeRFDecomp(args):
     # Load Checkpoint
     if args.ft_path is not None and args.ft_path != 'None':
         ckpts = [args.ft_path]
+    elif args.target_load_N_iter > 0:
+        ckpts = [os.path.join(basedir, expname, '{:06d}.tar'.format(args.target_load_N_iter))]
     else:
         ckpts = [os.path.join (basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
 

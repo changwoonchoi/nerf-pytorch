@@ -14,6 +14,10 @@ def convert_image_to_uint(image):
 	return x
 
 
+def save_image_pil(images, file_path):
+	image_pil = Image.fromarray(images)
+	image_pil.save(file_path)
+
 def save_pred_images(images, file_path):
 	x = convert_image_to_uint(images)
 

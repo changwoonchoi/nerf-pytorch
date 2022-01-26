@@ -49,8 +49,11 @@ def config_parser(default_files=None):
 	parser.add_argument("--use_instance_feature_layer", action="store_true", help='NeRF with instance_feature_layer(Zhi, 2021)')
 	parser.add_argument("--use_basecolor_score_feature_layer", action="store_true", help='NeRF with basecolor score feature layer')
 	parser.add_argument("--use_illumination_feature_layer", action="store_true", help='NeRF with illumination feature_layer(Zhi, 2021)')
+	parser.add_argument("--load_depth_range_from_file", action="store_true", help='load_depth_range_from_file')
 
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
+	parser.add_argument("--target_load_N_iter", type=int, default=-1, help="target_load_N_iter")
+
 	parser.add_argument("--netdepth", type=int, default=8, help='layers in network')
 	parser.add_argument("--netwidth", type=int, default=256, help='channels per layer')
 	parser.add_argument("--netdepth_fine", type=int, default=8, help='layers in fine network')

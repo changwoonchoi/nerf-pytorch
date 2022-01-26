@@ -29,11 +29,14 @@ def calculate_time_whole(basedir, scene_names=None, exp_names=None, export_base_
 				step = ckpt['global_step']
 				time = ckpt['elapsed_time']
 			else:
-				json_path = os.path.join(path, "train_info.json")
-				with open(json_path, 'r') as fp:
-					f = json.load(fp)
-					step = f["global_step"]
-					time = f["training_time"]
+				try:
+					json_path = os.path.join(path, "train_info_step_time.json")
+					with open(json_path, 'r') as fp:
+						f = json.load(fp)
+						step = f["global_step"]
+						time = f["training_time"]
+				except Exception:
+					pass
 			time_per_step = time / step
 			df = df.append({"scene": scene_name, "exp_name": exp_name, "step": step, "time": time, "time_per_step": time_per_step}, ignore_index=True)
 
@@ -45,5 +48,5 @@ def calculate_time_whole(basedir, scene_names=None, exp_names=None, export_base_
 
 # calculate_error_whole("../logs/final_config/", scene_names=["kitchen"], exp_names=["ours", "monte_carlo_env_map"])
 # calculate_error_whole("../logs/final_config_equal_time/")
-calculate_time_whole("../../logs/final_config_lindisp_equal_sample/")
-
+# calculate_time_whole("../../logs/final_config_lindisp_equal_sample/")
+calculate_time_whole("../../logs/final_config_ours_only/")

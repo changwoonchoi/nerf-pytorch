@@ -473,9 +473,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			# equal area sampling on hemisphere --> solid angle = 2 * pi / N_sample
 			specular_map = torch.mean(sampled_dir_radiance * brdf_specular * l_dot_n, dim=1) * 2 * np.pi
 			diffuse_map = torch.mean(sampled_dir_radiance * brdf_diffuse * l_dot_n, dim=1) * 2 * np.pi
-			irradiance_map = torch.mean(sampled_dir_radiance * l_dot_n, dim=1) * 2 * np.pi
-			max_irradiance_map = torch.amax(sampled_dir_radiance * l_dot_n, dim=1) * 2 * np.pi
-			min_irradiance_map = torch.amin(sampled_dir_radiance * l_dot_n, dim=1) * 2 * np.pi
+			irradiance_map = torch.mean(sampled_dir_radiance * l_dot_n * (1/np.pi), dim=1) * 2 * np.pi
+			max_irradiance_map = torch.amax(sampled_dir_radiance * l_dot_n * (1/np.pi), dim=1) * 2 * np.pi
+			min_irradiance_map = torch.amin(sampled_dir_radiance * l_dot_n * (1/np.pi), dim=1) * 2 * np.pi
 
 			# i = 22
 			# brdf = ((brdf_specular + brdf_diffuse) * l_dot_n)[i]

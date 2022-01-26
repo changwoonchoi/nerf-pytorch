@@ -13,8 +13,8 @@ def get_hemisphere_samples(N):
 	for i in range(N * N):
 		v = get_direction_from(i, (0.5, 0.5), (N, N))
 		input_array[i][0] = v[0]
-		input_array[i][1] = v[1]
-		input_array[i][2] = v[2]
+		input_array[i][1] = v[2]
+		input_array[i][2] = v[1]
 
 	return input_array
 
@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
 	for i in range(10):
 		pts2l = torch.Tensor(result)
-		pts2c = torch.Tensor([-1, 1, 1])
+		pts2c = torch.Tensor([0, 1, 0])
 		normal = torch.Tensor([0, 1, 0])
 		albedo = torch.Tensor([1, 1, 1])
 		roughness = torch.Tensor([0.1 * (i + 1)])
@@ -41,11 +41,11 @@ if __name__ == "__main__":
 		l_dot_n = torch.sum(pts2l * normal, dim=-1, keepdim=True)
 		#l_dot_n = torch.clip(l_dot_n, 0, 1)
 
-		brdf_d, brdf_s = microfacet(pts2l, pts2c, normal, albedo, roughness)
+		brdf_d, brdf_s, l_dot_n = microfacet(pts2l, pts2c, normal, albedo, roughness)
 		brdf = brdf_d + brdf_s
 		brdf = brdf.clone()
 
-		#brdf *= l_dot_n
+		brdf *= l_dot_n
 		brdf = brdf[0]
 
 		fig = plt.figure()

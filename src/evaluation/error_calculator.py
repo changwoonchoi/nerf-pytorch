@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../')
+
 from utils.image_utils import *
 import os
 from dataset.dataset_interface import load_dataset
@@ -6,7 +9,7 @@ import torch
 import pandas as pd
 
 
-def load_eval_images(basedir, scene_name, exp_name, target_n=-1):
+def load_eval_images(basedir, scene_name, exp_name, target_n=-1, **kwargs):
 	path = os.path.join(basedir, scene_name, exp_name)
 	if target_n == -1:
 		load_folder = sorted(next(os.walk(path))[1])[-1]
@@ -14,7 +17,7 @@ def load_eval_images(basedir, scene_name, exp_name, target_n=-1):
 		load_folder = 'testset_{:06d}'.format(target_n)
 	load_folder = os.path.join(path, load_folder)
 
-	mitsuba_eval = load_dataset("mitsuba_eval", load_folder)
+	mitsuba_eval = load_dataset("mitsuba_eval", load_folder, **kwargs)
 	mitsuba_eval.load_all_data(4)
 	mitsuba_eval.to_tensor("cpu")
 	return mitsuba_eval
@@ -27,9 +30,24 @@ def eval_error(ground_truth, pred, target="diffuse", metric=None, visualize=Fals
 	elif target == "specular":
 		dataset_gt = ground_truth.speculars
 		dataset_prd = pred.speculars
+	elif target =="albedo":
+		dataset_gt = ground_truth.albedos
+		dataset_prd = pred.albedos
+	elif target == "roughness":
+		dataset_gt = ground_truth.roughness
+		dataset_prd = pred.roughness
+	elif target == "irradiance":
+		dataset_gt = ground_truth.irradiances
+		dataset_prd = pred.irradiances
 	else:
 		dataset_gt = ground_truth.images
 		dataset_prd = pred.images
+
+	if len(dataset_gt.shape) == 3:
+		dataset_gt = dataset_gt[..., None]
+		dataset_prd = dataset_prd[..., None]
+	if dataset_gt.shape[-1] == 1:
+		dataset_prd = dataset_prd[..., 0:1]
 
 	# if visualize:
 	# 	import matplotlib.pyplot as plt
@@ -72,8 +90,6 @@ def calculate_error_whole(basedir, scene_names=None, exp_names=None, scale=4, sk
 	df = pd.DataFrame()
 
 	for scene in scene_names:
-		print(scene)
-
 		load_params = {
 			"load_diffuse_specular": True,
 			"image_scale": 1/scale,
@@ -83,13 +99,21 @@ def calculate_error_whole(basedir, scene_names=None, exp_names=None, scale=4, sk
 			"load_roughness": "roughness" in compare_targets,
 			"load_irradiance": "irradiance" in compare_targets
 		}
-		scene_gt_dataset = load_dataset("mitsuba", "../data/mitsuba/%s" % scene, **load_params)
+		load_params_target = {
+			"load_diffuse_specular": True,
+			"load_albedo": "albedo" in compare_targets,
+			"load_roughness": "roughness" in compare_targets,
+			"load_irradiance": "irradiance" in compare_targets
+		}
+		scene_gt_dataset = load_dataset("mitsuba", "../../data/mitsuba/%s" % scene, **load_params)
 		scene_gt_dataset.load_all_data(4)
 		scene_gt_dataset.to_tensor("cpu")
-
+		print(scene)
 		for exp_name in exp_names:
-			exp_dataset = load_eval_images(basedir, scene, exp_name)
+			print(exp_name)
+			exp_dataset = load_eval_images(basedir, scene, exp_name, **load_params_target)
 			for compare_target in compare_targets:
+				print(compare_target)
 				metric_errors = {}
 				for metric in metrics:
 					error = eval_error(scene_gt_dataset, exp_dataset, compare_target, metric, visualize=exp_name=="ours")
@@ -111,5 +135,5 @@ def calculate_error_whole(basedir, scene_names=None, exp_names=None, scale=4, sk
 # calculate_error_whole("../../logs/final_config/", scene_names=["kitchen"], exp_names=["ours", "monte_carlo_env_map"])
 # calculate_error_whole("../../logs/final_config_equal_time/")
 # calculate_error_whole("../../logs_eval/final_config_lindisp_equal_sample_scale_4/", scale=4, skip=1)
-calculate_error_whole("../../logs_eval/final_config_lindisp_equal_sample/", scale=1, skip=1)
-
+calculate_error_whole("../../logs_eval/final_config_lindisp_equal_sample/", exp_names=["ours", "monte_carlo_env_map", "monte_carlo_nerf_surface"], scale=1, skip=1)
+# calculate_error_whole("../../logs_eval/final_config_ours_only/", scale=1, skip=1)

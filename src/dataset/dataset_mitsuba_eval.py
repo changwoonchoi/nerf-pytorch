@@ -50,7 +50,8 @@ class MitsubaEvalDataset(NerfDataset):
 		sample["irradiance"] = load_image_from_path(irradiance_file_path, scale=1)
 		sample["roughness"] = load_image_from_path(roughness_file_path, scale=1)
 		sample["albedo"] = load_image_from_path(albedo_file_path, scale=1)
-
+		if "monte_carlo" in self.basedir:
+			sample["albedo"] = np.power(sample["albedo"], 1/2.2)
 		return sample
 
 	def get_test_render_poses(self):

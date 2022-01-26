@@ -1,7 +1,10 @@
+import sys
+sys.path.append('../')
+
 import os
 from utils.image_utils import *
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 def load_image_target(folder, target, index):
 	file_path = os.path.join(folder, "testset_099999", target + "_{:03d}.png".format(index))
@@ -19,6 +22,7 @@ def load_image_target_gt(scene, target, index, scale):
 def visualize_comparison(basedir, scene_name, index=1, exp_names=None, compare_targets=None, skip=1, scale=1):
 	exp_names_dict = {
 		"ours": "Ours",
+		"ours_gt_normal": "Ours(GT)",
 		"ours_hdr": "Ours",
 		"monte_carlo_nerf_surface": "MC",
 		"monte_carlo_env_map": "MC + Env",
@@ -26,10 +30,10 @@ def visualize_comparison(basedir, scene_name, index=1, exp_names=None, compare_t
 	}
 
 	if exp_names is None:
-		exp_names = ["monte_carlo_nerf_surface", "monte_carlo_env_map", "ours_hdr", "gt"]
+		exp_names = ["monte_carlo_nerf_surface", "monte_carlo_env_map", "ours", "gt"]
 	if compare_targets is None:
-		compare_targets = ["diffuse", "specular", "rgb"]
-		# compare_targets = ["albedo", "irradiance", "roughness", "diffuse", "specular", "rgb"]
+		# compare_targets = ["diffuse", "specular", "rgb"]
+		compare_targets = ["albedo", "irradiance", "roughness", "diffuse", "specular", "rgb"]
 
 	n_row = len(exp_names)
 	n_col = len(compare_targets)
@@ -45,6 +49,9 @@ def visualize_comparison(basedir, scene_name, index=1, exp_names=None, compare_t
 				image = load_image_target_gt(scene_name, compare_target, skip * index + 1, 1/scale)
 			else:
 				image = load_image_target(path, compare_target, index)
+			if compare_target == 'albedo' and exp_name != 'gt':
+				image = np.power(image, 1/2.2)
+
 			ax = fig.add_subplot(n_row, n_col, fig_index)
 			# plt.axis('off')
 			plt.xticks([])
@@ -61,6 +68,11 @@ def visualize_comparison(basedir, scene_name, index=1, exp_names=None, compare_t
 	plt.suptitle("Index: %d"% index)
 	fig.tight_layout()
 	plt.show()
+	# plt.savefig('line_plot.pdf')
+
+
+#for i in range(100):
+#	visualize_comparison("../../logs_eval/final_config_ours_only/", "veach-ajar", index=i+1, exp_names=["ours", "ours_gt_normal"])
 
 for i in range(100):
-	visualize_comparison("../../logs_eval/final_config_lindisp_equal_sample/", "kitchen", index=i+1)
+	visualize_comparison("../../logs_eval/final_config_lindisp_equal_sample", "bedroom", index=i+1)

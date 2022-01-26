@@ -72,7 +72,8 @@ def test(args):
 			"coarse_radiance_number": args.coarse_radiance_number,
 			"load_instance_label_mask": args.instance_mask,
 			"near_plane": args.near_plane,
-			"far_plane": args.far_plane
+			"far_plane": args.far_plane,
+			"load_depth_range_from_file": args.load_depth_range_from_file
 		}
 
 		dataset = load_dataset_split("test", skip=1, **load_params)
@@ -194,7 +195,8 @@ def train(args):
 			"coarse_radiance_number": args.coarse_radiance_number,
 			"load_instance_label_mask": args.instance_mask,
 			"near_plane": args.near_plane,
-			"far_plane": args.far_plane
+			"far_plane": args.far_plane,
+			"load_depth_range_from_file": args.load_depth_range_from_file
 		}
 		dataset = load_dataset_split("train", **load_params)
 
@@ -863,5 +865,6 @@ if __name__ == '__main__':
 
 	if args.render_only:
 		test(args)
+		# print("THIS IS TEST!!!!!!!!")
 	else:
 		train(args)

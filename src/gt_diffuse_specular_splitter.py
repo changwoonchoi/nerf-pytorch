@@ -126,12 +126,16 @@ def split_sum_approximation(folder, i, out_path=None):
 	F = F0 + F1 * np.power(np.clip(1-n_dot_v, 0, 1), 5)
 	specular_coeff = F * envBRDF1 + envBRDF0
 	diffuse = albedo * irradiance
-	prefiltered_value = mirror #mirror * (1-roughness) + mirror_blurred * roughness
+	#prefiltered_value = mirror * (1-roughness) + irradiance * roughness
 
-	specular = specular_coeff * prefiltered_value
+	#specular = specular_coeff * prefiltered_value
+	# diffuse = np.where(radiance < diffuse, radiance, diffuse)
+	diffuse = np.where(roughness == 1, radiance, diffuse)
+	diffuse = np.where(roughness == 0, np.zeros_like(diffuse), diffuse)
 	diffuse = np.where(radiance < diffuse, radiance, diffuse)
 
 	specular = radiance - diffuse
+	specular = np.where(specular < 0, 0, specular)
 
 	diffuse = tonemap_and_gamma(diffuse)
 	specular = tonemap_and_gamma(specular)
@@ -145,9 +149,11 @@ def split_sum_approximation(folder, i, out_path=None):
 
 if __name__ == "__main__":
 	basedir = "../data/mitsuba/"
-	out_basedir = "../data/mitsuba/"
+	out_basedir = "../data/mitsuba_split/"
 
 	targets = ["bathroom2", "bedroom", "kitchen", "living-room-2", "living-room-3", "staircase", "veach-ajar", "veach_door_simple"]
+	targets = [ "kitchen", "living-room-2", "bedroom", "veach-ajar"]
+
 	splits = ["train", "test", "val"]
 
 	target_configs = []
@@ -160,5 +166,5 @@ if __name__ == "__main__":
 				target_configs.append((path, i+1, out_path))
 	from multiprocessing import Pool
 
-	with Pool(20) as p:
+	with Pool(40) as p:
 		p.starmap(split_sum_approximation, target_configs)
