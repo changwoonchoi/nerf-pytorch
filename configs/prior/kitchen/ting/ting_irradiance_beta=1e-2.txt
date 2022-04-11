@@ -1,7 +1,6 @@
 include = common.txt
 
 beta_prior_albedo = 0.
-beta_prior_irradiance = 0.001
+beta_prior_irradiance = 0.01
 
-prior_type = bell
 albedo_prior_type = rgb
