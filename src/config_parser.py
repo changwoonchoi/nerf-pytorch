@@ -69,6 +69,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_iter_ignore_approximated_radiance", type=int, default=5000, help="Ignore normal loss")
 	parser.add_argument("--N_iter_ignore_smooth", type=int, default=15000, help="Ignore smoothness loss")
 	parser.add_argument("--N_iter_ignore_instancewise_constant", type=int, default=15000, help="Ignore instancewise constant loss")
+	parser.add_argument("--N_iter_ignore_prior", type=int, default=10000, help="Ignore prior loss")
 
 	parser.add_argument("--coarse_radiance_number", type=int, default=0, help='coarse_radiance_number')
 
@@ -94,6 +95,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_instancewise_constant", type=float, default=0.1)
 	parser.add_argument("--beta_sigma_depth", type=float, default=1)
 	parser.add_argument("--beta_roughness_render", type=float, default=1)
+	parser.add_argument("--beta_prior_albedo", type=float, default=0.01)
+	parser.add_argument("--beta_prior_irradiance", type=float, default=0.01)
 
 	parser.add_argument("--albedo_instance_constant", action='store_true')
 	parser.add_argument("--irradiance_instance_constant", action='store_true')
@@ -106,6 +109,9 @@ def config_parser(default_files=None):
 	parser.add_argument("--albedo_smooth", action='store_true')
 	parser.add_argument("--irradiance_smooth", action='store_true')
 
+	parser.add_argument("--load_priors", action='store_true')
+	parser.add_argument("--prior_type", type=str, default='bell', help='bell or ting')
+	parser.add_argument("--albedo_prior_type", type=str, default='rgb', help='rgb or chrom')
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_env_map", type=float, default=5e-4, help='learning rate for env_map')

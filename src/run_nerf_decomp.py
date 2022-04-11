@@ -76,7 +76,7 @@ def test(args):
 			"load_depth_range_from_file": args.load_depth_range_from_file
 		}
 
-		dataset = load_dataset_split("test", skip=1, **load_params)
+		dataset = load_dataset_split("test", skip=1, load_priors=False, **load_params)
 
 		hwf = [dataset.height, dataset.width, dataset.focal]
 
@@ -196,13 +196,17 @@ def train(args):
 			"load_instance_label_mask": args.instance_mask,
 			"near_plane": args.near_plane,
 			"far_plane": args.far_plane,
-			"load_depth_range_from_file": args.load_depth_range_from_file
+			"load_depth_range_from_file": args.load_depth_range_from_file,
+			"load_priors": args.load_priors,
+			"prior_type": args.prior_type
 		}
 		dataset = load_dataset_split("train", **load_params)
 
 		# force load albedo & normal for test set
 		load_params["load_albedo"] = True
 		load_params["load_normal"] = True
+		# force not to load albedo & irradiance prior images for test set
+		load_params["load_priors"] = False
 		dataset_val = load_dataset_split("test", skip=10, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
@@ -442,6 +446,10 @@ def train(args):
 			target_chromaticity = target_info["albedo"]
 		else:
 			target_chromaticity = target_rgb / (torch.linalg.norm(target_rgb, dim=-1, keepdim=True) + 1e-10)
+		if args.load_priors:
+			target_prior_albedo = target_info["prior_albedo"]
+			target_prior_albedo_chrom = target_prior_albedo / (torch.linalg.norm(target_prior_albedo, dim=-1, keepdim=True) + 1e-10)
+			target_prior_irradiance = target_info["prior_irradiance"]
 		batch_rays = torch.stack([rays_o, rays_d], 0)  # (2, N_rand, 3)
 		batch_rays_neigh = None
 		if args.ray_sample == "patch":
@@ -710,6 +718,17 @@ def train(args):
 							loss_instancewise_constant_irradiance += instancewise_irradiance_std0
 		loss_instancewise_constant = loss_instancewise_constant_albedo + loss_instancewise_constant_irradiance
 
+		# 7) prior loss
+		if args.load_priors:
+			if args.albedo_prior_type == "chrom":
+				result["albedo_chrom_map"] = result["albedo_map"] / (torch.linalg.norm(result["albedo_map"], dim=-1, keepdim=True) + 1e-10)
+				loss_prior_albedo = calculate_loss("albedo_chrom_map", target_prior_albedo_chrom)
+			elif args.albedo_prior_type == "rgb":
+				loss_prior_albedo = calculate_loss("albedo_map", target_prior_albedo)
+			else:
+				raise ValueError
+			loss_prior_irradiance = calculate_loss("irradiance_map", target_prior_irradiance)
+
 		# Final loss
 		# (a) radiance loss
 		total_loss = args.beta_radiance_render * loss_render_radiance
@@ -749,6 +768,10 @@ def train(args):
 		if i >= args.N_iter_ignore_depth:
 			total_loss += args.beta_inferred_depth * loss_depth
 
+		# (g) prior loss
+		if i >= args.N_iter_ignore_prior and args.load_priors:
+			total_loss += args.beta_prior_albedo * loss_prior_albedo
+			total_loss += args.beta_prior_irradiance * loss_prior_irradiance
 		# print(loss_albedo_render, "Loss_albedo_render!!")
 
 		if i % args.summary_step == 0:
@@ -784,6 +807,10 @@ def train(args):
 			writer.add_scalar('Loss/Loss_roughness_smooth', loss_smooth_roughness, i)
 			writer.add_scalar('Loss/Loss_irradiance_smooth', loss_smooth_irradiance, i)
 			writer.add_scalar('Loss/Loss_albedo_smooth', loss_smooth_albedo, i)
+
+			if args.load_priors:
+				writer.add_scalar('Loss/Loss_prior_albedo', loss_prior_albedo, i)
+				writer.add_scalar('Loss/Loss_prior_irradiance', loss_prior_irradiance, i)
 			if args.instance_mask:
 				writer.add_scalar('Loss/Loss_instance', loss_instance, i)
 				writer.add_scalar('Loss/Loss_instancewise_constant', loss_instancewise_constant, i)
