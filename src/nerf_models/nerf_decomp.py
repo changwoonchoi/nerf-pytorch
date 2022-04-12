@@ -359,6 +359,9 @@ def create_NeRFDecomp(args):
         "lut_coefficient": args.lut_coefficient,
         "depth_map_from_ground_truth": args.depth_map_from_ground_truth,
         "target_normal_map_for_radiance_calculation": args.calculating_normal_type,
+        "calculate_albedo_from_gt": args.calculate_albedo_from_gt,
+        "calculate_roughness_from_gt": args.calculate_roughness_from_gt,
+        "calculate_irradiance_from_gt": args.calculate_irradiance_from_gt,
         "epsilon": args.epsilon_for_numerical_normal,
         "epsilon_direction": args.epsilon_direction_for_numerical_normal,
         "N_hemisphere_sample_sqrt": args.N_hemisphere_sample_sqrt

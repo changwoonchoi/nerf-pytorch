@@ -1,3 +1,0 @@
-include=common.txt
-expname = onehot_equal_decompose/instance_th_0.2
-instance_th=0.2

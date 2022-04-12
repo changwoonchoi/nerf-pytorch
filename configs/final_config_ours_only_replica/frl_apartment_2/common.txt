@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/replica/frl_apartment_2
+basedir = ../logs/final_config_ours_only_replica/frl_apartment_2

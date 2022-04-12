@@ -5,7 +5,7 @@ import os
 import json
 
 def find_min_max_depth_helper(basedir):
-	min_value = 10000
+	min_value = 100000
 	max_value = 0
 	splits = ["train", "val", "test"]
 
@@ -25,7 +25,8 @@ def find_min_max_depth_helper(basedir):
 		json.dump(data, f)
 
 def find_min_max_depth():
-	targets = ["bathroom2", "bedroom", "kitchen", "living-room-2", "living-room-3", "staircase", "veach-ajar", "veach_door_simple"]
+	# targets = ["bathroom2", "bedroom", "kitchen", "living-room-2", "living-room-3", "staircase", "veach-ajar", "veach_door_simple"]
+	targets = ["dining-room", "bathroom", "classroom", "living-room"]
 
 	for target in targets:
 		basedir = "../../data/mitsuba/%s" % target

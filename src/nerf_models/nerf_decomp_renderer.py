@@ -19,11 +19,16 @@ from utils.math_utils import get_TBN
 from nerf_models.microfacet import Microfacet
 from utils.math_utils import *
 
+gamma = 2.2
+epsilon_srgb = 1e-12
+
+
 def tonemap(x):
 	if x is None:
 		return None
 	else:
-		return x / (1 + x)
+		y = x / (1 + x)
+		return torch.pow(y + epsilon_srgb, 1.0/gamma)
 
 
 def high_dynamic_range_radiance_f(x):
@@ -100,6 +105,8 @@ def raw2outputs_neigh(rays_o, rays_d, z_vals, z_vals_constant, network_query_fn,
 		radiance_to_ldr = lambda x:x
 	else:
 		radiance_to_ldr = tonemap
+	#radiance_to_ldr = lambda x: None if x is None else torch.pow(radiance_to_ldr_temp(x) + epsilon_srgb, 1.0 / gamma)
+
 
 	results = {}
 	# don't calculate gradient for neighborhood pixels
@@ -161,6 +168,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				epsilon_direction=0.01,
 				gt_values=None,
 				target_normal_map_for_radiance_calculation="ground_truth",
+				calculate_irradiance_from_gt=False,
+				calculate_albedo_from_gt = False,
+				calculate_roughness_from_gt=False,
 				target_albedo_map_for_radiance_calculation="ground_truth",
 				target_roughness_map_for_radiance_calculation="ground_truth",
 				target_radiance_map_for_radiance_calculation="ground_truth",
@@ -351,13 +361,16 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	"""
 
 	target_albedo_map = albedo_map
-	# if target_albedo_map_for_radiance_calculation == "ground_truth":
-	# 	target_albedo_map = gt_values["albedo"]
+	if calculate_albedo_from_gt:
+		target_albedo_map = gt_values["albedo"]
 
 	target_roughness_map = roughness_map
-	# if target_roughness_map_for_radiance_calculation == "ground_truth":
-	# 	target_roughness_map = gt_values["roughness"][...,0]
+	if calculate_roughness_from_gt:
+		target_roughness_map = gt_values["roughness"][...,0]
 
+	target_irradiance_map = irradiance_map[...,None]
+	if calculate_irradiance_from_gt:
+		target_irradiance_map = gt_values["irradiance"]
 
 	target_binormal_map = None
 	target_tangent_map = None
@@ -568,7 +581,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
 				mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
 
-			diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * irradiance_map[..., None]
+			diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * target_irradiance_map[..., None]
 			specular_map = specular_map * prefiltered_reflected_map
 			approximated_radiance_map = diffuse_map + specular_map
 
@@ -584,6 +597,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		radiance_to_ldr = lambda x:x
 	else:
 		radiance_to_ldr = tonemap
+	#radiance_to_ldr = lambda x: None if x is None else torch.pow(radiance_to_ldr_temp(x) + epsilon_srgb, 1.0 / gamma)
 
 	results["color_map"] = radiance_to_ldr(approximated_radiance_map)
 	results["radiance_map"] = radiance_to_ldr(radiance_map)
@@ -592,14 +606,14 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	for k in range(len(reflected_coarse_radiance_map)):
 		results["reflected_coarse_radiance_map_%d" % (k + 1)] = radiance_to_ldr(reflected_coarse_radiance_map[k])
 
-	results["irradiance_map"] = radiance_to_ldr(irradiance_map)
+	results["irradiance_map"] = radiance_to_ldr(target_irradiance_map)
 	results["min_irradiance_map"] = radiance_to_ldr(min_irradiance_map)
 	results["max_irradiance_map"] = radiance_to_ldr(max_irradiance_map)
 	results["reflected_radiance_map"] = radiance_to_ldr(reflected_radiance_map)
 	results["prefiltered_reflected_map"] = radiance_to_ldr(prefiltered_reflected_map)
 
-	results["albedo_map"] = albedo_map
-	results["roughness_map"] = roughness_map
+	results["albedo_map"] = target_albedo_map
+	results["roughness_map"] = target_roughness_map
 	results["specular_map"] = radiance_to_ldr(specular_map)
 	results["diffuse_map"] = radiance_to_ldr(diffuse_map)
 	results["n_dot_v_map"] = n_dot_v
@@ -872,6 +886,7 @@ def render_decomp_path(
 			result_image = (result_image + 1) * 0.5
 		elif "depth" in key_name:
 			# depth to disp
+			result_image = result_image / (dataset_test.far * 0.1)
 			result_image = 1. / torch.max(1e-10 * torch.ones_like(result_image), result_image)
 		elif "instance" in key_name:
 			result_image = label_encoder.encoded_label_to_colored_label(result_image)

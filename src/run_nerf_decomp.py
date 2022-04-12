@@ -185,12 +185,17 @@ def train(args):
 
 		# load train and validation dataset
 		load_normal = args.learn_normal_from_oracle or args.calculating_normal_type == "ground_truth"
+		load_irradiance = args.calculate_irradiance_from_gt
+		load_roughness = args.calculate_roughness_from_gt
+		load_albedo = args.calculate_albedo_from_gt or args.learn_albedo_from_oracle
+
 		load_params = {
 			"image_scale": args.image_scale,
 			"load_normal": load_normal,
 			"load_depth": args.depth_map_from_ground_truth,
-			"load_roughness": False,
-			"load_albedo": args.learn_albedo_from_oracle,
+			"load_roughness": load_roughness,
+			"load_albedo": load_albedo,
+			"load_irradiance": load_irradiance,
 			"sample_length": args.sample_length,
 			"coarse_radiance_number": args.coarse_radiance_number,
 			"load_instance_label_mask": args.instance_mask,
@@ -201,8 +206,11 @@ def train(args):
 		dataset = load_dataset_split("train", **load_params)
 
 		# force load albedo & normal for test set
-		load_params["load_albedo"] = True
-		load_params["load_normal"] = True
+		load_albedo_test = load_albedo
+		load_normal_test = load_normal
+
+		load_params["load_albedo"] = load_albedo_test
+		load_params["load_normal"] = load_normal_test
 		dataset_val = load_dataset_split("test", skip=10, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
@@ -317,11 +325,13 @@ def train(args):
 		colored_label_gt = colored_label_gt.permute((0, 3, 1, 2))
 		writer.add_images('test/gt_instance_colored', colored_label_gt, 0)
 
-	normal_gt = dataset_val.normals.permute((0, 3, 1, 2))
-	writer.add_images('test/gt_normal', normal_gt, 0)
+	if load_normal_test:
+		normal_gt = dataset_val.normals.permute((0, 3, 1, 2))
+		writer.add_images('test/gt_normal', normal_gt, 0)
 
-	albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
-	writer.add_images('test/gt_albedo', albedo_gt, 0)
+	if load_albedo_test:
+		albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
+		writer.add_images('test/gt_albedo', albedo_gt, 0)
 
 	mse_loss = torch.nn.MSELoss()
 	l1_loss = torch.nn.L1Loss()
@@ -594,6 +604,8 @@ def train(args):
 		loss_sigma_depth = 0
 		if args.depth_map_from_ground_truth and args.train_depth_from_ground_truth:
 			loss_sigma_depth = calculate_loss("depth_map", target_info["depth"][..., 0])
+			loss_sigma_depth /= (dataset.far * dataset.far * 0.1)
+
 			# print(loss_sigma_depth, "loss_sigma_depth")
 
 		# 3) Normal render loss

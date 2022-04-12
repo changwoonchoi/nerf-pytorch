@@ -1,6 +1,0 @@
-{
-  "available_gpus" : [1,3,6,7],
-  "config_lists":[
-    "../configs/decomp/monte_carlo_linear_radiance"
-  ]
-}

@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/veach_door_simple
-basedir = ../logs/mitsuba/veach_door_simple

@@ -88,6 +88,10 @@ class NerfDataset(Dataset, ABC):
 			normal_temp = self.normals[i].permute((2, 0, 1))
 			result["normal"] = t(normal_temp).permute((1, 2, 0))
 
+		if self.load_irradiance:
+			irradiance_temp = self.normals[i].permute((2, 0, 1))
+			result["irradiance"] = t(irradiance_temp).permute((1, 2, 0))
+
 		if self.load_roughness:
 			roughness_temp = self.roughness[i].permute((2,0,1))
 			result["roughness"] = t(roughness_temp).permute((1,2,0))
@@ -143,6 +147,8 @@ class NerfDataset(Dataset, ABC):
 			pixel_info["roughness"] = self.roughness[image_index][v, u]
 		if self.load_depth:
 			pixel_info["depth"] = self.depths[image_index][v, u]
+		if self.load_irradiance:
+			pixel_info["irradiance"] = self.irradiances[image_index][v, u, :]
 		return pixel_info
 
 	def get_near_far_plane(self):
@@ -269,6 +275,8 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_clevr import ClevrDataset
 	from dataset.dataset_mitsuba import MitsubaDataset
 	from dataset.dataset_mitsuba_eval import MitsubaEvalDataset
+	from dataset.dataset_nerf_synthetic import NeRFSyntheticDataset
+	from dataset.dataset_replica import ReplicaDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -276,6 +284,7 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return MitsubaDataset(basedir, **kwargs)
 	elif dataset_type == "mitsuba_eval":
 		return MitsubaEvalDataset(basedir, **kwargs)
-
-#elif dataset_type == "clevr_decomp":
-	#	return ClevrDecompDataset(basedir, **kwargs)
+	elif dataset_type == "nerf_synthetic":
+		return NeRFSyntheticDataset(basedir, **kwargs)
+	elif dataset_type == "replica":
+		return ReplicaDataset(basedir, **kwargs)

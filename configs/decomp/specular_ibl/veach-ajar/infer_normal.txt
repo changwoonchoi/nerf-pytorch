@@ -1,4 +1,0 @@
-include = common.txt
-expname = infer_normal_from_gt
-infer_normal
-infer_normal_target = ground_truth_normal

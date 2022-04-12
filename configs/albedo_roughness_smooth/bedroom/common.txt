@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/bedroom
-basedir = ../logs/albedo_roughness_smooth/bedroom

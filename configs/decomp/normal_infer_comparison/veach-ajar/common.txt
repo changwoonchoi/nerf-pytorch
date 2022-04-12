@@ -1,4 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/veach-ajar
-basedir = ../logs/normal_infer_comparison/veach-ajar
-infer_normal

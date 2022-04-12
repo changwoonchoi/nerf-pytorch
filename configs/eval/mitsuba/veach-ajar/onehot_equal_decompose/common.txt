@@ -1,9 +1,0 @@
-include = ../common.txt
-instance_label_encoding = one_hot
-CE_weight_type = equal
-use_instance_feature_layer
-render_decompose
-render_only
-ft_path = ../logs/mitsuba/veach-ajar/onehot_equal/1000000.tar
-decompose_target = 17,18
-decompose_mode = binary

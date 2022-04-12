@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba_scale_2/kitchen
-basedir = ../logs/smoothness_test/kitchen

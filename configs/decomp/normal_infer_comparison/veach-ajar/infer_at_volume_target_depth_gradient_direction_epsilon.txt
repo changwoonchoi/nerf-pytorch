@@ -1,3 +1,0 @@
-include = common.txt
-expname = infer_at_volume_target_depth_gradient_direction_epsilon
-infer_normal_target = normal_map_from_depth_gradient_direction_epsilon

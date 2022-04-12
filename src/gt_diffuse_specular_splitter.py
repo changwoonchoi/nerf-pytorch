@@ -108,7 +108,7 @@ def split_sum_approximation(folder, i, out_path=None):
 	radiance = load_image_specific(None, to_linear=True)
 	albedo = load_image_specific("albedo", to_linear=False)
 	irradiance = load_image_specific("irradiance", to_linear=True)
-	mirror = load_image_specific("mirror", to_linear=True)
+	#mirror = load_image_specific("mirror", to_linear=True)
 
 	n_dot_v = load_image_specific("n_dot_v", to_linear=False)[...,0]
 	roughness = load_image_specific("roughness", to_linear=False)[...,0]
@@ -125,7 +125,7 @@ def split_sum_approximation(folder, i, out_path=None):
 
 	F = F0 + F1 * np.power(np.clip(1-n_dot_v, 0, 1), 5)
 	specular_coeff = F * envBRDF1 + envBRDF0
-	diffuse = albedo * irradiance
+	diffuse = albedo * irradiance * roughness * (1-F)
 	#prefiltered_value = mirror * (1-roughness) + irradiance * roughness
 
 	#specular = specular_coeff * prefiltered_value
@@ -149,11 +149,11 @@ def split_sum_approximation(folder, i, out_path=None):
 
 if __name__ == "__main__":
 	basedir = "../data/mitsuba/"
-	out_basedir = "../data/mitsuba_split/"
+	out_basedir = "../data/mitsuba/"
 
 	targets = ["bathroom2", "bedroom", "kitchen", "living-room-2", "living-room-3", "staircase", "veach-ajar", "veach_door_simple"]
 	targets = [ "kitchen", "living-room-2", "bedroom", "veach-ajar"]
-
+	targets = ["living-room", "classroom", "bathroom", "dining-room"]
 	splits = ["train", "test", "val"]
 
 	target_configs = []

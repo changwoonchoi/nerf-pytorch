@@ -163,6 +163,10 @@ def config_parser(default_files=None):
 	parser.add_argument("--learn_normal_from_oracle", action='store_true', help='learn_normal_from_oracle')
 	parser.add_argument("--learn_albedo_from_oracle", action='store_true', help='learn_albedo_from_oracle')
 
+	parser.add_argument("--calculate_irradiance_from_gt", action='store_true', help='calculate_irradiance_from_gt')
+	parser.add_argument("--calculate_roughness_from_gt", action='store_true', help='calculate_roughness_from_gt')
+	parser.add_argument("--calculate_albedo_from_gt", action='store_true', help='calculate_albedo_from_gt')
+
 	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
 	parser.add_argument("--calculating_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, ground_truth]')
 
