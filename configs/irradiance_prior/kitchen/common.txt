@@ -1,0 +1,7 @@
+include = ../common.txt
+datadir = ../data/mitsuba_no_transparent/kitchen
+basedir = ../logs/irradiance_prior/kitchen
+use_radiance_linear
+
+irradiance_normal_smooth
+beta_irradiance_normal_smooth = 0.001

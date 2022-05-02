@@ -184,7 +184,7 @@ def train(args):
 			return target_dataset
 
 		# load train and validation dataset
-		load_normal = args.learn_normal_from_oracle or args.calculating_normal_type == "ground_truth"
+		load_normal = args.learn_normal_from_oracle or args.calculating_normal_type == "ground_truth" or args.calculating_neigh_normal_type == "ground_truth"
 		load_irradiance = args.calculate_irradiance_from_gt
 		load_roughness = args.calculate_roughness_from_gt
 		load_albedo = args.calculate_albedo_from_gt or args.learn_albedo_from_oracle
@@ -520,6 +520,7 @@ def train(args):
 					init_basecolor=dataset.init_basecolor,
 					is_neighbor=True,
 					approximate_radiance=i >= args.N_iter_ignore_approximated_radiance,
+					gt_values=neigh_info,
 					**render_kwargs_train
 				)
 
@@ -643,30 +644,39 @@ def train(args):
 		loss_smooth_roughness = 0
 		loss_smooth_albedo = 0
 		loss_smooth_irradiance = 0
+		loss_normal_smooth_irradiance = 0
 
-		if args.ray_sample == "patch":
-			if args.smooth_weight_type == "color":
-				smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
-					neigh_info['rgb'] - target_info['rgb'].view([-1, 1, 3]), 2, -1))
-			elif args.smooth_weight_type == 'chrom':
-				smooth_weight = torch.exp(
-					-args.smooth_weight_decay * torch.norm(
-						normalize(neigh_info["rgb"], dim=-1) - normalize(target_info['rgb'].view([-1, 1, 3]),
-																		 dim=-1), 2, -1
+		if args.ray_sample == "patch" and i >= args.N_iter_ignore_smooth:
+			def calculate_smooth_weight(smooth_weight_type="color"):
+				if smooth_weight_type == "color":
+					smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
+						neigh_info['rgb'] - target_info['rgb'].view([-1, 1, 3]), 2, -1))
+				elif smooth_weight_type == 'chrom':
+					smooth_weight = torch.exp(
+						-args.smooth_weight_decay * torch.norm(
+							normalize(neigh_info["rgb"], dim=-1) - normalize(target_info['rgb'].view([-1, 1, 3]),
+																			 dim=-1), 2, -1
+						)
 					)
-				)
-			elif args.smooth_weight_type == 'normal':
-				smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
-					neigh_info['normal'] - target_info['normal'].view([-1, 1, 3]), 2, -1))
-			elif args.smooth_weight_type == 'all':
-				smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
-					torch.cat([neigh_info['rgb'], neigh_info['normal']], dim=-1) - torch.cat(
-						[target_info['rgb'], target_info['normal']], dim=-1).view([-1, 1, 6]), 2, -1
-				))
-			else:
-				raise ValueError
+				elif smooth_weight_type == 'normal':
+					smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
+						neigh_info['normal'] - target_info['normal'].view([-1, 1, 3]), 2, -1))
+				elif smooth_weight_type == 'calculated_normal':
+					smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
+						result_neigh['target_normal_map'].reshape([-1, 8, 3]) - result['target_normal_map'].view([-1, 1, 3]), 2, -1))
+				elif smooth_weight_type == 'calculated_normal_th':
+					raise NotImplementedError
+					# smooth_weight = torch.
+				elif smooth_weight_type == 'all':
+					smooth_weight = torch.exp(-args.smooth_weight_decay * torch.norm(
+						torch.cat([neigh_info['rgb'], neigh_info['normal']], dim=-1) - torch.cat(
+							[target_info['rgb'], target_info['normal']], dim=-1).view([-1, 1, 6]), 2, -1
+					))
+				else:
+					raise ValueError
+				return smooth_weight
 
-			def calculate_smooth_loss(key_name, norm_p=1):
+			def calculate_smooth_loss(key_name, norm_p=1, smooth_weight_type='color'):
 				if len(result[key_name].shape) == 1:
 					result_p = result[key_name][..., None]
 					result_p_neighs = result_neigh[key_name][..., None]
@@ -677,6 +687,7 @@ def train(args):
 
 				loss_smooth = result_p[:, None, :] - result_p_neighs
 				loss_smooth = torch.norm(loss_smooth, norm_p, -1)
+				smooth_weight = calculate_smooth_weight(smooth_weight_type)
 				loss_smooth = torch.mean(smooth_weight * loss_smooth)
 
 				if key_name + '0' in result:
@@ -685,15 +696,20 @@ def train(args):
 
 			# 5-1 roughness smooth
 			if args.roughness_smooth:
-				loss_smooth_roughness = calculate_smooth_loss("roughness_map")
+				loss_smooth_roughness = calculate_smooth_loss("roughness_map", smooth_weight_type=args.smooth_weight_type)
 
 			# 5-2 albedo smooth
 			if args.albedo_smooth:
-				loss_smooth_albedo = calculate_smooth_loss("albedo_map")
+				loss_smooth_albedo = calculate_smooth_loss("albedo_map", smooth_weight_type=args.smooth_weight_type)
 
 			# 5-3 irradiance smooth
 			if args.irradiance_smooth:
-				loss_smooth_irradiance = calculate_smooth_loss("irradiance_map")
+				loss_smooth_irradiance = calculate_smooth_loss("irradiance_map", smooth_weight_type=args.smooth_weight_type)
+
+			# 5-4 irradiance normal smooth
+			# if args.irradiance_normal_smooth and i >= args.N_iter_ignore_approximated_radiance:
+			if args.irradiance_normal_smooth:
+				loss_normal_smooth_irradiance = calculate_smooth_loss("irradiance_map", smooth_weight_type=args.normal_smooth_weight_type)
 
 		# 6) instance-wise constant loss (for test)
 		loss_instancewise_constant_albedo = 0
@@ -767,6 +783,7 @@ def train(args):
 			total_loss += args.beta_roughness_smooth * loss_smooth_roughness
 			total_loss += args.beta_irradiance_smooth * loss_smooth_irradiance
 			total_loss += args.beta_albedo_smooth * loss_smooth_albedo
+			total_loss += args.beta_irradiance_normal_smooth * loss_normal_smooth_irradiance
 
 		# (d) instance loss
 		if args.instance_mask:
@@ -819,6 +836,7 @@ def train(args):
 			writer.add_scalar('Loss/Loss_roughness_smooth', loss_smooth_roughness, i)
 			writer.add_scalar('Loss/Loss_irradiance_smooth', loss_smooth_irradiance, i)
 			writer.add_scalar('Loss/Loss_albedo_smooth', loss_smooth_albedo, i)
+			writer.add_scalar('Loss/Loss_irradiance_normal_smooth', loss_normal_smooth_irradiance, i)
 
 			if args.load_priors:
 				writer.add_scalar('Loss/Loss_prior_albedo', loss_prior_albedo, i)

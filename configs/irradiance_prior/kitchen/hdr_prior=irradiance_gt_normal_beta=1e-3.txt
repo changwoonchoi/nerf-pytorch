@@ -1,0 +1,15 @@
+include = common.txt
+# depth_map_from_ground_truth
+# calculating_normal_type = normal_map_from_depth_gradient_epsilon
+
+calculating_normal_type = ground_truth
+calculating_neigh_normal_type = ground_truth
+normal_smooth_weight_type = calculated_normal
+
+beta_irradiance_normal_smooth = 0.001
+
+load_priors
+
+beta_prior_irradiance=0.001
+beta_prior_albedo = 0
+prior_type = bell

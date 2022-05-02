@@ -364,7 +364,9 @@ def create_NeRFDecomp(args):
         "calculate_irradiance_from_gt": args.calculate_irradiance_from_gt,
         "epsilon": args.epsilon_for_numerical_normal,
         "epsilon_direction": args.epsilon_direction_for_numerical_normal,
-        "N_hemisphere_sample_sqrt": args.N_hemisphere_sample_sqrt
+        "N_hemisphere_sample_sqrt": args.N_hemisphere_sample_sqrt,
+        "irradiance_normal_smooth": args.irradiance_normal_smooth,
+        "neigh_normal_target": args.calculating_neigh_normal_type
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}
