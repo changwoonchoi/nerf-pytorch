@@ -1,0 +1,13 @@
+include = common.txt
+
+sRGB
+
+beta_normal_reg = 1.
+
+normal_detach
+infer_normal
+infer_normal_target = normal_reg
+calculating_normal_type = normal_reg
+
+N_iter_ignore_normal = 0
+N_iter_ignore_approximated_radiance = 0

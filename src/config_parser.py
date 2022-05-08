@@ -51,6 +51,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--use_illumination_feature_layer", action="store_true", help='NeRF with illumination feature_layer(Zhi, 2021)')
 	parser.add_argument("--load_depth_range_from_file", action="store_true", help='load_depth_range_from_file')
 
+	parser.add_argument("--sRGB", action="store_true", help="input image is sRGB -> convert to linear RGB in dataloader")
+
 	parser.add_argument("--N_iter", type=int, default=200000, help="Total iteration num")
 	parser.add_argument("--target_load_N_iter", type=int, default=-1, help="target_load_N_iter")
 
@@ -99,6 +101,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_roughness_render", type=float, default=1)
 	parser.add_argument("--beta_prior_albedo", type=float, default=0.01)
 	parser.add_argument("--beta_prior_irradiance", type=float, default=0.01)
+	parser.add_argument("--beta_normal_reg", type=float, default=1)
 
 	parser.add_argument("--albedo_instance_constant", action='store_true')
 	parser.add_argument("--irradiance_instance_constant", action='store_true')
@@ -161,6 +164,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--infer_normal_at_surface", action='store_true', help='infer normal from surface')
 	parser.add_argument("--infer_normal_target", type=str, default="normal_map_from_sigma_gradient", help='decompose mode one of all or binary')
 
+	parser.add_argument("--normal_detach", action='store_true', help='detach normal from loss calculation')
+
 	parser.add_argument("--infer_depth", action='store_true', help='infer depth using additional MLP')
 	parser.add_argument("--use_radiance_linear", action='store_true', help='is_radiance_linear')
 	parser.add_argument("--infer_visibility", action='store_true', help='infer_visibility')
@@ -177,8 +182,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--calculate_albedo_from_gt", action='store_true', help='calculate_albedo_from_gt')
 
 	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
-	parser.add_argument("--calculating_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, ground_truth]')
-	parser.add_argument("--calculating_neigh_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, ground_truth]')
+	parser.add_argument("--calculating_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, normal_reg, ground_truth]')
+	parser.add_argument("--calculating_neigh_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, normal_reg, ground_truth]')
 
 	parser.add_argument("--N_hemisphere_sample_sqrt", type=int, default=16, help='N_hemisphere_sample_sqrt')
 	parser.add_argument("--N_envmap_size", type=int, default=16, help='N_envmap_size')

@@ -7,6 +7,7 @@ from utils.logging_utils import load_logger
 import torch
 from utils.color_utils import get_basecolor
 from torchvision import transforms
+from utils.image_utils import srgb_to_rgb
 
 
 class NerfDataset(Dataset, ABC):
@@ -24,6 +25,8 @@ class NerfDataset(Dataset, ABC):
 
 		self.near = 0
 		self.far = 0
+
+		self.sRGB = kwargs.get("sRGB", True)
 
 		self.images = []
 		self.poses = []
@@ -183,7 +186,10 @@ class NerfDataset(Dataset, ABC):
 		data_loader = DataLoader(self, num_workers=num_of_workers, batch_size=1)
 		for i, data in enumerate(data_loader):
 			if "image" in data:
-				self.images.append(data["image"][0])
+				if self.sRGB:
+					self.images.append(srgb_to_rgb(data["image"][0]))
+				else:
+					self.images.append(data["image"][0])
 			if "pose" in data:
 				self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
@@ -202,8 +208,12 @@ class NerfDataset(Dataset, ABC):
 			if self.load_irradiance:
 				self.irradiances.append(data["irradiance"][0])
 			if self.load_priors:
-				self.prior_albedos.append(data["prior_albedo"][0])
-				self.prior_irradiances.append(data["prior_irradiance"][0])
+				if self.sRGB:
+					self.prior_albedos.append(srgb_to_rgb(data["prior_albedo"][0]))
+					self.prior_irradiances.append(srgb_to_rgb(data["prior_irradiance"][0]))
+				else:
+					self.prior_albedos.append(data["prior_albedo"][0])
+					self.prior_irradiances.append(data["prior_irradiance"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):

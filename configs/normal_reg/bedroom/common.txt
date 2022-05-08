@@ -1,0 +1,5 @@
+include = ../common.txt
+datadir = ../data/mitsuba_no_transparent_with_prior/bedroom
+basedir = ../logs/normal_reg/bedroom
+
+use_radiance_linear

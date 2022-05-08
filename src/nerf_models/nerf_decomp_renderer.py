@@ -177,6 +177,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				infer_normal=False,
 				infer_normal_at_surface=False,
 				normal_mlp=None,
+				normal_detach=True,
 				brdf_lut=None,
 				epsilon=0.01,
 				epsilon_direction=0.01,
@@ -207,6 +208,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		depth_map: [num_rays]. Estimated distance to object.
 	"""
 	is_radiance_sigmoid = not kwargs.get('use_radiance_linear', False)
+	viewdirs = rays_d
+	viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)  # normalized rays_d
 
 	if is_radiance_sigmoid:
 		radiance_f = torch.sigmoid
@@ -270,8 +273,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			inferred_normal_map.squeeze_(-2)
 		else:
 			inferred_normal_raw = network_query_fn(pts, None, normal_mlp)
-			inferred_normal = 2 * torch.sigmoid(inferred_normal_raw) - 1
-			inferred_normal_map = torch.sum(weights_detached[..., None] * inferred_normal, -2)
+			inferred_normal = normalize(2 * torch.sigmoid(inferred_normal_raw) - 1, dim=-1)
+			inferred_normal_map = normalize(torch.sum(weights_detached[..., None] * inferred_normal, -2), dim=-1)
 
 	target_normal_map = None
 
@@ -400,6 +403,19 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	reflected_radiance_map = None
 	prefiltered_reflected_map = None
 	reflected_coarse_radiance_map = []
+	gradient_normal = None
+	weighted_n_dot_d = None
+
+	if kwargs.get('calculate_normal_for_MLP', False) and not kwargs.get('approximateed_radiance', False):
+		if target_normal_map_for_radiance_calculation == "normal_reg":
+			gradient_normal = get_normal_from_sigma_gradient(pts, network_query_fn, network_fn, normal_detach)
+			target_normal_map = inferred_normal_map
+		if infer_normal:
+			weighted_n_dot_d = torch.sum(inferred_normal * viewdirs[..., None, :], -1)
+			weighted_n_dot_d = torch.clamp(weighted_n_dot_d, max=0.)
+			weighted_n_dot_d = torch.pow(weighted_n_dot_d, 2)
+			weighted_n_dot_d *= weights_detached
+
 	if kwargs.get('approximate_radiance', False):
 
 		# calculate normal only approximate radiance
@@ -429,11 +445,22 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
 		elif target_normal_map_for_radiance_calculation == "inferred_normal_map":
 			target_normal_map = inferred_normal_map
+		elif target_normal_map_for_radiance_calculation == "normal_reg":
+			gradient_normal = get_normal_from_sigma_gradient(pts, network_query_fn, network_fn, normal_detach)
+			target_normal_map = inferred_normal_map
 		else:
 			raise ValueError
 
-		n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
+		# n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
+		# n_dot_v = torch.clip(n_dot_v, 0, 1)
+		n_dot_v = torch.sum(-viewdirs * target_normal_map, -1)
 		n_dot_v = torch.clip(n_dot_v, 0, 1)
+
+		if target_normal_map_for_radiance_calculation == "normal_reg" and infer_normal:
+			weighted_n_dot_d = torch.sum(inferred_normal * viewdirs[..., None, :], -1)
+			weighted_n_dot_d = torch.clamp(weighted_n_dot_d, max=0.)
+			weighted_n_dot_d = torch.pow(weighted_n_dot_d, 2)
+			weighted_n_dot_d *= weights_detached
 
 		if kwargs.get('use_monte_carlo_integration', True):
 			# N_hemisphere_sample = N_hemisphere_sample_sqrt * N_hemisphere_sample_sqrt
@@ -653,6 +680,11 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results["target_depth_map"] = target_depth_map
 
 	results["weights"] = weights
+
+	if target_normal_map_for_radiance_calculation == "normal_reg" and infer_normal:
+		results["gradient_normal"] = gradient_normal
+		results["inferred_normal"] = inferred_normal
+		results["weighted_n_dot_d"] = weighted_n_dot_d
 
 	return results
 

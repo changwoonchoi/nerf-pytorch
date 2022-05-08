@@ -349,6 +349,7 @@ def create_NeRFDecomp(args):
         "infer_visibility": args.infer_visibility,
         "infer_normal": args.infer_normal,
         "infer_normal_at_surface": args.infer_normal_at_surface,
+        "normal_detach": args.normal_detach,
         "coarse_radiance_number": args.coarse_radiance_number,
         "use_monte_carlo_integration": args.use_monte_carlo_integration,
         "use_gradient_for_incident_radiance": args.use_gradient_for_incident_radiance,

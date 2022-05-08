@@ -81,3 +81,31 @@ def texture(image, u, v):
 	value_11 = image[u_i+1, v_i+0, :]
 
 	value = value_00 * (1-u_f) * (1-v_f) + value_01 * (1-u_f) * v_f + value_10 * u_f * (1-v_f) + value_11 * u_f * v_f
+
+
+def rgb_to_srgb(rgb):
+	srgb = torch.zeros_like(rgb)
+	target_idx = rgb >= 0
+	srgb[target_idx] = torch.pow(rgb[target_idx], 1.0 / 2.2)
+	return srgb
+
+
+def srgb_to_rgb(srgb):
+	rgb = torch.zeros_like(srgb)
+	target_idx = srgb >= 0
+	rgb[target_idx] = torch.pow(srgb[target_idx], 2.2)
+	return rgb
+
+
+def rgb_to_srgb_np(rgb):
+	srgb = np.zeros_like(rgb)
+	target_idx = rgb >= 0
+	srgb[target_idx] = np.power(rgb[target_idx], 1.0 / 2.2)
+	return srgb
+
+
+def srgb_to_rgb_np(srgb):
+	rgb = np.zeros_like(srgb)
+	target_idx = srgb >= 0
+	rgb[target_idx] = np.power(srgb[target_idx], 2.2)
+	return rgb

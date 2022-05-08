@@ -1,0 +1,21 @@
+include = common.txt
+
+sRGB
+use_radiance_linear
+
+load_priors
+prior_type = bell
+beta_prior_albedo = 0.1
+beta_prior_irradiance = 0.
+
+normal_detach
+infer_normal
+infer_normal_target = normal_reg
+calculating_normal_type = normal_reg
+
+beta_normal_reg = 1.
+beta_inferred_normal = 1.
+
+N_iter_ignore_normal = 0
+N_iter_ignore_prior = 10000
+N_iter_ignore_approximated_radiance = 10000

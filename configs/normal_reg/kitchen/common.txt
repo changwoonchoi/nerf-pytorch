@@ -1,0 +1,5 @@
+include = ../common.txt
+datadir = ../data/mitsuba_no_transparent_with_prior/kitchen
+basedir = ../logs/normal_reg/kitchen
+
+use_radiance_linear
