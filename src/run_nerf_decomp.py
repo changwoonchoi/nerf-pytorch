@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch.distributions.categorical import Categorical
 import json
-from utils.image_utils import rgb_to_srgb, srgb_to_rgb
+from utils.image_utils import rgb_to_srgb, rgb_to_srgb_np, srgb_to_rgb
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
@@ -441,7 +441,7 @@ def train(args):
 			if len(stacked_images.shape) != 4:
 				stacked_images = np.expand_dims(stacked_images, -1)
 			if args.sRGB and key_name in ["rgb", "albedo_map", "specular_map", "diffuse_map"]:
-				writer.add_images('test/inferred/%s' % key_name, rgb_to_srgb(stacked_images.transpose((0, 3, 1, 2))), _i)
+				writer.add_images('test/inferred/%s' % key_name, rgb_to_srgb_np(stacked_images.transpose((0, 3, 1, 2))), _i)
 			else:
 				writer.add_images('test/inferred/%s' % key_name, stacked_images.transpose((0, 3, 1, 2)), _i)
 
