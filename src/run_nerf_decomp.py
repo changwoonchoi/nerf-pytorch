@@ -440,7 +440,7 @@ def train(args):
 			stacked_images = render_decomp_path_results[key_name]
 			if len(stacked_images.shape) != 4:
 				stacked_images = np.expand_dims(stacked_images, -1)
-			if args.sRGB and key_name in ["rgb", "albedo", "specular", "diffuse", "reflected_radiance", "prefiltered_reflected"]:
+			if args.sRGB and key_name in ["rgb", "albedo", "specular", "diffuse", "reflected_radiance", "prefiltered_reflected", "radiance", "radiance_1", "radiance_2", "radiance_3"]:
 				writer.add_images('test/inferred/%s' % key_name, rgb_to_srgb_np(stacked_images.transpose((0, 3, 1, 2))), _i)
 			else:
 				writer.add_images('test/inferred/%s' % key_name, stacked_images.transpose((0, 3, 1, 2)), _i)
