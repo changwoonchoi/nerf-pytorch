@@ -7,7 +7,7 @@ from utils.logging_utils import load_logger
 import torch
 from utils.color_utils import get_basecolor
 from torchvision import transforms
-
+from utils.image_utils import *
 
 class NerfDataset(Dataset, ABC):
 	def __init__(self, name, **kwargs):
@@ -69,6 +69,8 @@ class NerfDataset(Dataset, ABC):
 		self.near = kwargs.get("near_plane", 1)
 		self.far = kwargs.get("far_plane", 10)
 
+		self.gamma_correct = kwargs.get("gamma_correct", False)
+
 	def get_focal_matrix(self):
 		K = np.array([
 			[self.focal, 0, 0.5 * self.width],
@@ -89,7 +91,7 @@ class NerfDataset(Dataset, ABC):
 			result["normal"] = t(normal_temp).permute((1, 2, 0))
 
 		if self.load_irradiance:
-			irradiance_temp = self.normals[i].permute((2, 0, 1))
+			irradiance_temp = self.irradiances[i].permute((2, 0, 1))
 			result["irradiance"] = t(irradiance_temp).permute((1, 2, 0))
 
 		if self.load_roughness:
@@ -168,7 +170,12 @@ class NerfDataset(Dataset, ABC):
 		data_loader = DataLoader(self, num_workers=num_of_workers, batch_size=1)
 		for i, data in enumerate(data_loader):
 			if "image" in data:
-				self.images.append(data["image"][0])
+				image = data["image"][0]
+				if not self.gamma_correct:
+					self.images.append(image)
+				else:
+					print("GAMMA CORRECTED!!")
+					self.images.append(srgb_to_rgb_torch(image))
 			if "pose" in data:
 				self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
@@ -277,6 +284,7 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_mitsuba_eval import MitsubaEvalDataset
 	from dataset.dataset_nerf_synthetic import NeRFSyntheticDataset
 	from dataset.dataset_replica import ReplicaDataset
+	from dataset.dataset_falcor import FalcorDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -288,3 +296,5 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return NeRFSyntheticDataset(basedir, **kwargs)
 	elif dataset_type == "replica":
 		return ReplicaDataset(basedir, **kwargs)
+	elif dataset_type == "falcor":
+		return FalcorDataset(basedir, **kwargs)

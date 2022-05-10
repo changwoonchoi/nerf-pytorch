@@ -102,10 +102,16 @@ def config_parser(default_files=None):
 	parser.add_argument("--initialize_roughness", action='store_true')
 	parser.add_argument("--roughness_init", type=float, default=0.5)
 
+	parser.add_argument("--infer_albedo_separate", action='store_true')
+	parser.add_argument("--infer_roughness_separate", action='store_true')
+	parser.add_argument("--infer_irradiance_separate", action='store_true')
+
 	parser.add_argument("--roughness_smooth", action='store_true')
 	parser.add_argument("--albedo_smooth", action='store_true')
 	parser.add_argument("--irradiance_smooth", action='store_true')
+	parser.add_argument("--gamma_correct", action='store_true')
 
+	parser.add_argument("--albedo_multiplier", type=float, default=1.0, help='fraction of img taken for central crops')
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_env_map", type=float, default=5e-4, help='learning rate for env_map')
@@ -166,6 +172,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--calculate_irradiance_from_gt", action='store_true', help='calculate_irradiance_from_gt')
 	parser.add_argument("--calculate_roughness_from_gt", action='store_true', help='calculate_roughness_from_gt')
 	parser.add_argument("--calculate_albedo_from_gt", action='store_true', help='calculate_albedo_from_gt')
+	parser.add_argument("--roughness_exp_coefficient", type=float, default=1.0, help='roughness_exp_coefficient of img taken for central crops')
 
 	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
 	parser.add_argument("--calculating_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, ground_truth]')

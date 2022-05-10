@@ -103,8 +103,8 @@ class MitsubaDataset(NerfDataset):
 			sample["depth"] = load_numpy_from_path(depth_file_path, scale=self.scale)[..., None]
 		if self.load_irradiance:
 			irradiance = load_image_from_path(irradiance_file_path, scale=self.scale)
-			irradiance = np.power(irradiance, 2.2)
-			irradiance = irradiance / np.maximum(1 - irradiance, 0.000001)
+			#irradiance = np.power(irradiance, 2.2)
+			#irradiance = irradiance / np.maximum(1 - irradiance, 0.000001)
 			sample["irradiance"] = irradiance
 
 		if self.load_diffuse_specular:
@@ -129,7 +129,6 @@ class MitsubaDataset(NerfDataset):
 		pose[:3, 0] *= -1
 		pose[:3, 2] *= -1
 		sample["pose"] = pose
-
 		return sample
 
 	def get_test_render_poses(self):
