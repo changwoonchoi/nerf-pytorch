@@ -41,6 +41,8 @@ class NerfDataset(Dataset, ABC):
 		self.prior_irradiances = []
 		self.prior_type = kwargs.get("prior_type", "bell")
 
+		self.prior_irradiance_mean = 0.7
+
 		self.load_image = kwargs.get("load_image", True)
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)

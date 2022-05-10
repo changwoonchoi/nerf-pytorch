@@ -48,7 +48,7 @@ if __name__ == "__main__":
 	for room in mitsuba_rooms:
 		print("mitsuba {} processing".format(room))
 		irradiance_mean = find_representative_irradiance_value('mitsuba', room)
-		with open('../../data/mitsuba_no_transparent_with_prior/{}/train/avg_irradiance.json'.format(room), "w") as f:
+		with open('../../data/mitsuba_no_transparent_with_prior/{}/avg_irradiance.json'.format(room), "w") as f:
 			data = {
 				"mean_bell": float(irradiance_mean['bell']),
 				"mean_ting": float(irradiance_mean['ting'])
