@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/cornell-box_specular/0.0
-basedir = ../logs/specular_ibl/cornell-box_specular/0.0

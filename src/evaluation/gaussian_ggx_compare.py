@@ -63,7 +63,7 @@ def visualize_gaussian():
 	albedo = albedo[None, ...]
 	l_dot_n = torch.sum(pts2l * normal, dim=-1, keepdim=True)
 	M = 10
-	roughnesses = np.linspace(0.2,0.8, num=M)
+	roughnesses = np.linspace(0.2, 0.8, num=M)
 
 	for r in range(M):
 		roughness_value = roughnesses[r]
@@ -216,19 +216,19 @@ def gkern(l=5, size=5, sig=1.):
 
 # visualize_brdf()
 # visualize_gaussian()
-# for i in range(10):
-# 	plt.figure()
-# 	k = visualize_kernel(N=5, roughness=(i + 1) * 0.1)
-# 	print(k)
+for i in range(10):
+	plt.figure()
+	k = visualize_kernel(N=10, roughness=(i + 1) * 0.1)
+	# print(k)
 # for i in range(2, 10, 1):
 # 	gkern(l=101, size=20, sig=(i+1) * 0.1)
 # plt.figure()
-# roughnesses = [0.1 , ]
-# for i in roughnesses:
-# 	plot_kernel_2(N=101, roughness=i)
-# plt.figure()
-for i in range(10, 20, 1):
-	plot_kernel_2(N=101, roughness=(i+1) * 0.01)
+# roughnesses = [0.1]
+# for i in range(0, 9, 1):
+# 	plot_kernel_2(N=101, roughness=roughness=(i+1) * 0.1)
+plt.figure()
+#for i in range(0, 9, 1):
+#	plot_kernel_2(N=101, roughness=(i+1) * 0.1)
 
 # for i in range(10):
 # 	plot_gaussian_kernel(roughness=(i+1) * 0.1)

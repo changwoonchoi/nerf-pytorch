@@ -1,9 +1,0 @@
-{
-  "available_gpus" : [1,2,4,5],
-  "config_lists":[
-    "../configs/decomp_monte_carlo/monte_carlo_with_env_map/kitchen/n_4.txt",
-    "../configs/decomp_monte_carlo/monte_carlo_with_env_map/kitchen/n_8.txt",
-    "../configs/decomp_monte_carlo/monte_carlo_with_env_map/living-room-2/n_4.txt",
-    "../configs/decomp_monte_carlo/monte_carlo_with_env_map/living-room-2/n_8.txt"
-  ]
-}

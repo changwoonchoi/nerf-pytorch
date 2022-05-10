@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/veach-ajar
-basedir = ../logs/mitsuba/veach-ajar

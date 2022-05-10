@@ -1,0 +1,9 @@
+{
+  "available_gpus" : [0,1,2,3],
+  "config_lists":[
+    "../configs/final_config_ours_only_independent/veach_door_simple",
+    "../configs/final_config_ours_only_independent/bedroom",
+    "../configs/final_config_ours_only_independent/kitchen",
+    "../configs/final_config_ours_only_independent/bathroom2"
+  ]
+}

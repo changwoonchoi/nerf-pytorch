@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/kitchen
-basedir = ../logs/albedo_roughness_smooth/kitchen

@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/living-room-2
-basedir = ../logs/monte_carlo_with_env_map/living-room-2

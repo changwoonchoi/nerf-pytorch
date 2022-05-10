@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/staircase
-basedir = ../logs/specular_ibl/staircase

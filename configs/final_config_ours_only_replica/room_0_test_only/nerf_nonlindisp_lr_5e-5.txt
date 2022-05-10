@@ -1,0 +1,6 @@
+include = common.txt
+# depth_map_from_ground_truth
+lindisp = True
+lrate = 5e-5
+near_plane = 1
+far_plane = 10

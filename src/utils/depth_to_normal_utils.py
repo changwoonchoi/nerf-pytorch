@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../')
+
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -41,6 +44,56 @@ def depth_to_normal_image_space(depth_map, pose, K):
 	vc = np.cross(vb, va, axis=-1)
 	vc = normalize(vc)
 	return torch.Tensor(vc)
+
+
+from dataset.dataset_interface import load_dataset
+import imageio
+import os
+
+to8b = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
+
+
+def depth_to_normal_replica(scene, split):
+	# basedir = os.path.join("../../data/replica", scene, split)
+	# depth_image_path = os.path.join(basedir, ('depth{:06d}.png').format(i))
+	# depth_image = cv2.imread(depth_image_path, -1)
+	# with open(os.path.join(basedir, 'transforms_{}.json'.format(split)), 'r') as fp:
+	# 	meta = json.load(fp)
+	#
+	# camera_angle_x = float(meta['camera_angle_x']) / 180.0 * math.pi
+	# height = depth_image.shape[0]
+	# width = depth_image.shape[1]
+	# focal = .5 * width / np.tan(0.5 * camera_angle_x)
+	#
+	# K = np.array([
+	# 	[focal, 0, 0.5 * width],
+	# 	[0, focal, 0.5 * height],
+	# 	[0, 0, 1]
+	# ]).astype(np.float32)
+
+	scene_dataset = load_dataset("replica", "../../data/replica/%s" % scene, split=split, load_depth=True, load_image=False)
+	scene_dataset.load_all_data(1)
+	scene_dataset.to_tensor("cpu")
+	for i in range(100):
+		K = scene_dataset.get_focal_matrix()
+		normal = depth_to_normal_image_space(scene_dataset.depths[i], scene_dataset.poses[i], K)
+		normal = (normal + 1) * 0.5
+		normal = normal.cpu().numpy()
+		result_image_8bit = to8b(normal)
+		filename = os.path.join("../../data/replica", scene, split, ('normal{:06d}.png').format(i))
+		imageio.imwrite(filename, result_image_8bit)
+
+
+if __name__ == "__main__":
+	path = os.path.join("../../data/replica")
+	exp_names = [dI for dI in os.listdir(path) if os.path.isdir(os.path.join(path, dI))]
+	exp_names.sort()
+	splits = ["train", "val", "test"]
+	for exp in exp_names:
+		for split in splits:
+			print(exp, split)
+			depth_to_normal_replica(exp, split)
+#depth_to_normal_replica("office_0", "train")
 
 
 # def depth_to_normal_image_space(depth_map, pose, K):

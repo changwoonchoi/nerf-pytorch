@@ -18,7 +18,7 @@ class NeRFDecomp(nn.Module):
             use_illumination_feature_layer=False,
             use_instance_feature_layer=False,
             coarse_radiance_number=0,
-            is_color_independent_to_direction=True,
+            is_color_independent_to_direction=True
     ):
         """
         NeRFDecomp Model
@@ -101,6 +101,8 @@ class NeRFDecomp(nn.Module):
         #for i in range(self.coarse_radiance_number):
         #    self.additional_radiance_linear.append(nn.Linear(W, 3))
         self.is_color_independent_to_direction = is_color_independent_to_direction
+        self.freeze_radiance = False
+
 
     def __str__(self):
         logs = ["[NeRFDecomp"]
@@ -113,7 +115,76 @@ class NeRFDecomp(nn.Module):
         logs += ["\t- use_illumination_feature_layer : {}".format(self.use_illumination_feature_layer)]
         return "\n".join(logs)
 
-    def forward(self, x):
+    def forward_freezed(self, x):
+        with torch.no_grad():
+            if x.shape[-1] == self.input_ch + self.input_ch_views:
+                input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
+            else:
+                input_pts = x
+                input_views = None
+            h = input_pts
+
+            # (1) position
+            for i, l in enumerate(self.positions_linears):
+                # print(self.positions_linears[i].parameters(), i, "Position linears")
+                h = self.positions_linears[i](h)
+                h = F.relu(h)
+                if i in self.skips:
+                    h = torch.cat([input_pts, h], dim=-1)
+                # print(h, i, "H at position!!!!!1")
+
+            # (2) dependent only to position
+            # (2-1) sigma
+            sigma = self.sigma_linear(h)
+
+            if input_views is None:
+                return sigma
+
+        # (2-2) albedo
+        albedo_feature = self.albedo_feature_linear(h)
+        albedo_feature = F.relu(albedo_feature)
+        albedo = self.albedo_linear(albedo_feature)
+
+        # (2-3) roughness
+        roughness = self.roughness_linear(h)
+
+        # (2-4) irradiance
+        irradiance_feature = self.irradiance_feature_linear(h)
+        irradiance_feature = F.relu(irradiance_feature)
+        irradiance = self.irradiance_linear(irradiance_feature)
+
+        with torch.no_grad():
+            # (2-5) instance
+            if self.use_instance_label:
+                instance_feature = self.instance_feature_linear(h)
+                instance_feature = F.relu(instance_feature)
+                instance = self.instance_linear(instance_feature)
+
+            # (3) position + direction
+            if not self.is_color_independent_to_direction:
+                feature = self.feature_linear(h)
+                h = torch.cat([feature, input_views], dim=-1)
+                for i, l in enumerate(self.views_linears):
+                    h = self.views_linears[i](h)
+                    h = F.relu(h)
+
+            radiance = self.radiance_linear(h)
+            ret = [sigma, albedo, roughness, irradiance, radiance]
+
+            for i, l in enumerate(self.additional_radiance_feature_linear):
+                radiance_i = self.additional_radiance_feature_linear[i](h)
+                radiance_i = F.relu(radiance_i)
+                radiance_i = self.additional_radiance_linear[i](radiance_i)
+                ret.append(radiance_i)
+
+            if self.use_instance_label:
+                ret.append(instance)
+
+        ret = torch.cat(ret, dim=-1)
+
+        return ret
+
+    def forward_not_freezed(self, x):
         if x.shape[-1] == self.input_ch + self.input_ch_views:
             input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
         else:
@@ -185,6 +256,11 @@ class NeRFDecomp(nn.Module):
 
         return ret
 
+    def forward(self, x):
+        if self.freeze_radiance:
+            return self.forward_freezed(x)
+        else:
+            return self.forward_not_freezed(x)
 
 def batchify(fn, chunk):
     """
@@ -283,6 +359,21 @@ def create_NeRFDecomp(args):
         normal_mlp = PositionMLP(D=args.netdepth, W=args.netwidth, input_ch=input_ch, out_ch=3, skips=skips)
         grad_vars.append({'params': normal_mlp.parameters(), 'name': 'normal_mlp'})
 
+    albedo_mlp = None
+    if args.infer_albedo_separate:
+        albedo_mlp = PositionMLP(D=args.netdepth, W=args.netwidth, input_ch=input_ch, out_ch=3, skips=skips)
+        grad_vars.append({'params': albedo_mlp.parameters(), 'name': 'albedo_mlp'})
+
+    roughness_mlp = None
+    if args.infer_roughness_separate:
+        roughness_mlp = PositionMLP(D=args.netdepth, W=args.netwidth, input_ch=input_ch, out_ch=1, skips=skips)
+        grad_vars.append({'params': roughness_mlp.parameters(), 'name': 'roughness_mlp'})
+
+    irradiance_mlp = None
+    if args.infer_irradiance_separate:
+        irradiance_mlp = PositionMLP(D=args.netdepth, W=args.netwidth, input_ch=input_ch, out_ch=1, skips=skips)
+        grad_vars.append({'params': irradiance_mlp.parameters(), 'name': 'irradiance_mlp'})
+
     network_query_fn = lambda inputs, viewdirs, network_fn: run_network(
         inputs, viewdirs, network_fn, embed_fn=embed_fn, embeddirs_fn=embeddirs_fn, netchunk=args.netchunk
     )
@@ -325,6 +416,12 @@ def create_NeRFDecomp(args):
             depth_mlp.load_state_dict(ckpt['depth_mlp'])
         if args.infer_normal:
             normal_mlp.load_state_dict(ckpt['normal_mlp'])
+        if args.infer_albedo_separate and 'albedo_mlp' in ckpt:
+            albedo_mlp.load_state_dict(ckpt['albedo_mlp'])
+        if args.infer_roughness_separate and 'roughness_mlp' in ckpt:
+            roughness_mlp.load_state_dict(ckpt['roughness_mlp'])
+        if args.infer_irradiance_separate and 'irradiance_mlp' in ckpt:
+            irradiance_mlp.load_state_dict(ckpt['irradiance_mlp'])
         if model_fine is not None:
             model_fine.load_state_dict(ckpt['network_fine_state_dict'])
         if args.use_environment_map:
@@ -345,6 +442,9 @@ def create_NeRFDecomp(args):
         "depth_mlp": depth_mlp,
         "visibility_mlp": visibility_mlp,
         "normal_mlp": normal_mlp,
+        "albedo_mlp": albedo_mlp,
+        "roughness_mlp": roughness_mlp,
+        "irradiance_mlp": irradiance_mlp,
         "infer_depth": args.infer_depth,
         "infer_visibility": args.infer_visibility,
         "infer_normal": args.infer_normal,
@@ -359,9 +459,14 @@ def create_NeRFDecomp(args):
         "lut_coefficient": args.lut_coefficient,
         "depth_map_from_ground_truth": args.depth_map_from_ground_truth,
         "target_normal_map_for_radiance_calculation": args.calculating_normal_type,
+        "calculate_albedo_from_gt": args.calculate_albedo_from_gt,
+        "calculate_roughness_from_gt": args.calculate_roughness_from_gt,
+        "calculate_irradiance_from_gt": args.calculate_irradiance_from_gt,
         "epsilon": args.epsilon_for_numerical_normal,
         "epsilon_direction": args.epsilon_direction_for_numerical_normal,
-        "N_hemisphere_sample_sqrt": args.N_hemisphere_sample_sqrt
+        "N_hemisphere_sample_sqrt": args.N_hemisphere_sample_sqrt,
+        "roughness_exp_coefficient": args.roughness_exp_coefficient,
+        "albedo_multiplier": args.albedo_multiplier
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

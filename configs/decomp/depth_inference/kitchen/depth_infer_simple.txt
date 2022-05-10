@@ -1,3 +1,0 @@
-include = common.txt
-# ray_sample = "patch"
-N_rand = 512

@@ -1,3 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/living-room-2
-basedir = ../logs/specular_ibl/living-room-2

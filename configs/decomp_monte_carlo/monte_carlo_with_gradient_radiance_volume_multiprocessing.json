@@ -1,6 +1,0 @@
-{
-  "available_gpus" : [1, 0, 2],
-  "config_lists":[
-    "../configs/decomp_monte_carlo/monte_carlo_with_gradient_radiance_volume"
-  ]
-}

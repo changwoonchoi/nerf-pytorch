@@ -73,7 +73,8 @@ def test(args):
 			"load_instance_label_mask": args.instance_mask,
 			"near_plane": args.near_plane,
 			"far_plane": args.far_plane,
-			"load_depth_range_from_file": args.load_depth_range_from_file
+			"load_depth_range_from_file": args.load_depth_range_from_file,
+			"gamma_correct": args.gamma_correct
 		}
 
 		dataset = load_dataset_split("test", skip=1, load_priors=False, **load_params)
@@ -185,26 +186,35 @@ def train(args):
 
 		# load train and validation dataset
 		load_normal = args.learn_normal_from_oracle or args.calculating_normal_type == "ground_truth"
+		load_irradiance = args.calculate_irradiance_from_gt
+		load_roughness = args.calculate_roughness_from_gt
+		load_albedo = args.calculate_albedo_from_gt or args.learn_albedo_from_oracle
+
 		load_params = {
 			"image_scale": args.image_scale,
 			"load_normal": load_normal,
 			"load_depth": args.depth_map_from_ground_truth,
-			"load_roughness": False,
-			"load_albedo": args.learn_albedo_from_oracle,
+			"load_roughness": load_roughness,
+			"load_albedo": load_albedo,
+			"load_irradiance": load_irradiance,
 			"sample_length": args.sample_length,
 			"coarse_radiance_number": args.coarse_radiance_number,
 			"load_instance_label_mask": args.instance_mask,
 			"near_plane": args.near_plane,
 			"far_plane": args.far_plane,
 			"load_depth_range_from_file": args.load_depth_range_from_file,
+			"gamma_correct": args.gamma_correct
 			"load_priors": args.load_priors,
 			"prior_type": args.prior_type
 		}
 		dataset = load_dataset_split("train", **load_params)
 
 		# force load albedo & normal for test set
-		load_params["load_albedo"] = True
-		load_params["load_normal"] = True
+		load_albedo_test = load_albedo
+		load_normal_test = load_normal
+
+		load_params["load_albedo"] = load_albedo_test
+		load_params["load_normal"] = load_normal_test
 		# force not to load albedo & irradiance prior images for test set
 		load_params["load_priors"] = False
 		dataset_val = load_dataset_split("test", skip=10, **load_params)
@@ -321,11 +331,17 @@ def train(args):
 		colored_label_gt = colored_label_gt.permute((0, 3, 1, 2))
 		writer.add_images('test/gt_instance_colored', colored_label_gt, 0)
 
-	normal_gt = dataset_val.normals.permute((0, 3, 1, 2))
-	writer.add_images('test/gt_normal', normal_gt, 0)
+	if load_normal_test:
+		normal_gt = dataset_val.normals.permute((0, 3, 1, 2))
+		writer.add_images('test/gt_normal', normal_gt, 0)
 
-	albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
-	writer.add_images('test/gt_albedo', albedo_gt, 0)
+	if load_irradiance:
+		irradiance_gt = dataset_val.irradiances.permute((0, 3, 1, 2))
+		writer.add_images('test/gt_irradiance', irradiance_gt, 0)
+
+	if load_albedo_test:
+		albedo_gt = dataset_val.albedos.permute((0, 3, 1, 2))
+		writer.add_images('test/gt_albedo', albedo_gt, 0)
 
 	mse_loss = torch.nn.MSELoss()
 	l1_loss = torch.nn.L1Loss()
@@ -393,6 +409,12 @@ def train(args):
 			save_target['visibility_mlp'] = render_kwargs_train['visibility_mlp'].state_dict()
 		if args.use_environment_map:
 			save_target['env_map'] = render_kwargs_train['env_map'].emission
+		if args.infer_albedo_separate:
+			save_target['albedo_mlp'] = render_kwargs_train['albedo_mlp'].state_dict()
+		if args.infer_roughness_separate:
+			save_target['roughness_mlp'] = render_kwargs_train['roughness_mlp'].state_dict()
+		if args.infer_irradiance_separate:
+			save_target['irradiance_mlp'] = render_kwargs_train['irradiance_mlp'].state_dict()
 
 		torch.save(save_target, path)
 		print('Saved checkpoints at', path)
@@ -485,6 +507,10 @@ def train(args):
 				calculate_normal_from_depth_gradient_epsilon = True
 			elif args.infer_normal_target == "normal_map_from_depth_gradient_direction_epsilon":
 				calculate_normal_from_depth_gradient_direction_epsilon = True
+
+		if i >= args.N_iter_ignore_approximated_radiance:
+			render_kwargs_train["network_fn"].freeze_radiance = True
+			render_kwargs_train["network_fine"].freeze_radiance = True
 
 		# 1. render sample
 		result = render_decomp(
@@ -602,6 +628,8 @@ def train(args):
 		loss_sigma_depth = 0
 		if args.depth_map_from_ground_truth and args.train_depth_from_ground_truth:
 			loss_sigma_depth = calculate_loss("depth_map", target_info["depth"][..., 0])
+			loss_sigma_depth /= (dataset.far * dataset.far * 0.1)
+
 			# print(loss_sigma_depth, "loss_sigma_depth")
 
 		# 3) Normal render loss
@@ -745,7 +773,10 @@ def train(args):
 		# args.beta_render * loss_render + args.beta_albedo_render * loss_albedo_render + args.beta_inferred_depth * loss_depth
 		# + args.beta_inferred_normal * loss_inferred_normal + args.beta_radiance_render * loss_render_radiance \
 		if i >= args.N_iter_ignore_approximated_radiance:
-			total_loss += args.beta_render * loss_render
+			total_loss = args.beta_render * loss_render
+			render_kwargs_train["network_fn"].freeze_radiance = True
+			render_kwargs_train["network_fine"].freeze_radiance = True
+
 		# total_loss += 0.1 * args.beta_albedo_render * loss_albedo_render
 		# else:
 		# total_loss += args.beta_albedo_render * loss_albedo_render
@@ -839,6 +870,9 @@ def train(args):
 		set_lr("fine", 0)
 		set_lr("depth", args.N_iter_ignore_depth)
 		set_lr("normal", args.N_iter_ignore_normal)
+		set_lr("albedo_mlp", args.N_iter_ignore_approximated_radiance)
+		set_lr("roughness_mlp", args.N_iter_ignore_approximated_radiance)
+		set_lr("irradiance_mlp", args.N_iter_ignore_approximated_radiance)
 
 		ith_train_time = time.time() - ith_train_start_time
 		elapsed_time += ith_train_time
@@ -877,6 +911,119 @@ def train(args):
 	#except TimeoutError:
 
 
+def render_only(args):
+	# (0) Print train phase overview
+	logger_dataset = load_logger("Dataset Info")
+	logger_export = load_logger("Export Logger")
+	use_instance_mask = args.instance_mask
+	logger_dataset.info("Instance mask: " + str(use_instance_mask))
+	logger_dataset.info("Instance mask encoding: " + str(args.instance_label_encoding))
+	logger_dataset.info("Infer normal: " + str(args.infer_normal))
+	logger_dataset.info("Learn normal from oracle: " + str(args.learn_normal_from_oracle))
+	logger_dataset.info("Learn albedo from oracle: " + str(args.learn_albedo_from_oracle))
+
+	add_object_mode = False
+
+	# Load BRDF LUT
+	brdf_lut_path = "../data/ibl_brdf_lut.png"
+	brdf_lut = cv2.imread(brdf_lut_path)
+	brdf_lut = cv2.cvtColor(brdf_lut, cv2.COLOR_BGR2RGB)
+
+	brdf_lut = brdf_lut.astype(np.float32)
+	brdf_lut /= 255.0
+	brdf_lut = torch.tensor(brdf_lut).to(args.device)
+	brdf_lut = brdf_lut.permute((2, 0, 1))
+
+	# (1) Load dataset
+	with time_measure("[1] Data load"):
+		def load_dataset_split(split="train", do_logging=True, **kwargs):
+			# create dataset config
+			target_dataset = load_dataset(args.dataset_type, args.datadir, split=split, **kwargs)
+			target_dataset.load_instance_label_mask = use_instance_mask
+
+			# real data load using multiprocessing(torch DataLoader) --> load all at once
+			# TODO : if dataset is too large, it may not be loaded at once.
+			target_dataset.load_all_data(num_of_workers=1)
+			if do_logging:
+				logger_dataset.info(target_dataset)
+			return target_dataset
+
+		load_params = {
+			"image_scale": args.image_scale,
+			"load_image": False,
+			"load_normal": add_object_mode,
+			"load_depth": add_object_mode,
+			"sample_length": args.sample_length,
+			"coarse_radiance_number": args.coarse_radiance_number,
+			"load_instance_label_mask": args.instance_mask,
+			"near_plane": args.near_plane,
+			"far_plane": args.far_plane,
+			"load_depth_range_from_file": args.load_depth_range_from_file,
+			"gamma_correct": args.gamma_correct
+		}
+		dataset = load_dataset_split("test", skip=1, **load_params)
+
+		hwf = [dataset.height, dataset.width, dataset.focal]
+
+		# move data to GPU side
+		torch.set_default_tensor_type('torch.cuda.FloatTensor')
+		dataset.to_tensor(args.device)
+
+	# (2) Create log file / folder
+	with time_measure("[2] Log file create"):
+		# Create log dir and copy the config file
+		basedir = args.basedir
+		expname = args.expname
+		export_config(args, basedir)
+
+	# (3) Create nerf model
+	with time_measure("[3] NeRFDecomp load"):
+		# set instance label dimension
+		label_encoder = None
+		if use_instance_mask:
+			label_encoder = get_label_encoder(dataset.instance_color_list, args.instance_label_encoding, args.instance_label_dimension)
+			args.instance_label_dimension = label_encoder.get_dimension()
+		else:
+			args.instance_label_dimension = 0
+
+		# create nerf model
+		args.num_cluster = dataset.num_cluster
+		render_kwargs_train, render_kwargs_test, start, elapsed_time, grad_vars, optimizer = create_NeRFDecomp(args)
+		render_kwargs_test['brdf_lut'] = brdf_lut
+		global_step = start
+
+		# update near / far plane
+		bds_dict = dataset.get_near_far_plane()
+		render_kwargs_train.update(bds_dict)
+		render_kwargs_test.update(bds_dict)
+
+		logger_render_options = load_logger("Render Kwargs")
+		logs = ["[Render Kwargs (simple only)]"]
+		for k, v in render_kwargs_train.items():
+			if isinstance(v, (str, float, int, bool)):
+				logs += ["\t-%s : %s" % (k, str(v))]
+		logger_render_options.info("\n".join(logs))
+
+
+	# (5) Main train loop
+	K = dataset.get_focal_matrix()
+
+	testsavedir = os.path.join(args.export_basedir, expname, 'testset_final')
+	os.makedirs(testsavedir, exist_ok=True)
+
+	print("Render additional mode!!")
+	with torch.no_grad():
+		render_decomp_path(
+			dataset, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
+			render_factor=2, init_basecolor=dataset.init_basecolor,
+			calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
+			use_instance=use_instance_mask, label_encoder=label_encoder,
+			approximate_radiance=True,
+			add_object_mode=add_object_mode
+		)
+	from utils.video_export import export_as_video_all
+	export_as_video_all(testsavedir)
+
 if __name__ == '__main__':
 	parser = recursive_config_parser()
 	args = parser.parse_args()
@@ -891,7 +1038,6 @@ if __name__ == '__main__':
 		args.export_basedir = args.basedir.replace("logs", "logs_eval")
 
 	if args.render_only:
-		test(args)
-		# print("THIS IS TEST!!!!!!!!")
+		render_only(args)
 	else:
 		train(args)

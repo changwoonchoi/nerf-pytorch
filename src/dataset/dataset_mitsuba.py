@@ -26,9 +26,9 @@ class MitsubaDataset(NerfDataset):
 				f = json.load(fp)
 				self.near = f["min_depth"] * 0.9
 				self.far = f["max_depth"] * 1.1
-			#print("LOAD FROM FILE!!!!!!!!!!!!!!!!!!!!!!!")
-			#print(self.near)
-			#print(self.far)
+			print("LOAD FROM FILE!!!!!!!!!!!!!!!!!!!!!!!")
+			print(self.near)
+			print(self.far)
 
 		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
 			self.meta = json.load(fp)
@@ -96,15 +96,18 @@ class MitsubaDataset(NerfDataset):
 		if self.load_normal:
 			sample["normal"] = load_image_from_path(normal_file_path, scale=self.scale)
 		if self.load_albedo:
-			albedo_srgb = load_image_from_path(albedo_file_path, scale=self.scale)
-			albedo_rgb = np.power(albedo_srgb, 1/2.2)
-			sample["albedo"] = albedo_rgb
+			albedo_linear = load_image_from_path(albedo_file_path, scale=self.scale)
+			# albedo_srgb = np.power(albedo_linear, 1/2.2)
+			sample["albedo"] = albedo_linear
 		if self.load_roughness:
 			sample["roughness"] = load_image_from_path(roughness_file_path, scale=self.scale)[..., 0:1]
 		if self.load_depth:
 			sample["depth"] = load_numpy_from_path(depth_file_path, scale=self.scale)[..., None]
 		if self.load_irradiance:
-			sample["irradiance"] = load_image_from_path(irradiance_file_path, scale=self.scale)
+			irradiance = load_image_from_path(irradiance_file_path, scale=self.scale)
+			#irradiance = np.power(irradiance, 2.2)
+			#irradiance = irradiance / np.maximum(1 - irradiance, 0.000001)
+			sample["irradiance"] = irradiance
 
 		if self.load_diffuse_specular:
 			sample["diffuse"] = load_image_from_path(diffuse_file_path, scale=self.scale)
@@ -132,7 +135,6 @@ class MitsubaDataset(NerfDataset):
 		pose[:3, 0] *= -1
 		pose[:3, 2] *= -1
 		sample["pose"] = pose
-
 		return sample
 
 	def get_test_render_poses(self):

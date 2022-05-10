@@ -1,4 +1,0 @@
-include = common.txt
-expname = infer_at_surface_target_sigma_gradient
-infer_normal_at_surface
-infer_normal_target = normal_map_from_sigma_gradient

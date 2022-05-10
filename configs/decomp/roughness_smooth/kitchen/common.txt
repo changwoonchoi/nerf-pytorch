@@ -1,7 +1,0 @@
-include = ../common.txt
-datadir = ../data/mitsuba/kitchen
-basedir = ../logs/roughness_smooth/kitchen
-roughness_smooth
-#albedo_smooth
-#irradiance_smooth
-#infer_depth

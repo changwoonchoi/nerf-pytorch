@@ -1,4 +1,0 @@
-include = common.txt
-expname = infer_at_surface_target_depth_gradient_direction
-infer_normal_at_surface
-infer_normal_target = normal_map_from_depth_gradient_direction

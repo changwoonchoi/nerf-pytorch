@@ -12,3 +12,4 @@ logs/*
 *.sh
 /src/trash/
 /clevr_generation/data/
+/trash/

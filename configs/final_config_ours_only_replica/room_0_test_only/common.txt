@@ -1,0 +1,7 @@
+include = ../common.txt
+datadir = ../data/replica/room_0
+basedir = ../logs/final_config_ours_only_replica/room_0_test_only
+N_iter_ignore_approximated_radiance = 1000000
+N_iter = 2000000
+color_independent_to_direction
+image_scale = 0.5

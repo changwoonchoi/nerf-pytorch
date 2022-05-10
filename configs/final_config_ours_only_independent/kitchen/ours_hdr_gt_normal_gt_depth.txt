@@ -1,0 +1,5 @@
+include = common.txt
+depth_map_from_ground_truth
+train_depth_from_ground_truth
+calculating_normal_type = ground_truth
+use_radiance_linear
