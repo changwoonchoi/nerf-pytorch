@@ -103,6 +103,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_prior_irradiance", type=float, default=0.01)
 	parser.add_argument("--beta_normal_reg", type=float, default=1)
 
+	parser.add_argument("--beta_irradiance_reg", type=float, default=0)
+
 	parser.add_argument("--albedo_instance_constant", action='store_true')
 	parser.add_argument("--irradiance_instance_constant", action='store_true')
 	parser.add_argument("--color_independent_to_direction", action='store_true')

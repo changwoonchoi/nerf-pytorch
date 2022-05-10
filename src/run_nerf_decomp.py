@@ -783,6 +783,9 @@ def train(args):
 				raise ValueError
 			loss_prior_irradiance = calculate_loss("irradiance_map", target_prior_irradiance)
 
+		# 8) irradiance regularization
+		loss_irradiance_reg = mse_loss(result["irradiance_map"], torch.ones_like(result["irradiance_map"]) * 0.7)
+
 		# Final loss
 		# (a) radiance loss
 		total_loss = args.beta_radiance_render * loss_render_radiance
@@ -828,6 +831,7 @@ def train(args):
 		if i >= args.N_iter_ignore_prior and args.load_priors:
 			total_loss += args.beta_prior_albedo * loss_prior_albedo
 			total_loss += args.beta_prior_irradiance * loss_prior_irradiance
+			total_loss += args.beta_irradiance_reg * loss_irradiance_reg
 		# print(loss_albedo_render, "Loss_albedo_render!!")
 
 		if i % args.summary_step == 0:
@@ -869,6 +873,7 @@ def train(args):
 			if args.load_priors:
 				writer.add_scalar('Loss/Loss_prior_albedo', loss_prior_albedo, i)
 				writer.add_scalar('Loss/Loss_prior_irradiance', loss_prior_irradiance, i)
+				writer.add_scalar('Loss/Loss_irradiance_reg', loss_irradiance_reg, i)
 			if args.instance_mask:
 				writer.add_scalar('Loss/Loss_instance', loss_instance, i)
 				writer.add_scalar('Loss/Loss_instancewise_constant', loss_instancewise_constant, i)
