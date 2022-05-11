@@ -33,7 +33,7 @@ class MitsubaDataset(NerfDataset):
 		if self.load_priors:
 			with open(os.path.join(basedir, 'avg_irradiance.json'), 'r') as fp:
 				f = json.load(fp)
-				self.prior_irradiance_mean = f[self.prior_type]
+				self.prior_irradiance_mean = f["mean_" + self.prior_type]
 
 		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
 			self.meta = json.load(fp)

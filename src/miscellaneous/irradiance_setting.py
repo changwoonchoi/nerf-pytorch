@@ -43,7 +43,7 @@ def find_representative_irradiance_value(dataset_type: str, room_name: str):
 
 if __name__ == "__main__":
 	# mitsuba scenes
-	mitsuba_rooms = ['bathroom2', 'bedroom', 'kitchen', 'living-room-2', 'living-room-3', 'staircase', 'veach-ajar', 'veach_door_simple']
+	mitsuba_rooms = ['bathroom', 'bathroom2', 'bedroom', 'classroom', 'dining-room', 'kitchen', 'living-room', 'living-room-2', 'living-room-3', 'staircase', 'veach-ajar', 'veach_door_simple']
 	# rooms = ['kitchen']
 	for room in mitsuba_rooms:
 		print("mitsuba {} processing".format(room))

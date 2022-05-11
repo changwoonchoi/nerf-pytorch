@@ -758,7 +758,9 @@ def train(args):
 			loss_prior_irradiance = calculate_loss("irradiance_map", target_prior_irradiance)
 
 		# 8) irradiance regularize
-		loss_irradiance_reg = mse_loss(result["irradiance_map"], torch.ones_like(result["irradiance_map"]) * dataset.prior_irradiance_mean)
+		loss_irradiance_reg = 0
+		if args.load_priors and i >= args.N_iter_ignore_prior:
+			loss_irradiance_reg = mse_loss(result["irradiance_map"], torch.ones_like(result["irradiance_map"]) * dataset.prior_irradiance_mean)
 
 		# Final loss
 		# (a) radiance loss
