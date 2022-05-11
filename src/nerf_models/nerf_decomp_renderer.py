@@ -23,24 +23,19 @@ gamma = 2.2
 epsilon_srgb = 1e-12
 
 
-def tonemap(x):
-	if x is None:
-		return None
-	else:
-		y = x / (1 + x)
-		return torch.pow(y + epsilon_srgb, 1.0/gamma)
+def rgb_to_srgb(x):
+	return torch.pow(x + epsilon_srgb, 1.0/gamma)
+
+
+def tonemap_reinherd(x):
+	return x / (x + 1)
 
 
 def high_dynamic_range_radiance_f(x):
 	return F.relu(x)
 
 
-def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=False, is_radiance_sigmoid=True):
-	if is_radiance_sigmoid:
-		radiance_f = torch.sigmoid
-	else:
-		radiance_f = high_dynamic_range_radiance_f
-
+def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=False, radiance_f=None):
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -204,12 +199,14 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 							   gt_values=gt_values,
 							   **kwargs)
 
+	# radiance & gamma correct setting
 	is_radiance_sigmoid = not kwargs.get('use_radiance_linear', False)
+	gamma_correct = kwargs.get('gamma_correct', False)
 
 	if is_radiance_sigmoid:
 		radiance_f = torch.sigmoid
 	else:
-		radiance_f = high_dynamic_range_radiance_f
+		radiance_f = F.relu
 
 	if is_neighbor:
 		return raw2outputs_neigh(
@@ -591,12 +588,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 				with torch.no_grad():
 					reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, is_radiance_sigmoid=is_radiance_sigmoid)
+					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
 
 					prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 			else:
 				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, is_radiance_sigmoid=is_radiance_sigmoid)
+				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
 
 				prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
@@ -622,28 +619,35 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	results = {}
 
 	if is_radiance_sigmoid:
-		radiance_to_ldr = lambda x:x
+		ldr_f = lambda x: x
 	else:
-		radiance_to_ldr = tonemap
-	#radiance_to_ldr = lambda x: None if x is None else torch.pow(radiance_to_ldr_temp(x) + epsilon_srgb, 1.0 / gamma)
+		ldr_f = lambda x: tonemap_reinherd(x)
 
-	results["color_map"] = radiance_to_ldr(approximated_radiance_map)
-	results["radiance_map"] = radiance_to_ldr(radiance_map)
+	if gamma_correct:
+		gamma_correct_f = lambda x: rgb_to_srgb(x)
+	else:
+		gamma_correct_f = lambda x: x
+
+	output_f = lambda x: x if x is None else gamma_correct_f(ldr_f(x))
+	albedo_f = lambda x: x if x is None else gamma_correct_f(x)
+
+	results["color_map"] = output_f(approximated_radiance_map)
+	results["radiance_map"] = output_f(radiance_map)
 	for k in range(len(coarse_radiance_maps)):
-		results["radiance_map_%d" % (k + 1)] = radiance_to_ldr(coarse_radiance_maps[k])
+		results["radiance_map_%d" % (k + 1)] = output_f(coarse_radiance_maps[k])
 	for k in range(len(reflected_coarse_radiance_map)):
-		results["reflected_coarse_radiance_map_%d" % (k + 1)] = radiance_to_ldr(reflected_coarse_radiance_map[k])
+		results["reflected_coarse_radiance_map_%d" % (k + 1)] = output_f(reflected_coarse_radiance_map[k])
 
-	results["irradiance_map"] = radiance_to_ldr(target_irradiance_map)
-	results["min_irradiance_map"] = radiance_to_ldr(min_irradiance_map)
-	results["max_irradiance_map"] = radiance_to_ldr(max_irradiance_map)
-	results["reflected_radiance_map"] = radiance_to_ldr(reflected_radiance_map)
-	results["prefiltered_reflected_map"] = radiance_to_ldr(prefiltered_reflected_map)
+	results["irradiance_map"] = output_f(target_irradiance_map)
+	results["min_irradiance_map"] = output_f(min_irradiance_map)
+	results["max_irradiance_map"] = output_f(max_irradiance_map)
+	results["reflected_radiance_map"] = output_f(reflected_radiance_map)
+	results["prefiltered_reflected_map"] = output_f(prefiltered_reflected_map)
 
-	results["albedo_map"] = target_albedo_map
+	results["albedo_map"] = albedo_f(target_albedo_map)
 	results["roughness_map"] = target_roughness_map
-	results["specular_map"] = radiance_to_ldr(specular_map)
-	results["diffuse_map"] = radiance_to_ldr(diffuse_map)
+	results["specular_map"] = output_f(specular_map)
+	results["diffuse_map"] = output_f(diffuse_map)
 	results["n_dot_v_map"] = n_dot_v
 	results["instance_map"] = instance_map
 	results["visibility_average_map"] = visibility_average_map
@@ -741,7 +745,7 @@ def raw2outputs_additional(rays_o, rays_d, z_vals, z_vals_constant,
 	reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
 
 	reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-	reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, is_radiance_sigmoid=is_radiance_sigmoid)
+	reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
 	#prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
 	new_radiance_map = torch.where(mask[...,None], radiance_map, reflected_radiance_map)

@@ -453,6 +453,7 @@ def create_NeRFDecomp(args):
         "use_monte_carlo_integration": args.use_monte_carlo_integration,
         "use_gradient_for_incident_radiance": args.use_gradient_for_incident_radiance,
         "use_radiance_linear": args.use_radiance_linear,
+        "gamma_correct": args.gamma_correct,
         "monte_carlo_integration_method": args.monte_carlo_integration_method,
         'use_environment_map': args.use_environment_map,
         "env_map": env_map,

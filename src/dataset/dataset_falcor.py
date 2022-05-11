@@ -141,7 +141,7 @@ class FalcorDataset(NerfDataset):
 		"""
 
 		transform = self.transforms[::self.skip][index]
-		basedir = "/data1/juhyeonkim/projects/SegNerfDataGenerator/result_20220508/kitchen_copy/sphere_video"
+		basedir = "/data1/juhyeonkim/projects/SegNerfDataGenerator/result_20220510/kitchen_copy/sphere"
 		normal_file_path = os.path.join(basedir, "%d_normal.png" % (self.skip * index + 1))
 		depth_file_path = os.path.join(basedir, "%d_depth.npy" % (self.skip * index + 1))
 
