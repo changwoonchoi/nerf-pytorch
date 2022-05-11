@@ -118,6 +118,8 @@ class FalcorDataset(NerfDataset):
 		self.skip = kwargs.get("skip", 1)
 		if self.split == "train":
 			self.skip = 1
+		if kwargs.get("force_skip", False):
+			self.skip = kwargs.get("skip", 1)
 
 		self.camera_angle_x = float(60) / 180.0 * math.pi
 
