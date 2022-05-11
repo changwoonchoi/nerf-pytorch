@@ -932,7 +932,7 @@ def render_only(args):
 	logger_dataset.info("Learn normal from oracle: " + str(args.learn_normal_from_oracle))
 	logger_dataset.info("Learn albedo from oracle: " + str(args.learn_albedo_from_oracle))
 
-	add_object_mode = False
+	add_object_mode = True
 
 	# Load BRDF LUT
 	brdf_lut_path = "../data/ibl_brdf_lut.png"
@@ -1033,6 +1033,7 @@ def render_only(args):
 		)
 	from utils.video_export import export_as_video_all
 	export_as_video_all(testsavedir)
+
 
 if __name__ == '__main__':
 	parser = recursive_config_parser()

@@ -77,8 +77,6 @@ class NerfDataset(Dataset, ABC):
 		self.near = kwargs.get("near_plane", 1)
 		self.far = kwargs.get("far_plane", 10)
 
-		self.gamma_correct = kwargs.get("gamma_correct", False)
-
 	def get_focal_matrix(self):
 		K = np.array([
 			[self.focal, 0, 0.5 * self.width],
@@ -188,11 +186,11 @@ class NerfDataset(Dataset, ABC):
 		for i, data in enumerate(data_loader):
 			if "image" in data:
 				image = data["image"][0]
-				if not self.gamma_correct:
-					self.images.append(image)
-				else:
-					print("GAMMA CORRECTED!!")
-					self.images.append(srgb_to_rgb_torch(image))
+				self.images.append(image)
+				# if not self.gamma_correct:
+				# else:
+				# 	print("GAMMA CORRECTED!!")
+				# 	self.images.append(srgb_to_rgb_torch(image))
 			if "pose" in data:
 				self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
