@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/falcor/living-room-2
+basedir = ../logs/separate_prior/falcor/living-room-2

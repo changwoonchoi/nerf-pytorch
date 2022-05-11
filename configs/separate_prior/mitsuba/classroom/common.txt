@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba_no_transparent_with_prior/classroom
+basedir = ../logs/separate_prior/mitsuba/classroom

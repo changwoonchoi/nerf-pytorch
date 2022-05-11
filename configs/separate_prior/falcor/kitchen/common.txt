@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/falcor/kitchen
+basedir = ../logs/separate_prior/falcor/kitchen

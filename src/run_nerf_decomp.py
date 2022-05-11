@@ -217,7 +217,10 @@ def train(args):
 		load_params["load_normal"] = load_normal_test
 		# force not to load albedo & irradiance prior images for test set
 		load_params["load_priors"] = False
-		dataset_val = load_dataset_split("test", skip=10, **load_params)
+		if args.dataset_type == "mitsuba":
+			dataset_val = load_dataset_split("test", skip=10, **load_params)
+		elif args.dataset_type == "falcor":
+			dataset_val = load_dataset_split("train", skip=10, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
 

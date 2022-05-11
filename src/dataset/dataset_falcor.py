@@ -24,10 +24,14 @@ import pprint
 
 
 def find_all_images(basedir):
-	breakpoint()
 	image_name_list = []
 	for path in Path(basedir).rglob("*.png"):
-		image_name_list.append(str(path))
+		if "_r" in str(path):
+			pass
+		elif "_s" in str(path):
+			pass
+		else:
+			image_name_list.append(str(path))
 	image_name_list = natsort.natsorted(image_name_list)
 	#print(len(image_name_list))
 	#pprint.pprint(image_name_list)
@@ -109,7 +113,7 @@ class FalcorDataset(NerfDataset):
 		if self.load_priors:
 			with open(os.path.join(basedir, 'avg_irradiance.json'), 'r') as fp:
 				f = json.load(fp)
-				self.prior_irradiance_mean = f[self.prior_type]
+				self.prior_irradiance_mean = f["mean_" + self.prior_type]
 
 		self.skip = kwargs.get("skip", 1)
 		if self.split == "train":
@@ -148,8 +152,10 @@ class FalcorDataset(NerfDataset):
 		if self.load_normal:
 			sample["normal"] = load_image_from_path(normal_file_path, scale=self.scale)
 		if self.load_priors:
-			prior_albedo_file_path = self.image_lists[::self.skip][index][:-4] + "{}_r.png".format(self.prior_type)
+			prior_albedo_file_path = self.image_lists[::self.skip][index][:-4] + "_{}_r.png".format(self.prior_type)
+			prior_irradiance_file_path = self.image_lists[::self.skip][index][:-4] + "_{}_s.png".format(self.prior_type)
 			sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
+			sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
 
 		# (3) load pose information
 		sample["pose"] = transform
