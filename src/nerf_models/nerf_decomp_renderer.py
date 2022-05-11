@@ -588,12 +588,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 				with torch.no_grad():
 					reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
+					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
 
 					prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 			else:
 				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
+				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
 
 				prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
