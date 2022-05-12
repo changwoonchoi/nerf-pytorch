@@ -745,9 +745,13 @@ def raw2outputs_additional(rays_o, rays_d, z_vals, z_vals_constant,
 	reflected_pts = x_surface[..., None, :] + reflected_dirs[..., None, :] * z_vals_constant[..., :, None]
 
 	reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-	reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
+	reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
 	#prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
+	roughness = kwargs["roughness"]
+	#print(roughness, "ROUGHNESS!!")
+
+	reflected_radiance_map = torch.ones_like(reflected_radiance_map) * roughness + (1-roughness) * reflected_radiance_map
 	new_radiance_map = torch.where(mask[...,None], radiance_map, reflected_radiance_map)
 
 	# Organize results
@@ -1016,13 +1020,14 @@ def render_decomp_path(
 			imageio.imwrite(filename, result_image_8bit)
 
 	for i, c2w in enumerate(tqdm(render_poses)):
+		roughness_t = np.sin(i / 100 * np.pi * 2) * 0.5 + 0.5
 
 		gt_values = dataset_test.get_resized_normal_albedo(render_factor, i)
 		for k in gt_values.keys():
 			gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
 		results_i = render_decomp(
 			H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
-			use_instance=use_instance, label_encoder=label_encoder, **render_kwargs, **kwargs
+			use_instance=use_instance, label_encoder=label_encoder, roughness=roughness_t, **render_kwargs, **kwargs
 		)
 		append_result(results_i, "color_map", i, "rgb")
 		append_result(results_i, "radiance_map", i, "radiance")
