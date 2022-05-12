@@ -1,0 +1,4 @@
+include = common.txt
+#N_iter_ignore_approximated_radiance = 200000
+#ft_path = ../logs/falcor/kitchen/kitchen/500000.tar
+gamma_correct = True

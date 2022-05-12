@@ -1,0 +1,5 @@
+include = common.txt
+calculate_albedo_from_gt
+#calculate_irradiance_from_gt
+#calculate_roughness_from_gt
+calculating_normal_type = ground_truth

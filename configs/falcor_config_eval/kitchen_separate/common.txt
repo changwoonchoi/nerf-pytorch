@@ -1,0 +1,10 @@
+include = ../common.txt
+datadir = ../data/falcor/kitchen
+basedir = ../logs/falcor/kitchen_separate
+
+near_plane = 0.01
+far_plane = 8
+
+infer_albedo_separate
+infer_roughness_separate
+infer_irradiance_separate

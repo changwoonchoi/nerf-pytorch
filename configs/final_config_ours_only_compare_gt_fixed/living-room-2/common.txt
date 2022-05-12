@@ -1,0 +1,4 @@
+include = ../common.txt
+datadir = ../data/mitsuba/living-room-2
+basedir = ../logs/final_config_ours_only_compare_gt_fixed/living-room-2
+use_radiance_linear

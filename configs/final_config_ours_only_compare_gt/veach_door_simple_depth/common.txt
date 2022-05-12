@@ -1,0 +1,6 @@
+include = ../common.txt
+datadir = ../data/mitsuba/veach_door_simple
+basedir = ../logs/final_config_ours_only_compare_gt/veach_door_simple_depth
+use_radiance_linear
+depth_map_from_ground_truth
+train_depth_from_ground_truth

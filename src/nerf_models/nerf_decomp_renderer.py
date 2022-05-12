@@ -206,7 +206,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	if is_radiance_sigmoid:
 		radiance_f = torch.sigmoid
 	else:
-		radiance_f = F.relu
+		radiance_f = high_dynamic_range_radiance_f
 
 	if is_neighbor:
 		return raw2outputs_neigh(
@@ -467,7 +467,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 				pts = sampled_pos[..., None, :] + sampled_dirs[..., None, :] * z_vals_constant_repeated[..., :, None]
 				reflected_ray_raw = network_query_fn(pts, sampled_dirs, network_fn)
-				sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0, detach=True, is_radiance_sigmoid=is_radiance_sigmoid)
+				sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0, detach=True, radiance_f=radiance_f)
 			elif monte_carlo_integration_method == 'surface':
 				# calculate surface point
 				z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
@@ -588,12 +588,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 				with torch.no_grad():
 					reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
+					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
 
 					prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 			else:
 				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f)
+				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
 
 				prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 

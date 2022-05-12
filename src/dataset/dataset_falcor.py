@@ -116,8 +116,6 @@ class FalcorDataset(NerfDataset):
 				self.prior_irradiance_mean = f["mean_" + self.prior_type]
 
 		self.skip = kwargs.get("skip", 1)
-		if self.split == "train":
-			self.skip = 1
 
 		self.camera_angle_x = float(60) / 180.0 * math.pi
 

@@ -1,0 +1,4 @@
+include = ../common.txt
+datadir = ../data/mitsuba/bedroom
+basedir = ../logs/final_config_ours_only_compare_gt/bedroom
+use_radiance_linear
