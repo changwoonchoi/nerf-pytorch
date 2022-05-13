@@ -1,0 +1,9 @@
+include = common.txt
+N_hemisphere_sample_sqrt = 8
+
+use_monte_carlo_integration
+use_gradient_for_incident_radiance
+use_radiance_linear
+
+monte_carlo_integration_method = surface
+coarse_radiance_number = 0

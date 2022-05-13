@@ -1,0 +1,14 @@
+include = common.txt
+N_hemisphere_sample_sqrt = 8
+
+use_monte_carlo_integration
+use_gradient_for_incident_radiance
+use_radiance_linear
+
+monte_carlo_integration_method = env_map
+coarse_radiance_number = 0
+use_environment_map
+N_envmap_size = 256
+
+
+lrate_env_map = 5e-3

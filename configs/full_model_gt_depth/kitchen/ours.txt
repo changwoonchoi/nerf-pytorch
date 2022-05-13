@@ -1,0 +1,14 @@
+include = common.txt
+
+# ray_sample = "patch"
+N_rand = 512
+
+# roughness_smooth
+# albedo_smooth
+
+# beta_roughness_smooth = 0.005
+# beta_albedo_smooth = 0.001
+# smooth_weight_decay = 5
+
+calculating_normal_type = normal_map_from_depth_gradient_epsilon
+# depth_map_from_ground_truth

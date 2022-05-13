@@ -1,0 +1,9 @@
+{
+  "available_gpus" : [0,1,2,3,4,5,6,7],
+  "config_lists":[
+    "../configs/final_config_lindisp_equal_sample/kitchen",
+    "../configs/final_config_lindisp_equal_sample/bedroom",
+    "../configs/final_config_lindisp_equal_sample/living-room-2",
+    "../configs/final_config_lindisp_equal_sample/veach-ajar"
+  ]
+}

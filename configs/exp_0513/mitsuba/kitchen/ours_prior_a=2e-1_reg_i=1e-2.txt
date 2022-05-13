@@ -1,0 +1,4 @@
+include = common.txt
+
+beta_prior_albedo = 0.2
+beta_irradiance_reg = 0.01

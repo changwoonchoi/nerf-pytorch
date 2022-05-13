@@ -1,0 +1,7 @@
+include = ../common.txt
+datadir = ../data/mitsuba/kitchen
+basedir = ../logs/roughness_smooth_compare/kitchen
+roughness_smooth
+#albedo_smooth
+#irradiance_smooth
+smooth_weight_type = "color"

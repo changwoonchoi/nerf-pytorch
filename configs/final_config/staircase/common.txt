@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba/staircase
+basedir = ../logs/final_config/staircase

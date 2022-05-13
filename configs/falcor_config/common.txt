@@ -5,6 +5,7 @@ dataset_type = falcor
 no_batching = True
 lindisp = False
 load_depth_range_from_file
+freeze_radiance = True
 
 
 use_viewdirs = True

@@ -1,0 +1,3 @@
+include = common.txt
+expname = infer_at_volume_target_sigma_gradient
+infer_normal_target = normal_map_from_sigma_gradient

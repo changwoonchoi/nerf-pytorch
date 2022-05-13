@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba/kitchen
+basedir = ../logs/monte_carlo_env_map_size/kitchen

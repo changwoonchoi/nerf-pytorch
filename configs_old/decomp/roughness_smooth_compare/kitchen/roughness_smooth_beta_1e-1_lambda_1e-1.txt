@@ -1,0 +1,6 @@
+include = common.txt
+
+ray_sample = "patch"
+N_rand = 512
+beta_roughness_smooth = 0.1
+smooth_weight_decay = 0.1

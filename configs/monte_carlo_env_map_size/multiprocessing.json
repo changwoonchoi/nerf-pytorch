@@ -1,0 +1,6 @@
+{
+  "available_gpus" : [3,4,5,6, 0,2],
+  "config_lists":[
+    "../configs/monte_carlo_env_map_size/kitchen"
+  ]
+}

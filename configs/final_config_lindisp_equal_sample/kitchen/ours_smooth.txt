@@ -1,0 +1,10 @@
+include = common.txt
+
+ray_sample = "patch"
+
+roughness_smooth
+albedo_smooth
+
+beta_roughness_smooth = 0.005
+beta_albedo_smooth = 0.001
+smooth_weight_decay = 5

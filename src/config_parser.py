@@ -117,6 +117,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--albedo_smooth", action='store_true')
 	parser.add_argument("--irradiance_smooth", action='store_true')
 	parser.add_argument("--gamma_correct", action='store_true')
+	parser.add_argument("--freeze_radiance", action='store_true')
 
 	parser.add_argument("--albedo_multiplier", type=float, default=1.0, help='fraction of img taken for central crops')
 	parser.add_argument("--load_priors", action='store_true')

@@ -1,0 +1,11 @@
+{
+  "available_gpus" : [1,3,4,5,6,7],
+  "config_lists":[
+    "../configs/decomp/specular_ibl/kitchen/not_infer_normal.txt",
+    "../configs/decomp/specular_ibl/living-room-2/not_infer_normal.txt",
+    "../configs/decomp/specular_ibl/staircase/not_infer_normal.txt",
+    "../configs/decomp/specular_ibl/veach-ajar/not_infer_normal.txt",
+    "../configs/decomp/specular_ibl/bedroom/not_infer_normal.txt",
+    "../configs/decomp/specular_ibl/living-room-3/not_infer_normal.txt"
+  ]
+}

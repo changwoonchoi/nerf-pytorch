@@ -1,0 +1,9 @@
+{
+  "available_gpus" : [0,1,2,3,4,5],
+  "config_lists":[
+    "../configs/final_config_ours_only_eval/bedroom/ours.txt",
+    "../configs/final_config_ours_only_eval/bedroom/ours_gt_normal.txt",
+    "../configs/final_config_ours_only_eval/veach-ajar/ours.txt",
+    "../configs/final_config_ours_only_eval/veach-ajar/ours_gt_normal.txt"
+  ]
+}

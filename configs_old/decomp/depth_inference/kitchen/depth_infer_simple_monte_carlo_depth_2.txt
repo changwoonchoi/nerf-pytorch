@@ -1,0 +1,7 @@
+include = common.txt
+N_rand = 512
+
+use_monte_carlo_integration
+N_hemisphere_sample_sqrt = 16
+
+beta_inferred_depth = 2

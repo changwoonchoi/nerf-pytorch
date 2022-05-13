@@ -746,13 +746,23 @@ def raw2outputs_additional(rays_o, rays_d, z_vals, z_vals_constant,
 
 	reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
 	reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
-	#prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
+	prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
-	roughness = kwargs["roughness"]
-	#print(roughness, "ROUGHNESS!!")
+	#roughness_map = kwargs["roughness"]
+	roughness_map = torch.ones_like(depth_map) * kwargs["roughness"]
+	#print(roughness_map, "ROUGHNESS!!")
 
-	reflected_radiance_map = torch.ones_like(reflected_radiance_map) * roughness + (1-roughness) * reflected_radiance_map
-	new_radiance_map = torch.where(mask[...,None], radiance_map, reflected_radiance_map)
+	N_pref = len(reflected_coarse_radiance_map) + 1
+	mipmap_index1 = (roughness_map * (N_pref - 1)).long()
+	mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
+	mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
+	mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
+	prefiltered_reflected_map = \
+		(1 - mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] + \
+		mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
+
+	#reflected_radiance_map = torch.ones_like(reflected_radiance_map) * roughness + (1-roughness) * reflected_radiance_map
+	new_radiance_map = torch.where(mask[...,None], radiance_map, prefiltered_reflected_map)
 
 	# Organize results
 	results = {}

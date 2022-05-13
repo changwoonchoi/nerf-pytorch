@@ -1,0 +1,3 @@
+include = common.txt
+calculating_normal_type = ground_truth
+gamma_correct=True
