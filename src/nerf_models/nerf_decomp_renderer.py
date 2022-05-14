@@ -35,7 +35,12 @@ def high_dynamic_range_radiance_f(x):
 	return F.relu(x)
 
 
-def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=False, radiance_f=None):
+def raw2outputs_simple(raw, z_vals, rays_d, coarse_radiance_number=3, detach=False, is_radiance_sigmoid=True):
+	if is_radiance_sigmoid:
+		radiance_f = torch.sigmoid
+	else:
+		radiance_f = high_dynamic_range_radiance_f
+
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 
 	dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -305,6 +310,33 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		normal_map_from_depth_gradient_direction_epsilon.detach_()
 	"""
 
+
+	# (5) other values
+	albedo = torch.sigmoid(raw[..., 1:4])
+	albedo_map = torch.sum(weights_detached[..., None] * albedo, -2)
+
+	roughness = torch.sigmoid(raw[..., 4])
+	roughness_map = torch.sum(weights_detached * roughness, -1)
+
+	irradiance = radiance_f(raw[..., 5])
+	irradiance_map = torch.sum(weights_detached * irradiance, -1)
+
+	# (5) other values
+	if albedo_mlp is not None:
+		raw_albedo = network_query_fn(pts, None, albedo_mlp)
+		albedo = torch.sigmoid(raw_albedo[..., 0:3])
+		albedo_map = torch.sum(weights_detached[..., None] * albedo, -2)
+
+	if roughness_mlp is not None:
+		raw_roughness = network_query_fn(pts, None, roughness_mlp)
+		roughness = torch.sigmoid(raw_roughness[..., 0])
+		roughness_map = torch.sum(weights_detached * roughness, -1)
+
+	if irradiance_mlp is not None:
+		raw_irradiance = network_query_fn(pts, None, irradiance_mlp)
+		irradiance = torch.sigmoid(raw_irradiance[..., 0])
+		irradiance_map = torch.sum(weights_detached * irradiance, -1)
+
 	radiance = radiance_f(raw[..., 6:6 + 3])
 	radiance_map = torch.sum(weights[..., None] * radiance, -2)
 
@@ -358,9 +390,24 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		target_normal_map = normal_map_from_depth_gradient_direction_epsilon
 	"""
 
-	target_albedo_map = None
-	target_roughness_map = None
-	target_irradiance_map = None
+	target_albedo_map = albedo_map
+	if calculate_albedo_from_gt:
+		target_albedo_map = gt_values["albedo"]
+
+	target_roughness_map = roughness_map
+	if calculate_roughness_from_gt:
+		target_roughness_map = gt_values["roughness"][...,0]
+
+	target_irradiance_map = irradiance_map[...,None]
+	if calculate_irradiance_from_gt:
+		target_irradiance_map = gt_values["irradiance"]
+		#target_irradiance_map = torch.pow(target_irradiance_map, gamma)
+		#target_irradiance_map = target_irradiance_map / torch.clip(1 - target_irradiance_map, 0.000001, 1)
+
+
+	# target_albedo_map = None
+	# target_roughness_map = None
+	# target_irradiance_map = None
 	target_binormal_map = None
 	target_tangent_map = None
 	approximated_radiance_map = None
@@ -374,42 +421,6 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	prefiltered_reflected_map = None
 	reflected_coarse_radiance_map = []
 	if kwargs.get('approximate_radiance', False):
-		# (5) other values
-		if albedo_mlp is None:
-			albedo = torch.sigmoid(raw[..., 1:4] + kwargs.get("albedo_multiplier", 1.0) - 1.0)
-		else:
-			# print("INFERRED FROM INDEPENDENT ONE!!!!!!!!!!!")
-			raw_albedo = network_query_fn(pts, None, albedo_mlp)
-			albedo = torch.sigmoid(raw_albedo[..., 0:3] + kwargs.get("albedo_multiplier", 1.0) - 1.0)
-		albedo_map = torch.sum(weights_detached[..., None] * albedo, -2)
-
-		if roughness_mlp is None:
-			roughness = torch.sigmoid(raw[..., 4])  # * roughness_exp_coefficient)
-		else:
-			raw_roughness = network_query_fn(pts, None, roughness_mlp)
-			roughness = torch.sigmoid(raw_roughness[..., 0])
-		roughness_map = torch.sum(weights_detached * roughness, -1)
-
-		if irradiance_mlp is None:
-			irradiance = radiance_f(raw[..., 5])
-		else:
-			raw_irradiance = network_query_fn(pts, None, irradiance_mlp)
-			irradiance = torch.sigmoid(raw_irradiance[..., 0])
-		irradiance_map = torch.sum(weights_detached * irradiance, -1)
-
-		target_albedo_map = albedo_map
-		if calculate_albedo_from_gt:
-			target_albedo_map = gt_values["albedo"]
-
-		target_roughness_map = roughness_map
-		if calculate_roughness_from_gt:
-			target_roughness_map = gt_values["roughness"][..., 0]
-
-		target_irradiance_map = irradiance_map[..., None]
-		if calculate_irradiance_from_gt:
-			target_irradiance_map = gt_values["irradiance"]
-			target_irradiance_map = torch.pow(target_irradiance_map, gamma)
-			target_irradiance_map = target_irradiance_map / torch.clip(1 - target_irradiance_map, 0.000001, 1)
 
 		# calculate normal only approximate radiance
 		if target_normal_map_for_radiance_calculation == "normal_map_from_sigma_gradient":
@@ -467,7 +478,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 				pts = sampled_pos[..., None, :] + sampled_dirs[..., None, :] * z_vals_constant_repeated[..., :, None]
 				reflected_ray_raw = network_query_fn(pts, sampled_dirs, network_fn)
-				sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0, detach=True, radiance_f=radiance_f)
+				sampled_dir_radiance, _ = raw2outputs_simple(reflected_ray_raw, z_vals_constant_repeated, sampled_dirs, 0, detach=True, is_radiance_sigmoid=is_radiance_sigmoid)
 			elif monte_carlo_integration_method == 'surface':
 				# calculate surface point
 				z_vals_constant_repeated = z_vals_constant.repeat_interleave(hemisphere_samples.shape[0], dim=0)
@@ -588,12 +599,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 				with torch.no_grad():
 					reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
+					reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, is_radiance_sigmoid=is_radiance_sigmoid)
 
 					prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 			else:
 				reflected_ray_raw = network_query_fn(reflected_pts, reflected_dirs, network_fn)
-				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, radiance_f=radiance_f)
+				reflected_radiance_map, reflected_coarse_radiance_map = raw2outputs_simple(reflected_ray_raw, z_vals_constant, reflected_dirs, is_radiance_sigmoid=is_radiance_sigmoid)
 
 				prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
@@ -627,6 +638,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		gamma_correct_f = lambda x: rgb_to_srgb(x)
 	else:
 		gamma_correct_f = lambda x: x
+	#print(is_radiance_sigmoid, "RADIANCE SIGMOID", gamma_correct, "GAMMA CORRECT")
 
 	output_f = lambda x: x if x is None else gamma_correct_f(ldr_f(x))
 	albedo_f = lambda x: x if x is None else gamma_correct_f(x)

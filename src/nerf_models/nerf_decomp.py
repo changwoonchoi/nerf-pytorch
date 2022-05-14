@@ -257,6 +257,7 @@ class NeRFDecomp(nn.Module):
         return ret
 
     def forward(self, x):
+        #return self.forward_not_freezed(x)
         if self.freeze_radiance:
             return self.forward_freezed(x)
         else:

@@ -29,7 +29,7 @@ def find_min_max_depth():
 	# targets = ["dining-room", "bathroom", "classroom", "living-room"]
 
 	for target in targets:
-		basedir = "../../data/mitsuba_no_transparent_with_prior/%s" % target
+		basedir = "../../data/mitsuba/%s" % target
 		find_min_max_depth_helper(basedir)
 
 find_min_max_depth()
