@@ -581,7 +581,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
 				mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
 
-			diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * target_irradiance_map[..., None]
+			diffuse_map = (1 - fresnel_map) * (1-target_metallic_map) * target_albedo_map * target_irradiance_map
 			specular_map = specular_map * prefiltered_reflected_map
 			approximated_radiance_map = diffuse_map + specular_map
 
