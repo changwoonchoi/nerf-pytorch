@@ -30,6 +30,11 @@ class MitsubaDataset(NerfDataset):
 			print(self.near)
 			print(self.far)
 
+		if self.load_priors:
+			with open(os.path.join(basedir, 'avg_irradiance.json'), 'r') as fp:
+				f = json.load(fp)
+				self.prior_irradiance_mean = f["mean_" + self.prior_type]
+
 		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
 			self.meta = json.load(fp)
 
@@ -87,6 +92,8 @@ class MitsubaDataset(NerfDataset):
 		diffuse_file_path = os.path.join(self.basedir, self.split, "%d_diffuse.png" % (self.skip * index + 1))
 		specular_file_path = os.path.join(self.basedir, self.split, "%d_specular.png" % (self.skip * index + 1))
 		irradiance_file_path = os.path.join(self.basedir, self.split, "%d_irradiance.png" % (self.skip * index + 1))
+		prior_albedo_file_path = os.path.join(self.basedir, self.split, "{}_{}_r.png".format(self.skip * index + 1, self.prior_type))
+		prior_irradiance_file_path = os.path.join(self.basedir, self.split, "{}_{}_s.png".format(self.skip * index + 1, self.prior_type))
 
 		# (1) load RGB Image
 		if self.load_image:
@@ -103,13 +110,17 @@ class MitsubaDataset(NerfDataset):
 			sample["depth"] = load_numpy_from_path(depth_file_path, scale=self.scale)[..., None]
 		if self.load_irradiance:
 			irradiance = load_image_from_path(irradiance_file_path, scale=self.scale)
-			irradiance = np.power(irradiance, 2.2)
-			irradiance = irradiance / np.maximum(1 - irradiance, 0.000001)
+			#irradiance = np.power(irradiance, 2.2)
+			#irradiance = irradiance / np.maximum(1 - irradiance, 0.000001)
 			sample["irradiance"] = irradiance
 
 		if self.load_diffuse_specular:
 			sample["diffuse"] = load_image_from_path(diffuse_file_path, scale=self.scale)
 			sample["specular"] = load_image_from_path(specular_file_path, scale=self.scale)
+
+		if self.load_priors:
+			sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
+			sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:
@@ -129,7 +140,6 @@ class MitsubaDataset(NerfDataset):
 		pose[:3, 0] *= -1
 		pose[:3, 2] *= -1
 		sample["pose"] = pose
-
 		return sample
 
 	def get_test_render_poses(self):

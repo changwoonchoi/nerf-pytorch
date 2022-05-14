@@ -7,7 +7,7 @@ from utils.logging_utils import load_logger
 import torch
 from utils.color_utils import get_basecolor
 from torchvision import transforms
-
+from utils.image_utils import *
 
 class NerfDataset(Dataset, ABC):
 	def __init__(self, name, **kwargs):
@@ -37,6 +37,12 @@ class NerfDataset(Dataset, ABC):
 		self.speculars = []
 		self.irradiances = []
 
+		self.prior_albedos = []
+		self.prior_irradiances = []
+		self.prior_type = kwargs.get("prior_type", "bell")
+
+		self.prior_irradiance_mean = 0.7
+
 		self.load_image = kwargs.get("load_image", True)
 		self.load_normal = kwargs.get("load_normal", False)
 		self.load_albedo = kwargs.get("load_albedo", False)
@@ -44,6 +50,8 @@ class NerfDataset(Dataset, ABC):
 		self.load_depth = kwargs.get("load_depth", False)
 		self.load_diffuse_specular = kwargs.get("load_diffuse_specular", False)
 		self.load_irradiance = kwargs.get("load_irradiance", False)
+
+		self.load_priors = kwargs.get("load_priors", False)
 
 		self.instance_color_list = []
 		self.instance_num = 0
@@ -89,7 +97,7 @@ class NerfDataset(Dataset, ABC):
 			result["normal"] = t(normal_temp).permute((1, 2, 0))
 
 		if self.load_irradiance:
-			irradiance_temp = self.normals[i].permute((2, 0, 1))
+			irradiance_temp = self.irradiances[i].permute((2, 0, 1))
 			result["irradiance"] = t(irradiance_temp).permute((1, 2, 0))
 
 		if self.load_roughness:
@@ -99,6 +107,12 @@ class NerfDataset(Dataset, ABC):
 		if self.load_depth:
 			depth_temp = self.depths[i].permute((2,0,1))
 			result["depth"] = t(depth_temp).permute((1, 2, 0))
+
+		if self.load_priors:
+			prior_albedo_temp = self.prior_albedos[i].permute((2, 0, 1))
+			prior_irradiance_temp = self.prior_irradiances[i].permute((2, 0, 1))
+			result["prior_albedo"] = t(prior_albedo_temp).permute((2, 0, 1))
+			result["prior_irradiance"] = t(prior_irradiance_temp).permute((2, 0, 1))
 
 		return result
 
@@ -149,6 +163,9 @@ class NerfDataset(Dataset, ABC):
 			pixel_info["depth"] = self.depths[image_index][v, u]
 		if self.load_irradiance:
 			pixel_info["irradiance"] = self.irradiances[image_index][v, u, :]
+		if self.load_priors:
+			pixel_info["prior_albedo"] = self.prior_albedos[image_index][v, u, :]
+			pixel_info["prior_irradiance"] = self.prior_irradiances[image_index][v, u, 0]  # our irradiance map has one channel
 		return pixel_info
 
 	def get_near_far_plane(self):
@@ -168,7 +185,12 @@ class NerfDataset(Dataset, ABC):
 		data_loader = DataLoader(self, num_workers=num_of_workers, batch_size=1)
 		for i, data in enumerate(data_loader):
 			if "image" in data:
-				self.images.append(data["image"][0])
+				image = data["image"][0]
+				self.images.append(image)
+				# if not self.gamma_correct:
+				# else:
+				# 	print("GAMMA CORRECTED!!")
+				# 	self.images.append(srgb_to_rgb_torch(image))
 			if "pose" in data:
 				self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
@@ -186,6 +208,9 @@ class NerfDataset(Dataset, ABC):
 				self.speculars.append(data["specular"][0])
 			if self.load_irradiance:
 				self.irradiances.append(data["irradiance"][0])
+			if self.load_priors:
+				self.prior_albedos.append(data["prior_albedo"][0])
+				self.prior_irradiances.append(data["prior_irradiance"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -210,6 +235,9 @@ class NerfDataset(Dataset, ABC):
 			self.speculars = torch.stack(self.speculars, 0).to(device)
 		if self.load_irradiance:
 			self.irradiances = torch.stack(self.irradiances, 0).to(device)
+		if self.load_priors:
+			self.prior_albedos = torch.stack(self.prior_albedos, 0).to(device)
+			self.prior_irradiances = torch.stack(self.prior_irradiances, 0).to(device)
 	def __getitem__(self, item):
 		pass
 
@@ -277,6 +305,7 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_mitsuba_eval import MitsubaEvalDataset
 	from dataset.dataset_nerf_synthetic import NeRFSyntheticDataset
 	from dataset.dataset_replica import ReplicaDataset
+	from dataset.dataset_falcor import FalcorDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -288,3 +317,5 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return NeRFSyntheticDataset(basedir, **kwargs)
 	elif dataset_type == "replica":
 		return ReplicaDataset(basedir, **kwargs)
+	elif dataset_type == "falcor":
+		return FalcorDataset(basedir, **kwargs)

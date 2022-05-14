@@ -40,6 +40,9 @@ def config_parser(default_files=None):
 	parser.add_argument("--datadir", type=str, default='./data/llff/fern', help='input data directory')
 
 	# training options
+
+	parser.add_argument("--calculate_in_linear_rgb", action="store_true", help="calculate in rgb linear space")
+
 	parser.add_argument("--image_scale", type=float, default=1.0, help="image scale ex) 0.5 = half")
 	parser.add_argument("--instance_mask", action="store_true", help='NeRF with instance mask')
 	parser.add_argument("--instance_loss_weight", type=float, default=0.01, help='Instance loss weight')
@@ -69,6 +72,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_iter_ignore_approximated_radiance", type=int, default=5000, help="Ignore normal loss")
 	parser.add_argument("--N_iter_ignore_smooth", type=int, default=15000, help="Ignore smoothness loss")
 	parser.add_argument("--N_iter_ignore_instancewise_constant", type=int, default=15000, help="Ignore instancewise constant loss")
+	parser.add_argument("--N_iter_ignore_prior", type=int, default=10000, help="Ignore prior loss")
+	parser.add_argument("--N_iter_freeze_radiance", type=int, default=50000, help="Freeze radiance network")
 
 	parser.add_argument("--coarse_radiance_number", type=int, default=0, help='coarse_radiance_number')
 
@@ -94,6 +99,9 @@ def config_parser(default_files=None):
 	parser.add_argument("--beta_instancewise_constant", type=float, default=0.1)
 	parser.add_argument("--beta_sigma_depth", type=float, default=1)
 	parser.add_argument("--beta_roughness_render", type=float, default=1)
+	parser.add_argument("--beta_prior_albedo", type=float, default=0.01)
+	parser.add_argument("--beta_prior_irradiance", type=float, default=0)
+	parser.add_argument("--beta_irradiance_reg", type=float, default=0)
 
 	parser.add_argument("--albedo_instance_constant", action='store_true')
 	parser.add_argument("--irradiance_instance_constant", action='store_true')
@@ -102,10 +110,19 @@ def config_parser(default_files=None):
 	parser.add_argument("--initialize_roughness", action='store_true')
 	parser.add_argument("--roughness_init", type=float, default=0.5)
 
+	parser.add_argument("--infer_albedo_separate", action='store_true')
+	parser.add_argument("--infer_roughness_separate", action='store_true')
+	parser.add_argument("--infer_irradiance_separate", action='store_true')
+
 	parser.add_argument("--roughness_smooth", action='store_true')
 	parser.add_argument("--albedo_smooth", action='store_true')
 	parser.add_argument("--irradiance_smooth", action='store_true')
+	parser.add_argument("--gamma_correct", action='store_true')
 
+	parser.add_argument("--albedo_multiplier", type=float, default=1.0, help='fraction of img taken for central crops')
+	parser.add_argument("--load_priors", action='store_true')
+	parser.add_argument("--prior_type", type=str, default='bell', help='bell or ting')
+	parser.add_argument("--albedo_prior_type", type=str, default='rgb', help='rgb or chrom')
 
 	parser.add_argument("--lrate", type=float, default=5e-4, help='learning rate')
 	parser.add_argument("--lrate_env_map", type=float, default=5e-4, help='learning rate for env_map')
@@ -166,6 +183,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--calculate_irradiance_from_gt", action='store_true', help='calculate_irradiance_from_gt')
 	parser.add_argument("--calculate_roughness_from_gt", action='store_true', help='calculate_roughness_from_gt')
 	parser.add_argument("--calculate_albedo_from_gt", action='store_true', help='calculate_albedo_from_gt')
+	parser.add_argument("--roughness_exp_coefficient", type=float, default=1.0, help='roughness_exp_coefficient of img taken for central crops')
 
 	parser.add_argument("--calculate_all_analytic_normals", action='store_true', help='calculate_analytic_normals')
 	parser.add_argument("--calculating_normal_type", type=str, default='ground_truth', help='types of analytic normal, one of [normal_map_from_sigma_gradient,normal_map_from_sigma_gradient_surface, normal_map_from_depth_gradient, normal_map_from_depth_gradient_direction, normal_map_from_depth_gradient_epsilon, normal_map_from_depth_gradient_direction_epsilon, ground_truth]')
