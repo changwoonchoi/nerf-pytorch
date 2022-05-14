@@ -1,0 +1,6 @@
+include = ../common_no_prior.txt
+datadir = ../data/falcor/kitchen
+basedir = ../logs/exp_0513/falcor/kitchen
+
+near_plane = 0.01
+far_plane = 8

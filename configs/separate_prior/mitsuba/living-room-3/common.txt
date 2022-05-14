@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/mitsuba_no_transparent_with_prior/living-room-3
+basedir = ../logs/separate_prior/mitsuba/living-room-3

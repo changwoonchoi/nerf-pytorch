@@ -1,0 +1,5 @@
+include = common.txt
+#N_iter_ignore_approximated_radiance = 500000
+#N_iter_ignore_smooth = 500000
+#ft_path = ../logs/falcor/kitchen/kitchen/500000.tar
+ft_path = ../logs/falcor_old/kitchen/kitchen/1000000.tar

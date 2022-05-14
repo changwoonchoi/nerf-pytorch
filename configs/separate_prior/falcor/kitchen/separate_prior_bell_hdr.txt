@@ -1,0 +1,24 @@
+include = common.txt
+
+N_iter = 200000
+
+N_rand = 1024
+N_iter_ignore_normal = 0
+N_iter_ignore_depth = 0
+N_iter_ignore_approximated_radiance = 10000
+N_iter_ignore_prior = 10000
+
+beta_prior_albedo = 0.01
+beta_prior_irradiance = 0
+beta_irradiance_reg = 0.01
+
+infer_albedo_separate
+infer_roughness_separate
+infer_irradiance_separate
+
+load_priors
+prior_type = bell
+
+calculating_normal_type = normal_map_from_depth_gradient_epsilon
+
+use_radiance_linear

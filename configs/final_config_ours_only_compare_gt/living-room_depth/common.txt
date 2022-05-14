@@ -1,0 +1,6 @@
+include = ../common.txt
+datadir = ../data/mitsuba/living-room
+basedir = ../logs/final_config_ours_only_compare_gt/living-room_depth
+use_radiance_linear
+depth_map_from_ground_truth
+train_depth_from_ground_truth

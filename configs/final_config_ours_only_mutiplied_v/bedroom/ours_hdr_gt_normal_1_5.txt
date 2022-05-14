@@ -1,0 +1,4 @@
+include = common.txt
+calculating_normal_type = ground_truth
+use_radiance_linear
+albedo_multiplier=1.5

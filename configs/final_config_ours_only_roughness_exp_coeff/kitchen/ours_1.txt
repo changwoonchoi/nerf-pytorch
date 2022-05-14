@@ -1,0 +1,5 @@
+include = common.txt
+# depth_map_from_ground_truth
+roughness_exp_coefficient = 1.0
+#use_radiance_linear
+
