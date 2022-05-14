@@ -1,0 +1,3 @@
+include = common.txt
+
+N_iter_freeze_radiance = 100000000000000000

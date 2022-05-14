@@ -25,11 +25,12 @@ def find_min_max_depth_helper(basedir):
 		json.dump(data, f)
 
 def find_min_max_depth():
-	targets = ["bathroom", "bathroom2", "bedroom", "classroom", "dining-room", "kitchen", "living-room", "living-room-2", "living-room-3", "staircase", "veach-ajar", "veach_door_simple"]
+	# targets = ["bathroom", "bathroom2", "bedroom", "classroom", "dining-room", "kitchen", "living-room", "living-room-2", "living-room-3", "staircase", "veach-ajar", "veach_door_simple"]
+	targets = ["kitchen"]
 	# targets = ["dining-room", "bathroom", "classroom", "living-room"]
 
 	for target in targets:
-		basedir = "../../data/mitsuba_no_transparent_with_prior/%s" % target
+		basedir = "../../data/mitsuba/%s" % target
 		find_min_max_depth_helper(basedir)
 
 find_min_max_depth()

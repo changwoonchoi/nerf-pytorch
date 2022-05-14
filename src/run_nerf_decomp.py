@@ -511,7 +511,8 @@ def train(args):
 			elif args.infer_normal_target == "normal_map_from_depth_gradient_direction_epsilon":
 				calculate_normal_from_depth_gradient_direction_epsilon = True
 
-		if i >= args.N_iter_ignore_approximated_radiance:
+		# if i >= args.N_iter_ignore_approximated_radiance:
+		if i >= args.N_iter_freeze_radiance:
 			render_kwargs_train["network_fn"].freeze_radiance = True
 			render_kwargs_train["network_fine"].freeze_radiance = True
 
@@ -782,6 +783,7 @@ def train(args):
 		# + args.beta_inferred_normal * loss_inferred_normal + args.beta_radiance_render * loss_render_radiance \
 		if i >= args.N_iter_ignore_approximated_radiance:
 			total_loss = args.beta_render * loss_render
+		if i >= args.N_iter_freeze_radiance:
 			render_kwargs_train["network_fn"].freeze_radiance = True
 			render_kwargs_train["network_fine"].freeze_radiance = True
 

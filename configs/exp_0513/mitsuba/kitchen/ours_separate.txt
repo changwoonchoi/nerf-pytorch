@@ -1,0 +1,5 @@
+include = common.txt
+
+infer_albedo_separate
+infer_roughness_separate
+infer_irradiance_separate

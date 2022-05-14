@@ -7,10 +7,10 @@ import json
 def find_representative_irradiance_value(dataset_type: str, room_name: str):
 	if dataset_type == 'mitsuba':
 		bell_irradiance_files = glob.glob(
-			'../../data/mitsuba_no_transparent_with_prior/{}/train/*_bell_s.png'.format(
+			'../../data/mitsuba/{}/train/*_bell_s.png'.format(
 				room_name))
 		ting_irradiance_files = glob.glob(
-			'../../data/mitsuba_no_transparent_with_prior/{}/train/*_ting_s.png'.format(
+			'../../data/mitsuba/{}/train/*_ting_s.png'.format(
 				room_name))
 	elif dataset_type == 'falcor':
 		bell_irradiance_files = glob.glob(
@@ -43,12 +43,13 @@ def find_representative_irradiance_value(dataset_type: str, room_name: str):
 
 if __name__ == "__main__":
 	# mitsuba scenes
-	mitsuba_rooms = ['bathroom', 'bathroom2', 'bedroom', 'classroom', 'dining-room', 'kitchen', 'living-room', 'living-room-2', 'living-room-3', 'staircase', 'veach-ajar', 'veach_door_simple']
+	# mitsuba_rooms = ['bathroom', 'bathroom2', 'bedroom', 'classroom', 'dining-room', 'kitchen', 'living-room', 'living-room-2', 'living-room-3', 'staircase', 'veach-ajar', 'veach_door_simple']
+	mitsuba_rooms = ['kitchen']
 	# rooms = ['kitchen']
 	for room in mitsuba_rooms:
 		print("mitsuba {} processing".format(room))
 		irradiance_mean = find_representative_irradiance_value('mitsuba', room)
-		with open('../../data/mitsuba_no_transparent_with_prior/{}/avg_irradiance.json'.format(room), "w") as f:
+		with open('../../data/mitsuba/{}/avg_irradiance.json'.format(room), "w") as f:
 			data = {
 				"mean_bell": float(irradiance_mean['bell']),
 				"mean_ting": float(irradiance_mean['ting'])

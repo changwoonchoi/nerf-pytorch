@@ -73,6 +73,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_iter_ignore_smooth", type=int, default=15000, help="Ignore smoothness loss")
 	parser.add_argument("--N_iter_ignore_instancewise_constant", type=int, default=15000, help="Ignore instancewise constant loss")
 	parser.add_argument("--N_iter_ignore_prior", type=int, default=10000, help="Ignore prior loss")
+	parser.add_argument("--N_iter_freeze_radiance", type=int, default=50000, help="Freeze radiance network")
 
 	parser.add_argument("--coarse_radiance_number", type=int, default=0, help='coarse_radiance_number')
 
