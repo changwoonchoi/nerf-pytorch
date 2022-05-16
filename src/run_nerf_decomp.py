@@ -326,7 +326,7 @@ def train(args):
 	writer.add_images('test/gt_rgb', img_gt, 0)
 
 	for k in range(args.coarse_radiance_number):
-		img_gt_k = dataset_val.get_coarse_images(k+1)
+		img_gt_k = dataset_val.prefiltered_images[k].permute((0, 3, 1, 2))#.get_coarse_images(k+1)
 		writer.add_images('test/gt_rgb_coarse_%d' % (k+1), img_gt_k, 0)
 
 	if use_instance_mask:
@@ -512,6 +512,12 @@ def train(args):
 				calculate_normal_from_depth_gradient_direction_epsilon = True
 
 		if (i >= args.N_iter_ignore_approximated_radiance) and args.freeze_radiance:
+			render_kwargs_train["network_fn"].freeze_radiance = True
+			render_kwargs_train["network_fine"].freeze_radiance = True
+
+		if args.load_priors and i >= args.N_iter_ignore_prior and args.freeze_roughness:
+			render_kwargs_train["network_fn"].freeze_roughness = True
+			render_kwargs_train["network_fine"].freeze_roughness = True
 			render_kwargs_train["network_fn"].freeze_radiance = True
 			render_kwargs_train["network_fine"].freeze_radiance = True
 
@@ -782,8 +788,8 @@ def train(args):
 		# + args.beta_inferred_normal * loss_inferred_normal + args.beta_radiance_render * loss_render_radiance \
 		if i >= args.N_iter_ignore_approximated_radiance:
 			total_loss += args.beta_render * loss_render
-			render_kwargs_train["network_fn"].freeze_radiance = True
-			render_kwargs_train["network_fine"].freeze_radiance = True
+
+
 
 		# total_loss += 0.1 * args.beta_albedo_render * loss_albedo_render
 		# else:
@@ -865,6 +871,8 @@ def train(args):
 		# total_loss = args.beta_radiance_render * loss_render_radiance
 		optimizer.zero_grad()
 		total_loss.backward()
+		#print(render_kwargs_train["network_fn"].roughness_linear.weight.grad, "GRAD!!!", i)
+		#print(render_kwargs_train["network_fn"].positions_linears[0].weight.grad, "POS GRAD!!!", i)
 		optimizer.step()
 
 		decay_rate = 0.1

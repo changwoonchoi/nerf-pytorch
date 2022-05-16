@@ -102,6 +102,7 @@ class NeRFDecomp(nn.Module):
         #    self.additional_radiance_linear.append(nn.Linear(W, 3))
         self.is_color_independent_to_direction = is_color_independent_to_direction
         self.freeze_radiance = False
+        self.freeze_roughness = False
 
 
     def __str__(self):
@@ -145,8 +146,13 @@ class NeRFDecomp(nn.Module):
         albedo_feature = F.relu(albedo_feature)
         albedo = self.albedo_linear(albedo_feature)
 
-        # (2-3) roughness
-        roughness = self.roughness_linear(h)
+        if self.freeze_roughness:
+            with torch.no_grad():
+                # (2-3) roughness
+                roughness = self.roughness_linear(h)
+        else:
+            # (2-3) roughness
+            roughness = self.roughness_linear(h)
 
         # (2-4) irradiance
         irradiance_feature = self.irradiance_feature_linear(h)
@@ -468,7 +474,8 @@ def create_NeRFDecomp(args):
         "epsilon_direction": args.epsilon_direction_for_numerical_normal,
         "N_hemisphere_sample_sqrt": args.N_hemisphere_sample_sqrt,
         "roughness_exp_coefficient": args.roughness_exp_coefficient,
-        "albedo_multiplier": args.albedo_multiplier
+        "albedo_multiplier": args.albedo_multiplier,
+        "correct_depth_for_prefiltered_radiance_infer": args.correct_depth_for_prefiltered_radiance_infer
     }
 
     render_kwargs_test = {k: render_kwargs_train[k] for k in render_kwargs_train}

@@ -1,0 +1,3 @@
+include = common.txt
+# depth_map_from_ground_truth
+gamma_correct=True

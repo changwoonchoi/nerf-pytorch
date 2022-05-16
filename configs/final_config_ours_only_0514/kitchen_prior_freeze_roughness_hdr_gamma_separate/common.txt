@@ -1,0 +1,17 @@
+include = ../common.txt
+datadir = ../data/mitsuba/kitchen
+basedir = ../logs/final_config_ours_only_0514/kitchen_prior_freeze_roughness_hdr_gamma_separate
+
+load_priors=True
+N_iter_ignore_prior = 100000
+N_iter = 200000
+
+freeze_roughness=True
+
+beta_prior_albedo = 1
+beta_irradiance_reg = 0.1
+
+infer_albedo_separate
+infer_roughness_separate
+infer_irradiance_separate
+

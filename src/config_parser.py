@@ -74,6 +74,7 @@ def config_parser(default_files=None):
 	parser.add_argument("--N_iter_ignore_instancewise_constant", type=int, default=15000, help="Ignore instancewise constant loss")
 	parser.add_argument("--N_iter_ignore_prior", type=int, default=10000, help="Ignore prior loss")
 
+
 	parser.add_argument("--coarse_radiance_number", type=int, default=0, help='coarse_radiance_number')
 
 	parser.add_argument("--beta_sparse_base", type=float, default=1., help="")
@@ -107,6 +108,9 @@ def config_parser(default_files=None):
 	parser.add_argument("--color_independent_to_direction", action='store_true')
 
 	parser.add_argument("--initialize_roughness", action='store_true')
+	parser.add_argument("--freeze_roughness", action='store_true')
+	parser.add_argument("--correct_depth_for_prefiltered_radiance_infer", action='store_true')
+
 	parser.add_argument("--roughness_init", type=float, default=0.5)
 
 	parser.add_argument("--infer_albedo_separate", action='store_true')

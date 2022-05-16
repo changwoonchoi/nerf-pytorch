@@ -65,6 +65,8 @@ class ReplicaDataset(NerfDataset):
 		image_file_path = os.path.join(self.basedir, self.split, 'frame{:06d}.jpg'.format(self.skip * index))
 		depth_file_path = os.path.join(self.basedir, self.split, 'depth{:06d}.png'.format(self.skip * index))
 		normal_file_path = os.path.join(self.basedir, self.split, 'normal{:06d}.png'.format(self.skip * index))
+		prior_albedo_file_path = os.path.join(self.basedir, self.split, 'frame{:06d}_bell_r.png'.format(self.skip * index))
+		prior_irradiance_file_path = os.path.join(self.basedir, self.split, 'frame{:06d}_bell_s.png'.format(self.skip * index))
 
 		# (1) load RGB Image
 		if self.load_image:
@@ -78,6 +80,9 @@ class ReplicaDataset(NerfDataset):
 			depth = depth.astype(np.float32)
 			depth = depth / depth_scale
 			sample["depth"] = depth[..., None]
+		if self.load_priors:
+			sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
+			sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
 
 		# (3) load pose information
 		transform = []

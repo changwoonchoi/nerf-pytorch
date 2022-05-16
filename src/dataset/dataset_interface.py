@@ -26,6 +26,7 @@ class NerfDataset(Dataset, ABC):
 		self.far = 0
 
 		self.images = []
+		self.prefiltered_images = []
 		self.poses = []
 		self.masks = []
 		self.normals = []
@@ -122,34 +123,36 @@ class NerfDataset(Dataset, ABC):
 		for i in range(len(self)):
 			image_temp = self.images[i].permute((2, 0, 1))
 			# image_temp = image_temp.permute((1,2,0))
-			sh = self.height
-			sw = self.width
+			sh = int(self.height / self.scale)
+			sw = int(self.width / self.scale)
 			for _ in range(level):
 				sh = sh//self.coarse_resize_scale
 				sw = sw//self.coarse_resize_scale
 			t = transforms.Resize(size=(sh, sw), antialias=True)
-			image_temp = t_orig(t(image_temp))
+			image_temp = t_orig(t(image_temp)).permute((1, 2, 0))
 			new_images.append(image_temp)
 		return torch.stack(new_images, 0)
 
 	def get_info(self, image_index, u, v):
 		pixel_info = {}
-		t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
-
-		image_temp = self.images[image_index].permute((2, 0, 1))
-
-		sh = self.height
-		sw = self.width
-		for i in range(self.coarse_radiance_number):
-
-			sh = sh//self.coarse_resize_scale
-			sw = sw//self.coarse_resize_scale
-			t = transforms.Resize(size=(sh, sw), antialias=True)
-			image_temp = t(image_temp)
-			new_image = t_orig(image_temp).permute((1, 2, 0))
-			pixel_info["rgb_%d" % (i+1)] = new_image[v, u, :]
+		# t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
+		#
+		# image_temp = self.images[image_index].permute((2, 0, 1))
+		#
+		# sh = self.height * 0.5 / self.scale
+		# sw = self.width * 0.5 / self.scale
+		# for i in range(self.coarse_radiance_number):
+		#
+		# 	sh = sh//self.coarse_resize_scale
+		# 	sw = sw//self.coarse_resize_scale
+		# 	t = transforms.Resize(size=(sh, sw), antialias=True)
+		# 	image_temp = t(image_temp)
+		# 	new_image = t_orig(image_temp).permute((1, 2, 0))
+		# 	pixel_info["rgb_%d" % (i+1)] = new_image[v, u, :]
 
 		pixel_info["rgb"] = self.images[image_index][v, u, :]
+		for i in range(self.coarse_radiance_number):
+			pixel_info["rgb_%d" % (i + 1)] = self.prefiltered_images[i][image_index][v, u, :]
 
 		if self.load_albedo:
 			pixel_info["albedo"] = self.albedos[image_index][v, u, :]
@@ -187,10 +190,6 @@ class NerfDataset(Dataset, ABC):
 			if "image" in data:
 				image = data["image"][0]
 				self.images.append(image)
-				# if not self.gamma_correct:
-				# else:
-				# 	print("GAMMA CORRECTED!!")
-				# 	self.images.append(srgb_to_rgb_torch(image))
 			if "pose" in data:
 				self.poses.append(data["pose"][0])
 			if self.load_instance_label_mask:
@@ -216,6 +215,14 @@ class NerfDataset(Dataset, ABC):
 	def to_tensor(self, device):
 		if len(self.images) > 0:
 			self.images = torch.stack(self.images, 0).to(device)
+
+			for i in range(self.coarse_radiance_number):
+				prefiltered_image = self.get_coarse_images(i + 1)
+				self.prefiltered_images.append(prefiltered_image)
+
+			for i in range(self.coarse_radiance_number):
+				self.prefiltered_images[i] = self.prefiltered_images[i].to(device)
+
 		if len(self.poses) > 0:
 			self.poses = torch.stack(self.poses, 0).to(device)
 		if self.init_basecolor is not None:

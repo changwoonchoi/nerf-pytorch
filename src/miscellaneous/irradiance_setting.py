@@ -17,6 +17,11 @@ def find_representative_irradiance_value(dataset_type: str, room_name: str):
 			'../../data/falcor/{}/*_bell_s.png'.format(room_name))
 		ting_irradiance_files = glob.glob(
 			'../../data/falcor/{}/*_ting_s.png'.format(room_name))
+	elif dataset_type == 'replica':
+		bell_irradiance_files = glob.glob(
+			'../../data/replica/{}/train/*_bell_s.png'.format(room_name))
+		ting_irradiance_files = glob.glob(
+			'../../data/replica/{}/train/*_bell_s.png'.format(room_name))
 	else:
 		raise ValueError
 
@@ -40,30 +45,42 @@ def find_representative_irradiance_value(dataset_type: str, room_name: str):
 	# median = {'bell': median_bell, 'ting': median_ting}
 	return mean  # , median
 
+import os
 
 if __name__ == "__main__":
+	#replica scenes
+	replica_scenes = os.listdir('../../data/replica')
+	for room in replica_scenes:
+		print("replica {} processing".format(room))
+		irradiance_mean = find_representative_irradiance_value('replica', room)
+		with open('../../data/replica/{}/avg_irradiance.json'.format(room), "w") as f:
+			data = {
+				"mean_bell": float(irradiance_mean['bell']),
+				"mean_ting": float(irradiance_mean['ting'])
+			}
+			json.dump(data, f)
 	# mitsuba scenes
-	mitsuba_rooms = ['bathroom', 'bathroom2', 'bedroom', 'classroom', 'dining-room', 'kitchen', 'living-room', 'living-room-2', 'living-room-3', 'staircase', 'veach-ajar', 'veach_door_simple']
-	# rooms = ['kitchen']
-	for room in mitsuba_rooms:
-		print("mitsuba {} processing".format(room))
-		irradiance_mean = find_representative_irradiance_value('mitsuba', room)
-		with open('../../data/mitsuba_no_transparent_with_prior/{}/avg_irradiance.json'.format(room), "w") as f:
-			data = {
-				"mean_bell": float(irradiance_mean['bell']),
-				"mean_ting": float(irradiance_mean['ting'])
-			}
-			json.dump(data, f)
+	# mitsuba_rooms = ['bathroom', 'bathroom2', 'bedroom', 'classroom', 'dining-room', 'kitchen', 'living-room', 'living-room-2', 'living-room-3', 'staircase', 'veach-ajar', 'veach_door_simple']
+	# # rooms = ['kitchen']
+	# for room in mitsuba_rooms:
+	# 	print("mitsuba {} processing".format(room))
+	# 	irradiance_mean = find_representative_irradiance_value('mitsuba', room)
+	# 	with open('../../data/mitsuba_no_transparent_with_prior/{}/avg_irradiance.json'.format(room), "w") as f:
+	# 		data = {
+	# 			"mean_bell": float(irradiance_mean['bell']),
+	# 			"mean_ting": float(irradiance_mean['ting'])
+	# 		}
+	# 		json.dump(data, f)
 
-	falcor_rooms = ['kitchen', 'living-room-2']
-
-	# falcor scenes
-	for room in falcor_rooms:
-		print("falcor {} processing".format(room))
-		irradiance_mean = find_representative_irradiance_value('falcor', room)
-		with open('../../data/falcor/{}/avg_irradiance.json'.format(room), "w") as f:
-			data = {
-				"mean_bell": float(irradiance_mean['bell']),
-				"mean_ting": float(irradiance_mean['ting'])
-			}
-			json.dump(data, f)
+	# falcor_rooms = ['kitchen', 'living-room-2']
+	#
+	# # falcor scenes
+	# for room in falcor_rooms:
+	# 	print("falcor {} processing".format(room))
+	# 	irradiance_mean = find_representative_irradiance_value('falcor', room)
+	# 	with open('../../data/falcor/{}/avg_irradiance.json'.format(room), "w") as f:
+	# 		data = {
+	# 			"mean_bell": float(irradiance_mean['bell']),
+	# 			"mean_ting": float(irradiance_mean['ting'])
+	# 		}
+	# 		json.dump(data, f)

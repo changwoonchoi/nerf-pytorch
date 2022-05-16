@@ -609,10 +609,18 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				prefiltered_env_maps = torch.stack([reflected_radiance_map] + reflected_coarse_radiance_map, dim=1)
 
 			N_pref = len(reflected_coarse_radiance_map) + 1
-			mipmap_index1 = (roughness_map * (N_pref - 1)).long()
+			if kwargs.get("correct_depth_for_prefiltered_radiance_infer", False):
+				depth_0 = (kwargs["far"] + kwargs["near"]) * 0.5
+				depth_map_detached = depth_map.detach()
+				mipmap_level = roughness_map * depth_map_detached / depth_0[..., 0]
+				mipmap_level = torch.clip(mipmap_level, 0, 1)
+			else:
+				mipmap_level = roughness_map
+
+			mipmap_index1 = (mipmap_level * (N_pref - 1)).long()
 			mipmap_index1 = torch.clip(mipmap_index1, 0, N_pref - 1)
 			mipmap_index2 = torch.clip(mipmap_index1 + 1, 0, N_pref - 1)
-			mipmap_remainder = ((roughness_map * (N_pref - 1)) - mipmap_index1)[..., None]
+			mipmap_remainder = ((mipmap_level * (N_pref - 1)) - mipmap_index1)[..., None]
 			prefiltered_reflected_map = \
 				(1-mipmap_remainder) * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index1] +\
 				mipmap_remainder * prefiltered_env_maps[torch.arange(prefiltered_env_maps.size(0)), mipmap_index2]
@@ -852,7 +860,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 	z_vals_constant = z_vals
 	result = raw2outputs(
-		rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, pytest, is_neighbor, **kwargs
+		rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, network_fn, raw_noise_std, pytest, is_neighbor, near=near, far=far, **kwargs
 	)
 
 	# (2) need importance sampling
@@ -865,7 +873,7 @@ def render_rays(ray_batch, network_fn, network_query_fn, N_samples, init_basecol
 
 		z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
 		result_fine = raw2outputs(
-			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, run_fn, raw_noise_std, pytest, is_neighbor, **kwargs
+			rays_o, rays_d, z_vals, z_vals_constant, network_query_fn, run_fn, raw_noise_std, pytest, is_neighbor, near=near, far=far, **kwargs
 		)
 
 		for k, v in result.items():
