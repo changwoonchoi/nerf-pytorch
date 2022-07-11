@@ -1017,11 +1017,12 @@ def render_decomp_path(
 		W = W // render_factor
 		focal = focal / render_factor
 
-	K = np.array([
-		[focal, 0, 0.5 * W],
-		[0, focal, 0.5 * H],
-		[0, 0, 1]
-	]).astype(np.float32)
+	if K is None:
+		K = np.array([
+			[focal, 0, 0.5 * W],
+			[0, focal, 0.5 * H],
+			[0, 0, 1]
+		]).astype(np.float32)
 
 	results = {}
 

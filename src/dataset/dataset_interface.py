@@ -22,6 +22,8 @@ class NerfDataset(Dataset, ABC):
 
 		self.focal = 0
 
+		self.K = None
+
 		self.near = 0
 		self.far = 0
 
@@ -79,11 +81,14 @@ class NerfDataset(Dataset, ABC):
 		self.far = kwargs.get("far_plane", 10)
 
 	def get_focal_matrix(self):
-		K = np.array([
-			[self.focal, 0, 0.5 * self.width],
-			[0, self.focal, 0.5 * self.height],
-			[0, 0, 1]
-		]).astype(np.float32)
+		if self.K is None:
+			K = np.array([
+				[self.focal, 0, 0.5 * self.width],
+				[0, self.focal, 0.5 * self.height],
+				[0, 0, 1]
+			]).astype(np.float32)
+		else:
+			K = self.K
 		return K
 
 	def get_resized_normal_albedo(self, resize_factor, i):
