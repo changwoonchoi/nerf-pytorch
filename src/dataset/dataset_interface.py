@@ -318,6 +318,7 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_nerf_synthetic import NeRFSyntheticDataset
 	from dataset.dataset_replica import ReplicaDataset
 	from dataset.dataset_falcor import FalcorDataset
+	from dataset.dataset_scannet import ScannetDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -331,3 +332,5 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return ReplicaDataset(basedir, **kwargs)
 	elif dataset_type == "falcor":
 		return FalcorDataset(basedir, **kwargs)
+	elif dataset_type == "scannet":
+		return ScannetDataset(basedir, **kwargs)

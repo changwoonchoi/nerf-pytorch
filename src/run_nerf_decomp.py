@@ -172,6 +172,9 @@ def train(args):
 
 	# (1) Load dataset
 	with time_measure("[1] Data load"):
+		if args.dataset_type == "scannet":
+			import torch.multiprocessing
+			torch.multiprocessing.set_sharing_strategy('file_system')
 		def load_dataset_split(split="train", do_logging=True, **kwargs):
 			# create dataset config
 			target_dataset = load_dataset(args.dataset_type, args.datadir, split=split, **kwargs)
@@ -221,6 +224,8 @@ def train(args):
 			dataset_val = load_dataset_split("test", skip=10, **load_params)
 		elif args.dataset_type == "falcor":
 			dataset_val = load_dataset_split("train", skip=10, **load_params)
+		elif args.dataset_type == "scannet":
+			dataset_val = load_dataset_split("test", skip=330, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
 

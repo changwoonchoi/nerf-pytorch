@@ -84,10 +84,10 @@ class ScannetDataset(NerfDataset):
         :param index: data index
         """
         if self.split == "train":
-            image_file_path = os.path.join(self.basedir, "color", "%d.jpg" % (self.skip * index + 1))  # train dataset : 1, 11, 21, ...
-            prior_albedo_file_path = os.path.join(self.basedir, "color", "{}_{}_r.png".format(self.skip * index + 1, self.prior_type))
-            prior_irradiance_file_path = os.path.join(self.basedir, "color", "{}_{}_s.png".format(self.skip * index + 1, self.prior_type))
-            pose_file_path = os.path.join(self.basedir, "pose", "%d.txt" % (self.skip * index + 1))
+            image_file_path = os.path.join(self.basedir, "color", "%d.jpg" % (self.skip * index))  # train dataset : 0, 10, 20, ...
+            prior_albedo_file_path = os.path.join(self.basedir, "color", "{}_{}_r.png".format(self.skip * index, self.prior_type))
+            prior_irradiance_file_path = os.path.join(self.basedir, "color", "{}_{}_s.png".format(self.skip * index, self.prior_type))
+            pose_file_path = os.path.join(self.basedir, "pose", "%d.txt" % (self.skip * index))
         elif self.split == "val" or "test":
             image_file_path = os.path.join(self.basedir, "color", "%d.jpg" % (self.skip * index + 5))  # validation dataset : 5, 15, 25, ...
             prior_albedo_file_path = os.path.join(self.basedir, "color", "{}_{}_r.png".format(self.skip * index + 5, self.prior_type))
