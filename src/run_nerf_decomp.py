@@ -226,6 +226,8 @@ def train(args):
 			dataset_val = load_dataset_split("train", skip=10, **load_params)
 		elif args.dataset_type == "scannet":
 			dataset_val = load_dataset_split("test", skip=330, **load_params)
+		elif args.dataset_type == "colmap":
+			dataset_val = load_dataset_split("test", skip=1, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
 

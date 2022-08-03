@@ -15,35 +15,15 @@ from torchvision import transforms
 import cv2
 import math
 from utils.image_utils import *
-
+from utils.colmap_utils import *
 
 class ColmapDataset(NerfDataset):
 	def __init__(self, basedir, **kwargs):
 		super().__init__("colmap", **kwargs)
 		self.scene_name = basedir.split("/")[-1]
-		if kwargs.get("load_depth_range_from_file", False):
-			with open(os.path.join(basedir, 'min_max_depth.json'), 'r') as fp:
-				f = json.load(fp)
-				self.near = f["min_depth"] * 0.9
-				self.far = f["max_depth"] * 1.1
-			print("LOAD FROM FILE!!!!!!!!!!!!!!!!!!!!!!!")
-			print(self.near)
-			print(self.far)
 
-		if self.load_priors:
-			with open(os.path.join(basedir, 'avg_irradiance.json'), 'r') as fp:
-				f = json.load(fp)
-				self.prior_irradiance_mean = f["mean_" + self.prior_type]
-
-		with open(os.path.join(basedir, 'transforms_{}.json'.format(self.split)), 'r') as fp:
-			self.meta = json.load(fp)
-
-		if self.load_instance_label_mask:
-			self.instance_color_list = np.loadtxt(os.path.join(basedir, 'instance_label.txt'))
-			self.instance_num = len(self.instance_color_list)
-		else:
-			self.instance_color_list = []
-			self.instance_num = 0
+		self.instance_color_list = []
+		self.instance_num = 0
 
 		self.basedir = basedir
 
@@ -51,29 +31,21 @@ class ColmapDataset(NerfDataset):
 		if self.split == "train":
 			self.skip = 1
 
-		self.camera_angle_x = float(self.meta['frames'][0]['fov_degree']) / 180.0 * math.pi
+		self.height, self.width, self.K = self.read_intrinsics()
+		self.imdata = read_images_binary(os.path.join(self.basedir, 'sparse/0/images.bin'))
+		self.image_names = [self.imdata[k].name for k in self.imdata]
+		if self.split == "train":
+			index_list_tmp = [i * 8 + j + 1 for i in range(len(self.image_names) // 8 + 1) for j in range(7)]
+			self.index_list = [i for i in index_list_tmp if i < len(self.image_names)]
+		elif self.split in ["val", "test"]:
+			index_list_tmp = [i * 8 for i in range(len(self.image_names) // 8 + 1)]
+			self.index_list = [i for i in index_list_tmp if i < len(self.image_names)]
+		self.center_pose = kwargs.get("center_pose", False)
 
-		image0_path = os.path.join(self.basedir, "train/1.png")
-		image0 = imageio.imread(image0_path, pilmode='RGB')
-		self.original_height, self.original_width, _ = image0.shape
 
-		self.height = int(self.original_height * self.scale)
-		self.width = int(self.original_width * self.scale)
-		self.focal = .5 * self.width / np.tan(0.5 * self.camera_angle_x)
-
-
-	# 	self.load_near_far_plane()
-	#
-	# def load_near_far_plane(self):
-	# 	"""
-	# 	Load near and far plane
-	# 	:return:
-	# 	"""
-	# 	self.near = 1
-	# 	self.far = 20
 
 	def __len__(self):
-		return len(self.meta['frames'][::self.skip])
+		return len(self.index_list)
 
 	def __getitem__(self, index):
 		sample = {}
@@ -82,66 +54,77 @@ class ColmapDataset(NerfDataset):
 		Load single data corresponding to specific index
 		:param index: data index
 		"""
-		frame = self.meta['frames'][::self.skip][index]
-		image_file_path = os.path.join(self.basedir, self.split, "%d.png" % (self.skip * index + 1))
-		mask_file_path = os.path.join(self.basedir, self.split, "%d_mask.png" % (self.skip * index + 1))
-		normal_file_path = os.path.join(self.basedir, self.split, "%d_normal.png" % (self.skip * index + 1))
-		albedo_file_path = os.path.join(self.basedir, self.split, "%d_albedo.png" % (self.skip * index + 1))
-		roughness_file_path = os.path.join(self.basedir, self.split, "%d_roughness.png" % (self.skip * index + 1))
-		depth_file_path = os.path.join(self.basedir, self.split, "%d_depth.npy" % (self.skip * index + 1))
-		diffuse_file_path = os.path.join(self.basedir, self.split, "%d_diffuse.png" % (self.skip * index + 1))
-		specular_file_path = os.path.join(self.basedir, self.split, "%d_specular.png" % (self.skip * index + 1))
-		irradiance_file_path = os.path.join(self.basedir, self.split, "%d_irradiance.png" % (self.skip * index + 1))
-		prior_albedo_file_path = os.path.join(self.basedir, self.split, "{}_{}_r.png".format(self.skip * index + 1, self.prior_type))
-		prior_irradiance_file_path = os.path.join(self.basedir, self.split, "{}_{}_s.png".format(self.skip * index + 1, self.prior_type))
+		image_file_path = os.path.join(self.basedir, 'images', self.image_names[self.index_list[index]])
 
 		# (1) load RGB Image
 		if self.load_image:
 			sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
 		if self.load_normal:
-			sample["normal"] = load_image_from_path(normal_file_path, scale=self.scale)
+			raise ValueError
 		if self.load_albedo:
-			albedo_linear = load_image_from_path(albedo_file_path, scale=self.scale)
-			# albedo_srgb = np.power(albedo_linear, 1/2.2)
-			sample["albedo"] = albedo_linear
+			raise ValueError
 		if self.load_roughness:
-			sample["roughness"] = load_image_from_path(roughness_file_path, scale=self.scale)[..., 0:1]
+			raise ValueError
 		if self.load_depth:
-			sample["depth"] = load_numpy_from_path(depth_file_path, scale=self.scale)[..., None]
+			raise ValueError
 		if self.load_irradiance:
-			irradiance = load_image_from_path(irradiance_file_path, scale=self.scale)
-			#irradiance = np.power(irradiance, 2.2)
-			#irradiance = irradiance / np.maximum(1 - irradiance, 0.000001)
-			sample["irradiance"] = irradiance
-
+			raise ValueError
 		if self.load_diffuse_specular:
-			sample["diffuse"] = load_image_from_path(diffuse_file_path, scale=self.scale)
-			sample["specular"] = load_image_from_path(specular_file_path, scale=self.scale)
-
+			raise ValueError
 		if self.load_priors:
-			sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
-			sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
+			raise ValueError
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:
-			mask = cv2.imread(mask_file_path)
-			mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
-
-			if self.scale != 1:
-				mask = cv2.resize(mask, None, fx=self.scale, fy=self.scale, interpolation=cv2.INTER_NEAREST)
-
-			mask = mask[:, :, 0] + 256 * mask[:, :, 1] + 256 * 256 * mask[:, :, 2]
-			instance_label_mask = mask.astype(np.int32)
-			sample["mask"] = instance_label_mask
+			raise ValueError
 
 		# (3) load pose information
-		pose = np.array(frame['transform']).astype(np.float32)
+		im = self.imdata[self.index_list[index] + 1]
+		bottom = np.array([[0, 0, 0, 1.]])
+		R = im.qvec2rotmat()
+		t = im.tvec.reshape(3, 1)
+		w2c = np.concatenate([np.concatenate([R, t], 1), bottom], 0)
+		pose = np.linalg.inv(w2c)  # (4, 4)
+
+		if self.center_pose:
+			pts3d = read_points3d_binary(os.path.join(self.basedir, 'sparse/0/points3d.bin'))
+			pts3d = np.array([pts3d[k].xyz for k in pts3d])
+
+			pose, pts3d = self.center_poses(pose, pts3d)
+
 		# Mitsuba --> camera forward is +Z !!
-		pose[:3, 0] *= -1
-		pose[:3, 2] *= -1
+		# pose[:3, 0] *= -1
+		# pose[:3, 2] *= -1
 		sample["pose"] = pose
 		return sample
 
-	def get_test_render_poses(self):
-		# TODO : implement
-		return None
+	def read_intrinsics(self):
+		camdata = read_cameras_binary(os.path.join(self.basedir, 'sparse/0/cameras.bin'))
+		h = int(camdata[1].height * self.scale)
+		w = int(camdata[1].width * self.scale)
+
+		if camdata[1].model == 'SIMPLE_RADIAL':
+			fx = fy = camdata[1].params[0] * self.scale
+			cx = camdata[1].params[1] * self.scale
+			cy = camdata[1].params[2] * self.scale
+		elif camdata[1].model in ['PINHOLE', 'OPENCV']:
+			fx = camdata[1].params[0] * self.scale
+			fy = camdata[1].params[1] * self.scale
+			cx = camdata[1].params[2] * self.scale
+			cy = camdata[1].params[3] * self.scale
+		else:
+			raise ValueError(f"Please parse the intrinsics for camera model {camdata[1].model}")
+		K = np.array([
+			[fx, 0, cx],
+			[0, fy, cy],
+			[0, 0, 1]]
+		)
+		return h, w, K
+
+	def center_poses(self, poses, pts3d):
+		poses_avg = self.average_poses(poses, pts3d)
+		poses_avg_inv = np.linalg.inv()
+		raise NotImplementedError
+
+	def average_poses(self, poses, pts3d):
+		raise NotImplementedError

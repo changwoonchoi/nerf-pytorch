@@ -136,6 +136,9 @@ def sample_generator_single_image(
         #     pixel_label = mask[random_v, random_u]  # height is first!!!
 
         # uv_t = torch.Tensor(random_uv)
+        print(uv_t)
+        print(dataset.get_focal_matrix())
+        print(pose[:3,:4])
         ray_o, ray_d = get_rays_few(uv_t, dataset.get_focal_matrix(), pose[:3, :4])
         ray_o_neigh, ray_d_neigh = None, None
         if ray_sample == "patch":
