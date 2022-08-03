@@ -156,7 +156,7 @@ def test(args):
 		)
 
 	with torch.no_grad():
-		run_test_dataset(global_step, render_factor=1)
+		run_test_dataset(global_step, render_factor=4)
 
 
 def train(args):
@@ -205,7 +205,8 @@ def train(args):
 			"load_depth_range_from_file": args.load_depth_range_from_file,
 			"gamma_correct": args.gamma_correct,
 			"load_priors": args.load_priors,
-			"prior_type": args.prior_type
+			"prior_type": args.prior_type,
+			"center_pose": args.center_pose,
 		}
 		dataset = load_dataset_split("train", **load_params)
 
@@ -222,6 +223,8 @@ def train(args):
 		elif args.dataset_type == "falcor":
 			dataset_val = load_dataset_split("train", skip=10, **load_params)
 		elif args.dataset_type == "colmap":
+			dataset_val = load_dataset_split("test", skip=1, **load_params)
+		elif args.dataset_type == "nerfcolmap":
 			dataset_val = load_dataset_split("test", skip=1, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
@@ -438,7 +441,7 @@ def train(args):
 			calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
 			use_instance=use_instance_mask, label_encoder=label_encoder,
 			hemisphere_samples=hemisphere_samples,
-			approximate_radiance=True
+			approximate_radiance=_i >= args.N_iter_ignore_approximated_radiance,
 		)
 
 		for key_name in render_decomp_path_results.keys():
@@ -1035,7 +1038,7 @@ def render_only(args):
 	with torch.no_grad():
 		render_decomp_path(
 			dataset, hwf, K, args.chunk, render_kwargs_test, savedir=testsavedir,
-			render_factor=2, init_basecolor=dataset.init_basecolor,
+			render_factor=4, init_basecolor=dataset.init_basecolor,
 			calculate_normal_from_depth_map=args.calculate_all_analytic_normals,
 			use_instance=use_instance_mask, label_encoder=label_encoder,
 			approximate_radiance=True,

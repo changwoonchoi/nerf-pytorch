@@ -1,0 +1,6 @@
+include = ../common.txt
+datadir = ../data/Bespoke_Images/Kitchen
+basedir = ../logs/Bespoke/Kitchen
+
+near_plane = 0.1
+far_plane = 100

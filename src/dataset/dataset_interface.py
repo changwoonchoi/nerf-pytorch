@@ -91,7 +91,7 @@ class NerfDataset(Dataset, ABC):
 		return K
 
 	def get_resized_normal_albedo(self, resize_factor, i):
-		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor), antialias=True)
+		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor))
 		result = {}
 		if self.load_albedo:
 			albedo_temp = self.albedos[i].permute((2, 0, 1))
@@ -320,6 +320,7 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_replica import ReplicaDataset
 	from dataset.dataset_falcor import FalcorDataset
 	from dataset.dataset_colmap import ColmapDataset
+	from dataset.dataset_nerf_colmap import NeRFColmapDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -335,3 +336,5 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return FalcorDataset(basedir, **kwargs)
 	elif dataset_type == "colmap":
 		return ColmapDataset(basedir, **kwargs)
+	elif dataset_type == "nerfcolmap":
+		return NeRFColmapDataset(basedir, **kwargs)

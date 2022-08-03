@@ -1,0 +1,5 @@
+include = ../common.txt
+datadir = ../data/Bespoke_Images/Chef_Collection_RF10T9985AP
+basedir = ../logs/Bespoke/chef
+
+center_pose = True

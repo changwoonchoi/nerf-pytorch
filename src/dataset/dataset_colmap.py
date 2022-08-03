@@ -41,8 +41,16 @@ class ColmapDataset(NerfDataset):
 			index_list_tmp = [i * 8 for i in range(len(self.image_names) // 8 + 1)]
 			self.index_list = [i for i in index_list_tmp if i < len(self.image_names)]
 		self.center_pose = kwargs.get("center_pose", False)
-
-
+		if self.center_pose:
+			w2c_mats = []
+			for k in self.imdata:
+				im_tmp = self.imdata[k]
+				R = im_tmp.qvec2rotmat(); t = im_tmp.tvec.reshape(3, 1)
+				w2c_mats += [np.concatenate([np.concatenate([R, t], 1), np.array([[0, 0, 0, 1.]])], 0)]
+			w2c_mats += np.stack(w2c_mats, 0)
+			self.poses_for_center = np.linalg.inv(w2c_mats)[:, :3]
+			pts3d = read_points3d_binary(os.path.join(self.basedir, 'sparse/0/points3D.bin'))
+			self.pts3d = np.array([pts3d[k].xyz for k in pts3d])
 
 	def __len__(self):
 		return len(self.index_list)
@@ -87,10 +95,8 @@ class ColmapDataset(NerfDataset):
 		pose = np.linalg.inv(w2c)  # (4, 4)
 
 		if self.center_pose:
-			pts3d = read_points3d_binary(os.path.join(self.basedir, 'sparse/0/points3d.bin'))
-			pts3d = np.array([pts3d[k].xyz for k in pts3d])
-
-			pose, pts3d = self.center_poses(pose, pts3d)
+			poses, _ = self.center_poses(self.poses_for_center, self.pts3d)
+			pose = poses[self.index_list[index]]
 
 		# Mitsuba --> camera forward is +Z !!
 		# pose[:3, 0] *= -1
@@ -122,9 +128,24 @@ class ColmapDataset(NerfDataset):
 		return h, w, K
 
 	def center_poses(self, poses, pts3d):
-		poses_avg = self.average_poses(poses, pts3d)
-		poses_avg_inv = np.linalg.inv()
-		raise NotImplementedError
+		pose_avg = self.average_poses(poses, pts3d)  # (3,4)
+		pose_avg_homo = np.eye(4)
+		pose_avg_homo[:3] = pose_avg
+		pose_avg_inv = np.linalg.inv(pose_avg_homo)
+		last_row = np.tile(np.array([0, 0, 0, 1]), (len(poses), 1, 1))  # (N_images, 1, 4)
+		poses_homo = np.concatenate([poses, last_row], 1)  # (N_images, 4, 4) homogeneous coordinate
+		poses_centered = pose_avg_inv @ poses_homo
+		pts3d_centered = pts3d @ pose_avg_inv[:, :3].T + pose_avg_inv[:, 3:].T
+		return poses_centered, pts3d_centered
 
 	def average_poses(self, poses, pts3d):
-		raise NotImplementedError
+		center = pts3d.mean(0)
+		z = self.normalize(poses[..., 2].mean(0))
+		y_ = poses[..., 1].mean(0)
+		x = self.normalize(np.cross(y_, z))
+		y = np.cross(z, x)
+		pose_avg = np.stack([x, y, z, center], 1)
+		return pose_avg
+
+	def normalize(self, v):
+		return v / np.linalg.norm(v)

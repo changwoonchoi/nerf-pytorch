@@ -1,0 +1,5 @@
+include = ../common.txt
+datadir = ../data/Bespoke_Images/Bespoke_RF85T97E2AP_scan_2
+basedir = ../logs/Bespoke/scan2
+
+center_pose = True

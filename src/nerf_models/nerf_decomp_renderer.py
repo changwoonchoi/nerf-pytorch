@@ -1010,18 +1010,22 @@ def render_decomp_path(
 ):
 	H, W, focal = hwf
 	render_poses = dataset_test.poses
+	if K is None:
+		if render_factor != 0:
+			# Render downsampled for speed
+			H = H // render_factor
+			W = W // render_factor
+			focal = focal / render_factor
 
-	if render_factor != 0:
-		# Render downsampled for speed
+		intrinsic = np.array([
+			[focal, 0, 0.5 * W],
+			[0, focal, 0.5 * H],
+			[0, 0, 1]
+		]).astype(np.float32)
+	else:
 		H = H // render_factor
 		W = W // render_factor
-		focal = focal / render_factor
-
-	K = np.array([
-		[focal, 0, 0.5 * W],
-		[0, focal, 0.5 * H],
-		[0, 0, 1]
-	]).astype(np.float32)
+		intrinsic = K / render_factor
 
 	results = {}
 
@@ -1056,7 +1060,7 @@ def render_decomp_path(
 		for k in gt_values.keys():
 			gt_values[k] = torch.reshape(gt_values[k], [-1, gt_values[k].shape[-1]])
 		results_i = render_decomp(
-			H, W, K, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
+			H, W, K=intrinsic, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
 			use_instance=use_instance, label_encoder=label_encoder, roughness=roughness_t, **render_kwargs, **kwargs
 		)
 		append_result(results_i, "color_map", i, "rgb")

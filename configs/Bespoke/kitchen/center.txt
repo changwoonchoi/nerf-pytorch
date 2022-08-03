@@ -1,0 +1,5 @@
+include = ../common.txt
+datadir = ../data/Bespoke_Images/Kitchen
+basedir = ../logs/Bespoke/Kitchen
+
+center_pose = True

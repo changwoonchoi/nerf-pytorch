@@ -258,6 +258,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--i_testset", type=int, default=50000, help='frequency of testset saving')
 	parser.add_argument("--i_video", type=int, default=50000, help='frequency of render_poses video saving')
 
+	parser.add_argument("--center_pose", action='store_true', help='center_pose')
+
 	return parser
 
 
