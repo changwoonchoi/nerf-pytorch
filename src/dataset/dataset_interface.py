@@ -21,6 +21,7 @@ class NerfDataset(Dataset, ABC):
 		self.name = name
 
 		self.focal = 0
+		self.K = None
 
 		self.near = 0
 		self.far = 0
@@ -79,11 +80,14 @@ class NerfDataset(Dataset, ABC):
 		self.far = kwargs.get("far_plane", 10)
 
 	def get_focal_matrix(self):
-		K = np.array([
-			[self.focal, 0, 0.5 * self.width],
-			[0, self.focal, 0.5 * self.height],
-			[0, 0, 1]
-		]).astype(np.float32)
+		if self.K is None:
+			K = np.array([
+				[self.focal, 0, 0.5 * self.width],
+				[0, self.focal, 0.5 * self.height],
+				[0, 0, 1]
+			]).astype(np.float32)
+		else:
+			K = self.K
 		return K
 
 	def get_resized_normal_albedo(self, resize_factor, i):
@@ -119,7 +123,8 @@ class NerfDataset(Dataset, ABC):
 
 	def get_coarse_images(self, level):
 		new_images = []
-		t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
+		# t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
+		t_orig = transforms.Resize(size=(self.height, self.width))
 		for i in range(len(self)):
 			image_temp = self.images[i].permute((2, 0, 1))
 			# image_temp = image_temp.permute((1,2,0))
@@ -128,7 +133,8 @@ class NerfDataset(Dataset, ABC):
 			for _ in range(level):
 				sh = sh//self.coarse_resize_scale
 				sw = sw//self.coarse_resize_scale
-			t = transforms.Resize(size=(sh, sw), antialias=True)
+			# t = transforms.Resize(size=(sh, sw), antialias=True)
+			t = transforms.Resize(size=(sh, sw))
 			image_temp = t_orig(t(image_temp)).permute((1, 2, 0))
 			new_images.append(image_temp)
 		return torch.stack(new_images, 0)
@@ -313,6 +319,7 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_nerf_synthetic import NeRFSyntheticDataset
 	from dataset.dataset_replica import ReplicaDataset
 	from dataset.dataset_falcor import FalcorDataset
+	from dataset.dataset_colmap import ColmapDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -326,3 +333,5 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return ReplicaDataset(basedir, **kwargs)
 	elif dataset_type == "falcor":
 		return FalcorDataset(basedir, **kwargs)
+	elif dataset_type == "colmap":
+		return ColmapDataset(basedir, **kwargs)

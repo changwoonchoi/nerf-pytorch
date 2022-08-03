@@ -37,7 +37,15 @@ def save_pred_numpy(images, file_path):
         os.makedirs(dirname)
     np.save(file_path, images)
 
-def load_image_from_path(image_file_path, scale=1):
+def load_image_from_path(image_file_path, scale=1, is_colmap=False):
+    if is_colmap:
+        image = Image.open(image_file_path).convert('RGB')
+        if scale != 1:
+            image = image.resize((int(image.width * scale), int(image.height * scale)), Image.LANCZOS)
+        image = np.asarray(image, dtype=np.float32)
+        image /= 255.0
+        return image
+
     image = cv2.imread(image_file_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     if scale != 1:
