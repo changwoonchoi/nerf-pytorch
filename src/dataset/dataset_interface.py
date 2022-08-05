@@ -321,6 +321,7 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_falcor import FalcorDataset
 	from dataset.dataset_colmap import ColmapDataset
 	from dataset.dataset_nerf_colmap import NeRFColmapDataset
+	from dataset.dataset_real import RealDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -338,3 +339,5 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return ColmapDataset(basedir, **kwargs)
 	elif dataset_type == "nerfcolmap":
 		return NeRFColmapDataset(basedir, **kwargs)
+	elif dataset_type == "real":
+		return RealDataset(basedir, **kwargs)

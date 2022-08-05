@@ -22,6 +22,13 @@ def find_representative_irradiance_value(dataset_type: str, room_name: str):
 			'../../data/replica/{}/train/*_bell_s.png'.format(room_name))
 		ting_irradiance_files = glob.glob(
 			'../../data/replica/{}/train/*_bell_s.png'.format(room_name))
+	elif dataset_type == 'real':
+		bell_irradiance_files = glob.glob(
+			'../../data/real_data/{}/images_4/*_bell_s.png'.format(room_name))
+		print("(bell) {} files in {}".format(len(bell_irradiance_files), room_name))
+		ting_irradiance_files = glob.glob(
+			'../../data/real_data/{}/images_4/*_ting_s.png'.format(room_name))
+		print("(ting) {} files in {}".format(len(bell_irradiance_files), room_name))
 	else:
 		raise ValueError
 
@@ -84,3 +91,16 @@ if __name__ == "__main__":
 	# 			"mean_ting": float(irradiance_mean['ting'])
 	# 		}
 	# 		json.dump(data, f)
+
+	real_rooms = ['951', '951-2']
+
+	# real scenes
+	for room in real_rooms:
+		print('real {} processing'.format(room))
+		irradiance_mean = find_representative_irradiance_value('real', room)
+		with open('../../data/real_data/{}/avg_irradiance.json'.format(room), "w") as f:
+			data = {
+				"mean_bell": float(irradiance_mean['bell']),
+				"mean_ting": float(irradiance_mean['ting'])
+			}
+			json.dump(data, f)

@@ -207,6 +207,8 @@ def train(args):
 			"load_priors": args.load_priors,
 			"prior_type": args.prior_type,
 			"center_pose": args.center_pose,
+			"rotate_left": args.rotate_left,
+			"test_skip": args.test_skip,
 		}
 		dataset = load_dataset_split("train", **load_params)
 
@@ -225,6 +227,8 @@ def train(args):
 		elif args.dataset_type == "colmap":
 			dataset_val = load_dataset_split("test", skip=1, **load_params)
 		elif args.dataset_type == "nerfcolmap":
+			dataset_val = load_dataset_split("test", skip=1, **load_params)
+		elif args.dataset_type == 'real':
 			dataset_val = load_dataset_split("test", skip=1, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
@@ -916,7 +920,7 @@ def train(args):
 
 		# export images
 		if i % args.i_testset == 0 and i > 0:
-			run_test_dataset(i, render_factor=4)
+			run_test_dataset(i, render_factor=1)
 
 		global_step += 1
 

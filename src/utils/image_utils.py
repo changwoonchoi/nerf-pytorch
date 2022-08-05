@@ -37,13 +37,15 @@ def save_pred_numpy(images, file_path):
         os.makedirs(dirname)
     np.save(file_path, images)
 
-def load_image_from_path(image_file_path, scale=1, is_colmap=False):
+def load_image_from_path(image_file_path, scale=1, is_colmap=False, rotate_left=False):
     if is_colmap:
         image = Image.open(image_file_path).convert('RGB')
         if scale != 1:
             image = image.resize((int(image.width * scale), int(image.height * scale)), Image.LANCZOS)
         image = np.asarray(image, dtype=np.float32)
         image /= 255.0
+        if rotate_left:
+            image = np.rot90(image)
         return image
 
     image = cv2.imread(image_file_path)
@@ -52,6 +54,8 @@ def load_image_from_path(image_file_path, scale=1, is_colmap=False):
         image = cv2.resize(image, None, fx=scale, fy=scale)
     image = image.astype(np.float32)
     image /= 255.0
+    if rotate_left:
+        image = np.rot90(image)
 
     return image
 
