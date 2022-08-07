@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/real_data/951-2
+basedir = ../logs/real_data/951-2

@@ -45,7 +45,7 @@ def load_image_from_path(image_file_path, scale=1, is_colmap=False, rotate_left=
         image = np.asarray(image, dtype=np.float32)
         image /= 255.0
         if rotate_left:
-            image = np.rot90(image)
+            image = np.copy(np.rot90(image))
         return image
 
     image = cv2.imread(image_file_path)
@@ -55,7 +55,7 @@ def load_image_from_path(image_file_path, scale=1, is_colmap=False, rotate_left=
     image = image.astype(np.float32)
     image /= 255.0
     if rotate_left:
-        image = np.rot90(image)
+        image = np.copy(np.rot90(image))
 
     return image
 
