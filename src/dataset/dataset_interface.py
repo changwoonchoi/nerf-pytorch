@@ -91,7 +91,7 @@ class NerfDataset(Dataset, ABC):
 		return K
 
 	def get_resized_normal_albedo(self, resize_factor, i):
-		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor))
+		t = transforms.Resize(size=(self.height // resize_factor, self.width // resize_factor), antialias=True)
 		result = {}
 		if self.load_albedo:
 			albedo_temp = self.albedos[i].permute((2, 0, 1))
@@ -124,7 +124,7 @@ class NerfDataset(Dataset, ABC):
 	def get_coarse_images(self, level):
 		new_images = []
 		# t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
-		t_orig = transforms.Resize(size=(self.height, self.width))
+		t_orig = transforms.Resize(size=(self.height, self.width), antialias=True)
 		for i in range(len(self)):
 			image_temp = self.images[i].permute((2, 0, 1))
 			# image_temp = image_temp.permute((1,2,0))
@@ -134,7 +134,7 @@ class NerfDataset(Dataset, ABC):
 				sh = sh//self.coarse_resize_scale
 				sw = sw//self.coarse_resize_scale
 			# t = transforms.Resize(size=(sh, sw), antialias=True)
-			t = transforms.Resize(size=(sh, sw))
+			t = transforms.Resize(size=(sh, sw), antialias=True)
 			image_temp = t_orig(t(image_temp)).permute((1, 2, 0))
 			new_images.append(image_temp)
 		return torch.stack(new_images, 0)

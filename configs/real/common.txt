@@ -6,12 +6,12 @@ no_batching = True
 lindisp = False
 
 near_plane = 1
-far_plane = 20
+far_plane = 30
 
 load_priors = True
 N_iter_ignore_prior = 400000
 N_iter = 500000
-N_iter_ignore_approximated_radiance = 200000
+N_iter_ignore_approximated_radiance = 250000
 
 freeze_roughness=True
 
@@ -37,7 +37,7 @@ precrop_frac = 0.5
 image_scale = 1
 
 i_video = 10000000000000
-i_testset = 5000
+i_testset = 10000
 testskip = 1
 
 render_decompose = False
@@ -46,8 +46,6 @@ render_decompose = False
 #CE_weight_type = equal
 #instance_loss_weight = 0.04
 #use_instance_feature_layer
-
-sample_length = 6
 
 beta_albedo_cluster = 0
 beta_indirect_sparse = 0

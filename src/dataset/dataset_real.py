@@ -48,8 +48,8 @@ class RealDataset(NerfDataset):
 
         self.rotate_left = kwargs.get("rotate_left", False)
 
-        self.height = int(self.original_height * self.scale * 0.25)
-        self.width = int(self.original_width * self.scale * 0.25)
+        self.height = int(self.original_height * self.scale)
+        self.width = int(self.original_width * self.scale)
         self.focal = .5 * self.width / np.tan(0.5 * self.camera_angle_x)
         total_dataset_len = len(self.meta['frames'])
         if self.split == "train":
@@ -76,7 +76,7 @@ class RealDataset(NerfDataset):
         sample = {}
 
         frame = self.meta['frames'][::self.skip][self.index_list[index]]
-        image_file_path = os.path.join(self.basedir, "images_4", os.path.split(frame["file_path"])[-1])
+        image_file_path = os.path.join(self.basedir, "images", os.path.split(frame["file_path"])[-1])
         # image_file_path = os.path.join(self.basedir, self.split, "%d.png" % (self.skip * index + 1))
         # mask_file_path = os.path.join(self.basedir, self.split, "%d_mask.png" % (self.skip * index + 1))
         # normal_file_path = os.path.join(self.basedir, self.split, "%d_normal.png" % (self.skip * index + 1))
@@ -86,9 +86,9 @@ class RealDataset(NerfDataset):
         # diffuse_file_path = os.path.join(self.basedir, self.split, "%d_diffuse.png" % (self.skip * index + 1))
         # specular_file_path = os.path.join(self.basedir, self.split, "%d_specular.png" % (self.skip * index + 1))
         # irradiance_file_path = os.path.join(self.basedir, self.split, "%d_irradiance.png" % (self.skip * index + 1))
-        prior_albedo_file_path = os.path.join(self.basedir, "images_4",
+        prior_albedo_file_path = os.path.join(self.basedir, "images",
                                               "{}_{}_r.png".format(os.path.split(frame["file_path"])[-1][:-4], self.prior_type))
-        prior_irradiance_file_path = os.path.join(self.basedir, "images_4",
+        prior_irradiance_file_path = os.path.join(self.basedir, "images",
                                                   "{}_{}_s.png".format(os.path.split(frame["file_path"])[-1][:-4], self.prior_type))
 
         # (1) load RGB Image
