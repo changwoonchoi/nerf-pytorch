@@ -1,0 +1,3 @@
+include = ./common.txt
+
+near_plane = 0.1

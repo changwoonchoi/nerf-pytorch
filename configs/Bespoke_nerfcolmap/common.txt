@@ -5,17 +5,18 @@ dataset_type = nerfcolmap
 no_batching = True
 lindisp = False
 
-near_plane = 1
+near_plane = 0.5
 far_plane = 20
 
-N_iter_ignore_prior = 100000000000000
-N_iter = 200000
-N_iter_ignore_approximated_radiance = 1000000000000000
+N_iter_ignore_prior = 400000
+N_iter = 500000
+N_iter_ignore_approximated_radiance = 200000
 
 freeze_roughness=True
 
-beta_prior_albedo = 0
-beta_irradiance_reg = 0
+load_priors = True
+beta_prior_albedo = 1
+beta_irradiance_reg = 0.1
 correct_depth_for_prefiltered_radiance_infer=True
 
 
@@ -33,10 +34,10 @@ chunk = 1024
 precrop_iters = 0
 precrop_frac = 0.5
 
-image_scale = 0.25
+image_scale = 1
 
 i_video = 10000000000000
-i_testset = 5000
+i_testset = 10000
 testskip = 1
 
 render_decompose = False
@@ -75,6 +76,6 @@ cluster_merge_threshold = 0.05
 N_iter_ignore_normal = 0
 N_iter_ignore_smooth = 15000
 
-coarse_radiance_number = 0
+coarse_radiance_number = 3
 
 calculating_normal_type = normal_map_from_depth_gradient_epsilon

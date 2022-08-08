@@ -1,0 +1,3 @@
+include = common.txt
+
+image_scale = 0.25

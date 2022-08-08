@@ -97,14 +97,17 @@ class NeRFColmapDataset(NerfDataset):
         # diffuse_file_path = os.path.join(self.basedir, self.split, "%d_diffuse.png" % (self.skip * index + 1))
         # specular_file_path = os.path.join(self.basedir, self.split, "%d_specular.png" % (self.skip * index + 1))
         # irradiance_file_path = os.path.join(self.basedir, self.split, "%d_irradiance.png" % (self.skip * index + 1))
-        # prior_albedo_file_path = os.path.join(self.basedir, self.split,
-        #                                       "{}_{}_r.png".format(self.skip * index + 1, self.prior_type))
-        # prior_irradiance_file_path = os.path.join(self.basedir, self.split,
-        #                                           "{}_{}_s.png".format(self.skip * index + 1, self.prior_type))
+        prior_albedo_file_path = os.path.join(
+            self.basedir, "images", os.path.split(frame["file_path"])[-1][:-4] + "_{}_r.png".format(self.prior_type)
+        )
+        prior_irradiance_file_path = os.path.join(
+            self.basedir, "images", os.path.split(frame["file_path"])[-1][:-4] + "_{}_s.png".format(self.prior_type)
+        )
 
         # (1) load RGB Image
         if self.load_image:
-            sample["image"] = load_image_from_path(image_file_path, scale=self.scale, is_colmap=True)
+            # sample["image"] = load_image_from_path(image_file_path, scale=self.scale, is_colmap=True)
+            sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
         if self.load_normal:
             raise ValueError
         if self.load_albedo:
@@ -115,11 +118,11 @@ class NeRFColmapDataset(NerfDataset):
             raise ValueError
         if self.load_irradiance:
             raise ValueError
-            irradiance = load_image_from_path(irradiance_file_path, scale=self.scale)
         if self.load_diffuse_specular:
             raise ValueError
         if self.load_priors:
-            raise ValueError
+            sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
+            sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
 
         # (2) load instance_label_mask
         if self.load_instance_label_mask:
