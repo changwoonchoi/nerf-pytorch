@@ -322,6 +322,8 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 	from dataset.dataset_colmap import ColmapDataset
 	from dataset.dataset_nerf_colmap import NeRFColmapDataset
 	from dataset.dataset_real import RealDataset
+	from dataset.dataset_nerfing_mvs import NerfingMVSDataset
+	from dataset.dataset_scannet import ScannetDataset
 
 	if dataset_type == "clevr":
 		return ClevrDataset(basedir, **kwargs)
@@ -341,3 +343,9 @@ def load_dataset(dataset_type, basedir, **kwargs) -> NerfDataset:
 		return NeRFColmapDataset(basedir, **kwargs)
 	elif dataset_type == "real":
 		return RealDataset(basedir, **kwargs)
+	elif dataset_type == "nerfingmvs":
+		return NerfingMVSDataset(basedir, **kwargs)
+	elif dataset_type == "scannet":
+		return ScannetDataset(basedir, **kwargs)
+	else:
+		raise ValueError("Unknown dataset type: %s" % dataset_type)

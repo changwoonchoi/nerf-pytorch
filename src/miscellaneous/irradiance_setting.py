@@ -36,6 +36,13 @@ def find_representative_irradiance_value(dataset_type: str, room_name: str):
 		ting_irradiance_files = glob.glob(
 			'../../data/Bespoke_Images/{}/images/*_ting_s.png'.format(room_name))
 		print("(ting) {} files in {}".format(len(bell_irradiance_files), room_name))
+	elif dataset_type == 'nerfing_mvs':
+		bell_irradiance_files = glob.glob(
+			'../../data/nerfing_mvs/{}/images/*_bell_s.png'.format(room_name))
+		print("(bell) {} files in {}".format(len(bell_irradiance_files), room_name))
+		ting_irradiance_files = glob.glob(
+			'../../data/nerfing_mvs/{}/images/*_ting_s.png'.format(room_name))
+		print("(ting) {} files in {}".format(len(bell_irradiance_files), room_name))
 	else:
 		raise ValueError
 
@@ -112,12 +119,25 @@ if __name__ == "__main__":
 	# 		}
 	# 		json.dump(data, f)
 
-	bespoke_rooms = ['Kitchen_colmap_new']
+	# bespoke_rooms = ['Kitchen_colmap_new']
 
-	for room in bespoke_rooms:
-		print('bespoke {} processing'.format(room))
-		irradiance_mean = find_representative_irradiance_value('bespoke', room)
-		with open('../../data/Bespoke_Images/{}/avg_irradiance.json'.format(room), "w") as f:
+	# for room in bespoke_rooms:
+	# 	print('bespoke {} processing'.format(room))
+	# 	irradiance_mean = find_representative_irradiance_value('bespoke', room)
+	# 	with open('../../data/Bespoke_Images/{}/avg_irradiance.json'.format(room), "w") as f:
+	# 		data = {
+	# 			"mean_bell": float(irradiance_mean['bell']),
+	# 			"mean_ting": float(irradiance_mean['ting'])
+	# 		}
+	# 		json.dump(data, f)
+
+
+	nerfing_mvs_rooms = ['scene0000_01', 'scene0079_00', 'scene0158_00', 'scene0316_00', 'scene0521_00', 'scene0553_00', 'scene06126_00', 'scene0653_00']
+
+	for room in nerfing_mvs_rooms:
+		print('nerfing_mvs {} processing'.format(room))
+		irradiance_mean = find_representative_irradiance_value('nerfing_mvs', room)
+		with open('../../data/nerfing_mvs/{}/avg_irradiance.json'.format(room), "w") as f:
 			data = {
 				"mean_bell": float(irradiance_mean['bell']),
 				"mean_ting": float(irradiance_mean['ting'])
