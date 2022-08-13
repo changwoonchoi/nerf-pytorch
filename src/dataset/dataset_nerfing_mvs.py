@@ -64,17 +64,17 @@ class NerfingMVSDataset(NerfDataset):
     # 	self.far = 20
 
     def __len__(self):
-        return len(self.image_list)
+        return len(self.image_list[::self.skip])
 
     def __getitem__(self, index):
         sample = {}
-        frame_index = self.frame_image_list.index(self.image_list[index])
-        frame = self.meta['frames'][::self.skip][self.image_list[frame_index]]
-        image_file_path = os.path.join(self.basedir, "images", self.image_list[index])
+        frame_index = self.frame_image_list.index(self.image_list[::self.skip][index])
+        frame = self.meta['frames'][frame_index]
+        image_file_path = os.path.join(self.basedir, "images", self.image_list[::self.skip][index])
         prior_albedo_file_path = os.path.join(self.basedir, "images",
-                                              "{}_{}_r.png".format(self.image_list[index], self.prior_type))
+                                              "{}_{}_r.png".format(self.image_list[::self.skip][index][:-4], self.prior_type))
         prior_irradiance_file_path = os.path.join(self.basedir, "images",
-                                                  "{}_{}_s.png".format(self.image_list[index], self.prior_type))
+                                                  "{}_{}_s.png".format(self.image_list[::self.skip][index][:-4], self.prior_type))
 
         # (1) load RGB Image
         if self.load_image:

@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/NerfingMVS/scene0653_00
+basedir = ../logs/nerfingmvs/scene0653_00

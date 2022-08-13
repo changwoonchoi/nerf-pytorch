@@ -1,0 +1,3 @@
+include = ../common.txt
+datadir = ../data/scannet/scene0126_02
+basedir = ../logs/scannet/scene0126_02
