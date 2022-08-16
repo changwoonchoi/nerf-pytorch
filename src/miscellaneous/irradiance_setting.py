@@ -151,7 +151,7 @@ if __name__ == "__main__":
 	# 		}
 	# 		json.dump(data, f)
 
-	scannet_rooms = ['scene0126_02', 'scene0134_00']
+	scannet_rooms = ['scene0709_00_half']
 
 	for room in scannet_rooms:
 		print('scannet {} processing'.format(room))

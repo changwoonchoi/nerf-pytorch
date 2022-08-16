@@ -231,7 +231,7 @@ def train(args):
 		elif args.dataset_type == 'real':
 			dataset_val = load_dataset_split("test", skip=1, **load_params)
 		elif args.dataset_type == 'nerfingmvs':
-			dataset_val = load_dataset_split("test", skip=args.testskip, **load_params)
+			dataset_val = load_dataset_split("test", skip=args.test_skip, **load_params)
 		# print(len(dataset_val.images), "IMAGE SHAPE!!!!!!")
 		# dataset_test = load_dataset_split("test", skip=1, **load_params)
 

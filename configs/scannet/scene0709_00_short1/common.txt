@@ -1,0 +1,9 @@
+include = ../common.txt
+datadir = ../data/scannet/scene0709_00_short_1
+basedir = ../logs/scannet/scene0709_00_short_1
+
+test_skip = 7
+image_scale = 1
+N_iter_ignore_prior = 100000
+N_iter = 150000
+N_iter_ignore_approximated_radiance = 10000
