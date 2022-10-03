@@ -1,0 +1,5 @@
+include = ./common.txt
+
+prior_type = ting
+
+N_iter = 500000

@@ -262,6 +262,12 @@ def config_parser(default_files=None):
 	parser.add_argument("--rotate_left", action='store_true', help='rotate left for vertical images taken by iPhone')
 	parser.add_argument("--test_skip", type=int, default=10, help='test set interval for real scene')
 
+	# scene editing
+	parser.add_argument("--edit_roughness", action='store_true', help='edit roughness')
+	parser.add_argument("--edit_normal", action='store_true', help='edit normal')
+	parser.add_argument("--edit_albedo", action='store_true', help='edit albedo')
+	parser.add_argument("--edit_irradiance", action='store_true', help='edit irradiance')
+
 	return parser
 
 

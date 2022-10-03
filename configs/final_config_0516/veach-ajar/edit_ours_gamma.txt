@@ -1,0 +1,8 @@
+include = common.txt
+# depth_map_from_ground_truth
+gamma_correct=True
+
+# edit_irradiance = True
+# edit_roughness = True
+# edit_normal = True
+# edit_albedo = True

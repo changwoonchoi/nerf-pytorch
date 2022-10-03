@@ -75,6 +75,8 @@ class NerfingMVSDataset(NerfDataset):
                                               "{}_{}_r.png".format(self.image_list[::self.skip][index][:-4], self.prior_type))
         prior_irradiance_file_path = os.path.join(self.basedir, "images",
                                                   "{}_{}_s.png".format(self.image_list[::self.skip][index][:-4], self.prior_type))
+        mask_file_path = os.path.join(self.basedir, "images", "{}_mask.png".format(self.image_list[::self.skip][index][:-4]))
+        edit_albedo_file_path = os.path.join(self.basedir, "images", "{}_edit_albedo.png".format(self.image_list[::self.skip][index][:-4]))
 
         # (1) load RGB Image
         if self.load_image:
@@ -94,6 +96,10 @@ class NerfingMVSDataset(NerfDataset):
         if self.load_priors:
             sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
             sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
+        if self.load_mask:
+            sample["mask"] = load_image_from_path(mask_file_path, scale=self.scale)
+        if self.load_edit_albedo:
+            sample["edit_albedo"] = load_image_from_path(edit_albedo_file_path, scale=self.scale)
 
         # (2) load instance_label_mask
         if self.load_instance_label_mask:

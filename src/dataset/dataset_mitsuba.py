@@ -84,7 +84,8 @@ class MitsubaDataset(NerfDataset):
 		"""
 		frame = self.meta['frames'][::self.skip][index]
 		image_file_path = os.path.join(self.basedir, self.split, "%d.png" % (self.skip * index + 1))
-		mask_file_path = os.path.join(self.basedir, self.split, "%d_mask.png" % (self.skip * index + 1))
+		mask_file_path = os.path.join(self.basedir, self.split, "%d_mask_edit.png" % (self.skip * index + 1))
+		edit_albedo_file_path = os.path.join(self.basedir, self.split, "%d_edit_albedo.png" % (self.skip * index + 1))
 		normal_file_path = os.path.join(self.basedir, self.split, "%d_normal.png" % (self.skip * index + 1))
 		albedo_file_path = os.path.join(self.basedir, self.split, "%d_albedo.png" % (self.skip * index + 1))
 		roughness_file_path = os.path.join(self.basedir, self.split, "%d_roughness.png" % (self.skip * index + 1))
@@ -121,6 +122,10 @@ class MitsubaDataset(NerfDataset):
 		if self.load_priors:
 			sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
 			sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
+		if self.load_mask:
+			sample["mask"] = load_image_from_path(mask_file_path, scale=self.scale)
+		if self.load_edit_albedo:
+			sample["edit_albedo"] = load_image_from_path(edit_albedo_file_path, scale=self.scale)
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:

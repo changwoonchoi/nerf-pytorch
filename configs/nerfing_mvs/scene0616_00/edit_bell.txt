@@ -1,0 +1,4 @@
+include = ./ours_bell.txt
+
+edit_roughness = True
+edit_normal = True

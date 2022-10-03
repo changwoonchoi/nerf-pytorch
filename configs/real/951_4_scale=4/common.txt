@@ -1,0 +1,12 @@
+include = ../../nerfing_mvs/common.txt
+
+N_iter_ignore_prior = 100000
+N_iter = 200000
+N_iter_ignore_approximated_radiance = 20000
+
+test_skip = 1
+
+datadir = ../data/real_data/951_4_scale=4
+basedir = ../logs/real_data/951_4_scale=4
+
+image_scale = 1

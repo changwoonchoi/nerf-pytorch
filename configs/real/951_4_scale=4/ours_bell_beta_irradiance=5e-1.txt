@@ -1,0 +1,5 @@
+include = ./common.txt
+
+N_iter = 500000
+
+beta_irradiance_reg = 0.5

@@ -79,6 +79,13 @@ class NerfDataset(Dataset, ABC):
 		self.near = kwargs.get("near_plane", 1)
 		self.far = kwargs.get("far_plane", 10)
 
+		self.load_mask = kwargs.get("load_mask", False)
+		self.load_edit_albedo = kwargs.get("load_edit_albedo", False)
+		self.load_irradiance = kwargs.get("load_irradiance", False)
+		self.load_normal = kwargs.get("load_normal", False)
+		self.masks = []
+		self.edit_albedos = []
+
 	def get_focal_matrix(self):
 		if self.K is None:
 			K = np.array([
@@ -116,8 +123,16 @@ class NerfDataset(Dataset, ABC):
 		if self.load_priors:
 			prior_albedo_temp = self.prior_albedos[i].permute((2, 0, 1))
 			prior_irradiance_temp = self.prior_irradiances[i].permute((2, 0, 1))
-			result["prior_albedo"] = t(prior_albedo_temp).permute((2, 0, 1))
-			result["prior_irradiance"] = t(prior_irradiance_temp).permute((2, 0, 1))
+			result["prior_albedo"] = t(prior_albedo_temp).permute((1, 2, 0))
+			result["prior_irradiance"] = t(prior_irradiance_temp).permute((1, 2, 0))
+
+		if self.load_mask:
+			mask_temp = self.masks[i].permute((2, 0, 1))
+			result["mask"] = t(mask_temp).permute((1, 2, 0))
+
+		if self.load_edit_albedo:
+			edit_albedo_temp = self.edit_albedos[i].permute((2, 0, 1))
+			result["edit_albedo"] = t(edit_albedo_temp).permute((1, 2, 0))
 
 		return result
 
@@ -216,6 +231,10 @@ class NerfDataset(Dataset, ABC):
 			if self.load_priors:
 				self.prior_albedos.append(data["prior_albedo"][0])
 				self.prior_irradiances.append(data["prior_irradiance"][0])
+			if self.load_mask:
+				self.masks.append(data["mask"][0])
+			if self.load_edit_albedo:
+				self.edit_albedos.append(data["edit_albedo"][0])
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -251,6 +270,10 @@ class NerfDataset(Dataset, ABC):
 		if self.load_priors:
 			self.prior_albedos = torch.stack(self.prior_albedos, 0).to(device)
 			self.prior_irradiances = torch.stack(self.prior_irradiances, 0).to(device)
+		if self.load_mask:
+			self.masks = torch.stack(self.masks, 0).to(device)
+		if self.load_edit_albedo:
+			self.edit_albedos = torch.stack(self.edit_albedos, 0).to(device)
 	def __getitem__(self, item):
 		pass
 

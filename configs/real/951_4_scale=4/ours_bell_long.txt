@@ -1,0 +1,13 @@
+include = common.txt
+
+N_iter = 500000
+N_iter_ignore_prior = 200000
+N_iter_ignore_approximated_radiance = 20000
+test_skip = 1
+
+datadir = ../data/real_data/951_4_scale=4
+basedir = ../logs/real_data/951_4_scale=4
+
+image_scale = 1
+
+N_rand = 1024

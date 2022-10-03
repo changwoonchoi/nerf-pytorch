@@ -220,6 +220,10 @@ def train(args):
 		load_params["load_normal"] = load_normal_test
 		# force not to load albedo & irradiance prior images for test set
 		load_params["load_priors"] = False
+		load_params["load_mask"] = args.edit_roughness or args.edit_normal
+		load_params["load_edit_albedo"] = args.edit_albedo
+		load_params["load_irradiance"] = args.edit_irradiance
+		load_params["load_normal"] = args.edit_roughness or args.edit_normal
 		if args.dataset_type == "mitsuba":
 			dataset_val = load_dataset_split("test", skip=10, **load_params)
 		elif args.dataset_type == "falcor":
@@ -433,7 +437,7 @@ def train(args):
 		torch.save(save_target, path)
 		print('Saved checkpoints at', path)
 
-	def run_test_dataset(_i, render_factor=4):
+	def run_test_dataset(_i, render_factor=4, edit_roughness=False, edit_normal=False, edit_albedo=False, edit_irradiance=False, theta=None, phi=None):
 		testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(_i))
 		os.makedirs(testsavedir, exist_ok=True)
 
@@ -448,6 +452,9 @@ def train(args):
 			use_instance=use_instance_mask, label_encoder=label_encoder,
 			hemisphere_samples=hemisphere_samples,
 			approximate_radiance=_i >= args.N_iter_ignore_approximated_radiance,
+			edit_roughness=edit_roughness, edit_normal=edit_normal, edit_albedo=edit_albedo,
+			edit_irradiance=edit_irradiance,
+			theta=theta, phi=phi
 		)
 
 		for key_name in render_decomp_path_results.keys():
@@ -922,7 +929,12 @@ def train(args):
 
 		# export images
 		if i % args.i_testset == 0 and i > 0:
-			run_test_dataset(i, render_factor=4)
+			# for theta_i in range(51):
+			# 	theta = theta_i * math.pi / 50
+			# 	for phi_i in range(100):
+			# 		phi = phi_i * math.pi / 50
+			# 		run_test_dataset(i, render_factor=6, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal, theta=theta, phi=phi)
+			run_test_dataset(i, render_factor=1, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal, edit_albedo=args.edit_albedo, edit_irradiance=args.edit_irradiance)
 
 		global_step += 1
 

@@ -238,6 +238,23 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			noise = np.random.rand(*list(raw[..., 0].shape)) * raw_noise_std
 			noise = torch.Tensor(noise)
 
+	# mask_rgb = gt_values["mask"][:, 0]
+	# mask = mask_rgb > 0
+	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
+		mask_rgb = gt_values["mask"][:, 0]
+		"""
+		mask = mask_rgb > 0
+		# theta = kwargs.get('theta')
+		# phi = kwargs.get('phi')
+		# norm_dir = torch.Tensor([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)]).to(mask.device)
+		# norm_dir = torch.Tensor([0.1667948, 0.02185217, 0.985794945]).to(mask.device)  # 3
+		norm_dir = torch.Tensor([0., 0., 1.]).to(mask.device)  # 4
+		"""
+		mask_1 = mask_rgb > 0.9
+		mask_2 = torch.logical_and(0.75 < mask_rgb, mask_rgb <= 0.9)
+		mask_3 = torch.logical_and(0.5 < mask_rgb, mask_rgb <= 0.75)
+		mask_4 = torch.logical_and(0.25 < mask_rgb, mask_rgb <= 0.5)
+
 	# (0) get sigma
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
 	sigma = raw2sigma(raw[..., 0] + noise, dists)
@@ -258,6 +275,20 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# (3) get surface point surface_x
 	x_surface = rays_o + rays_d * target_depth_map[..., None]
 	x_surface.detach_()
+
+	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
+		"""
+		# print(x_surface[mask].shape)
+		t = -(rays_o[:, 2:] + 0.9) / rays_d[:, 2:]
+		x_surface[mask] = rays_o[mask] + rays_d[mask] * t[mask]
+		# x_surface[mask] += 0.15 * norm_dir
+		# x_surface_z = x_surface[mask].clone()
+		# x_surface_z[:, 2] = -0.95
+		# x_surface[mask] = 0.
+		# x_surface[mask] += x_surface_z
+		# print(x_surface[mask])
+		"""
+		pass
 
 	# (4A) calculate normal from sigma gradient or read ground_truth value
 	inferred_normal_map = None
@@ -451,6 +482,47 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			target_normal_map = inferred_normal_map
 		else:
 			raise ValueError
+
+		# Edit!!
+		if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
+			"""
+			if kwargs.get("edit_roughness", False):
+				target_roughness_map[mask] = 0.
+			if kwargs.get("edit_normal", False):
+				target_normal_map[mask] = norm_dir
+				# roi_albedo = target_albedo_map[mask]
+				# roi_albedo_norm = torch.linalg.norm(roi_albedo, dim=-1)
+				# th = 0.3
+				# albedo_mask = roi_albedo_norm < th
+				# target_albedo_map[mask][albedo_mask] += 0.2
+				# target_albedo_map[mask] = torch.tensor([70/255., 43/255., 26/255.])
+				# target_albedo_map[mask] = torch.clamp(target_albedo_map[mask], min=0.3, max=0.5)
+			if kwargs.get("edit_albedo", False):
+				target_albedo_map[mask] = gt_values["edit_albedo"][mask]
+				target_irradiance_map[mask] *= 0.7
+			"""
+			if kwargs.get('edit_roughness', False):
+				target_roughness_map[mask_1] = 1.
+				target_roughness_map[mask_2] = 1.
+				target_roughness_map[mask_3] = 1.
+				target_roughness_map[mask_4] = 1.
+			if kwargs.get('edit_normal', False):
+				target_normal_map[mask_1] = gt_values["normal"][mask_1]
+				target_normal_map[mask_2] = gt_values["normal"][mask_2]
+				target_normal_map[mask_3] = gt_values["normal"][mask_3]
+				target_normal_map[mask_4] = gt_values["normal"][mask_4]
+				# target_albedo_map[mask_1] *= torch.tensor([300 / 255., 50 / 255., 50 / 255.])
+				# target_albedo_map[mask_2] *= torch.tensor([300 / 255., 50 / 255., 50 / 255.])
+				# target_albedo_map[mask_3] *= torch.tensor([50 / 255., 140 / 255., 50 / 255.])
+				# target_albedo_map[mask_4] *= torch.tensor([50 / 255., 140 / 255., 50 / 255.])
+				target_albedo_map[mask_1] *= torch.tensor([222 / 255., 83 / 255., 113 / 255.])
+				target_albedo_map[mask_2] *= torch.tensor([222 / 255., 83 / 255., 113 / 255.])
+				target_albedo_map[mask_3] *= torch.tensor([31 / 255., 115 / 255., 34 / 255.])
+				target_albedo_map[mask_4] *= torch.tensor([31 / 255., 115 / 255., 34 / 255.])
+			if kwargs.get("edit_irradiance", False):
+				pass
+				# target_irradiance_map[mask_1] = gt_values["irradiance"][mask_1][:, 0:1]
+
 
 		n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
 		n_dot_v = torch.clip(n_dot_v, 0, 1)
@@ -1006,7 +1078,7 @@ from dataset.dataset_interface import NerfDataset
 
 def render_decomp_path(
 		dataset_test: NerfDataset, hwf, K, chunk, render_kwargs, savedir=None, render_factor=0, init_basecolor=None,
-		gt_values=None, calculate_normal_from_depth_map=False, use_instance=False, label_encoder=None, **kwargs
+		calculate_normal_from_depth_map=False, use_instance=False, label_encoder=None, **kwargs
 ):
 	H, W, focal = hwf
 	render_poses = dataset_test.poses
@@ -1029,7 +1101,7 @@ def render_decomp_path(
 
 	results = {}
 
-	def append_result(render_decomp_results, key_name, index, out_name, label_encoder=None):
+	def append_result(render_decomp_results, key_name, index, out_name, label_encoder=None, theta=None, phi=None):
 		if key_name not in render_decomp_results:
 			return
 		result_image = render_decomp_results[key_name]
@@ -1049,8 +1121,10 @@ def render_decomp_path(
 		results[out_name].append(result_image.cpu().numpy())
 		if savedir is not None:
 			result_image_8bit = to8b(results[out_name][-1])
-
-			filename = os.path.join(savedir, (out_name + '_{:03d}.png').format(index))
+			if theta is not None and phi is not None:
+				filename = os.path.join(savedir, (out_name + '_{:03d}_{}_{}.png').format(index, theta, phi))
+			else:
+				filename = os.path.join(savedir, (out_name + '_{:03d}.png').format(index))
 			imageio.imwrite(filename, result_image_8bit)
 
 	for i, c2w in enumerate(tqdm(render_poses)):
@@ -1063,7 +1137,7 @@ def render_decomp_path(
 			H, W, K=intrinsic, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
 			use_instance=use_instance, label_encoder=label_encoder, roughness=roughness_t, **render_kwargs, **kwargs
 		)
-		append_result(results_i, "color_map", i, "rgb")
+		append_result(results_i, "color_map", i, "rgb", theta=kwargs.get('theta', None), phi=kwargs.get('phi', None))
 		append_result(results_i, "radiance_map", i, "radiance")
 		for k in range(render_kwargs["coarse_radiance_number"]):
 			append_result(results_i, "radiance_map_%d" % (k+1), i, "radiance_%d" % (k+1))
@@ -1078,10 +1152,10 @@ def render_decomp_path(
 		append_result(results_i, "reflected_radiance_map", i, "reflected_radiance")
 		append_result(results_i, "prefiltered_reflected_map", i, "prefiltered_reflected")
 
-		append_result(results_i, "roughness_map", i, "roughness")
+		append_result(results_i, "roughness_map", i, "roughness", theta=kwargs.get('theta', None), phi=kwargs.get('phi', None))
 		append_result(results_i, "specular_map", i, "specular")
 		append_result(results_i, "diffuse_map", i, "diffuse")
-		append_result(results_i, "n_dot_v_map", i, "n_dot_v")
+		append_result(results_i, "n_dot_v_map", i, "n_dot_v", theta=kwargs.get('theta', None), phi=kwargs.get('phi', None))
 
 		# append_result(results_i, "normal_map_from_sigma_gradient", i, "normal_map_from_sigma_gradient")
 		# append_result(results_i, "normal_map_from_sigma_gradient_surface", i, "normal_map_from_sigma_gradient_surface")
@@ -1091,7 +1165,7 @@ def render_decomp_path(
 		# append_result(results_i, "normal_map_from_depth_gradient_direction_epsilon", i, "normal_map_from_depth_gradient_direction_epsilon")
 
 		append_result(results_i, "inferred_normal_map", i, "inferred_normal_map")
-		append_result(results_i, "target_normal_map", i, "target_normal_map")
+		append_result(results_i, "target_normal_map", i, "target_normal_map", theta=kwargs.get('theta', None), phi=kwargs.get('phi', None))
 		append_result(results_i, "target_binormal_map", i, "target_binormal_map")
 		append_result(results_i, "target_tangent_map", i, "target_tangent_map")
 		append_result(results_i, "visibility_average_map", i, "visibility_average_map")
