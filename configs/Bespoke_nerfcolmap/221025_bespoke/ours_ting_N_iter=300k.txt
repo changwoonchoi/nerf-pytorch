@@ -1,0 +1,6 @@
+include = common.txt
+
+prior_type = ting
+N_iter_ignore_prior = 250000
+N_iter = 300000
+N_iter_ignore_approximated_radiance = 150000

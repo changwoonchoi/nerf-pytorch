@@ -126,17 +126,19 @@ if __name__ == "__main__":
 	# 		}
 	# 		json.dump(data, f)
 
-	# bespoke_rooms = ['Kitchen_colmap_new']
+	# bespoke_rooms = ['Bespoke_RF85T97E2AP_scan_1_colmap_new', 'Bespoke_RF85T97E2AP_scan_2_colmap_new']
+	# bespoke_rooms = ['Chef_Collection_RF10T9985AP_colmap_new']
+	bespoke_rooms = ['221025_bespoke']
 
-	# for room in bespoke_rooms:
-	# 	print('bespoke {} processing'.format(room))
-	# 	irradiance_mean = find_representative_irradiance_value('bespoke', room)
-	# 	with open('../../data/Bespoke_Images/{}/avg_irradiance.json'.format(room), "w") as f:
-	# 		data = {
-	# 			"mean_bell": float(irradiance_mean['bell']),
-	# 			"mean_ting": float(irradiance_mean['ting'])
-	# 		}
-	# 		json.dump(data, f)
+	for room in bespoke_rooms:
+		print('bespoke {} processing'.format(room))
+		irradiance_mean = find_representative_irradiance_value('bespoke', room)
+		with open('../../data/Bespoke_Images/{}/avg_irradiance.json'.format(room), "w") as f:
+			data = {
+				"mean_bell": float(irradiance_mean['bell']),
+				"mean_ting": float(irradiance_mean['ting'])
+			}
+			json.dump(data, f)
 
 
 	# nerfing_mvs_rooms = ['scene0000_01', 'scene0079_00', 'scene0158_00', 'scene0316_00', 'scene0521_00', 'scene0553_00', 'scene0616_00', 'scene0653_00']
@@ -151,14 +153,14 @@ if __name__ == "__main__":
 	# 		}
 	# 		json.dump(data, f)
 
-	scannet_rooms = ['scene0709_00_half']
+	# scannet_rooms = ['scene0709_00_half']
 
-	for room in scannet_rooms:
-		print('scannet {} processing'.format(room))
-		irradiance_mean = find_representative_irradiance_value('scannet', room)
-		with open('../../data/scannet/{}/avg_irradiance.json'.format(room), "w") as f:
-			data = {
-				"mean_bell": float(irradiance_mean['bell']),
-				"mean_ting": float(irradiance_mean['ting'])
-			}
-			json.dump(data, f)
+	# for room in scannet_rooms:
+	# 	print('scannet {} processing'.format(room))
+	# 	irradiance_mean = find_representative_irradiance_value('scannet', room)
+	# 	with open('../../data/scannet/{}/avg_irradiance.json'.format(room), "w") as f:
+	# 		data = {
+	# 			"mean_bell": float(irradiance_mean['bell']),
+	# 			"mean_ting": float(irradiance_mean['ting'])
+	# 		}
+	# 		json.dump(data, f)

@@ -922,7 +922,7 @@ def train(args):
 
 		# export images
 		if i % args.i_testset == 0 and i > 0:
-			run_test_dataset(i, render_factor=4)
+			run_test_dataset(i, render_factor=1)
 
 		global_step += 1
 
