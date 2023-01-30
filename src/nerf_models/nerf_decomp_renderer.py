@@ -242,6 +242,9 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# mask = mask_rgb > 0
 	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
 		mask_rgb = gt_values["mask"][:, 0]
+		mask = mask_rgb > 0
+		norm_dir = torch.Tensor([0.10610942, 0.99428456, -0.01178994]).to(mask.device)  # side
+		# norm_dir = torch.Tensor([0.61423, -0.747126, -0.2542576]).to(mask.device)  # front
 		"""
 		mask = mask_rgb > 0
 		# theta = kwargs.get('theta')
@@ -250,10 +253,12 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		# norm_dir = torch.Tensor([0.1667948, 0.02185217, 0.985794945]).to(mask.device)  # 3
 		norm_dir = torch.Tensor([0., 0., 1.]).to(mask.device)  # 4
 		"""
+		"""
 		mask_1 = mask_rgb > 0.9
 		mask_2 = torch.logical_and(0.75 < mask_rgb, mask_rgb <= 0.9)
 		mask_3 = torch.logical_and(0.5 < mask_rgb, mask_rgb <= 0.75)
 		mask_4 = torch.logical_and(0.25 < mask_rgb, mask_rgb <= 0.5)
+		"""
 
 	# (0) get sigma
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
@@ -501,6 +506,18 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				target_albedo_map[mask] = gt_values["edit_albedo"][mask]
 				target_irradiance_map[mask] *= 0.7
 			"""
+			if kwargs.get("edit_roughness", False):
+				target_roughness_map[mask] = 1.
+				target_normal_map[mask] = norm_dir
+				# norm_dir = torch.Tensor([0.10610942, 0.99428456, -0.01178994]).to(mask.device)  # side
+				norm_dir = torch.Tensor([]).to(mask.device)  # front
+				target_albedo_map[mask] = torch.Tensor([210/255., 217/255., 192/255.]).to(mask.device)
+			if kwargs.get("edit_normal", False):
+				target_normal_map[mask] = norm_dir
+			if kwargs.get("edit_albedo", False):
+				target_albedo_map[mask] = gt_values["edit_albedo"][mask]
+				target_irradiance_map[mask] *= 0.7
+			"""
 			if kwargs.get('edit_roughness', False):
 				target_roughness_map[mask_1] = 1.
 				target_roughness_map[mask_2] = 1.
@@ -519,6 +536,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				target_albedo_map[mask_2] *= torch.tensor([222 / 255., 83 / 255., 113 / 255.])
 				target_albedo_map[mask_3] *= torch.tensor([31 / 255., 115 / 255., 34 / 255.])
 				target_albedo_map[mask_4] *= torch.tensor([31 / 255., 115 / 255., 34 / 255.])
+			"""
 			if kwargs.get("edit_irradiance", False):
 				pass
 				# target_irradiance_map[mask_1] = gt_values["irradiance"][mask_1][:, 0:1]

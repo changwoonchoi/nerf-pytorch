@@ -67,8 +67,9 @@ class NeRFColmapDataset(NerfDataset):
             index_list_tmp = [i * 8 + j + 1 for i in range(total_dataset_len // 8 + 1) for j in range(7)]
             self.index_list = [i for i in index_list_tmp if i < total_dataset_len]
         elif self.split in ["val", "test"]:
-            index_list_tmp = [i * 8 for i in range(total_dataset_len // 8 + 1)]
-            self.index_list = [i for i in index_list_tmp if i < total_dataset_len]
+            # index_list_tmp = [i * 8 for i in range(total_dataset_len // 8 + 1)]
+            # self.index_list = [i for i in index_list_tmp if i < total_dataset_len]
+            self.index_list = [11]
 
     # 	self.load_near_far_plane()
     #
@@ -87,6 +88,7 @@ class NeRFColmapDataset(NerfDataset):
         sample = {}
 
         frame = self.meta['frames'][::self.skip][self.index_list[index]]
+        # frame = self.meta['frames'][self.index_list[index]]
         image_file_path = os.path.join(self.basedir, "images", os.path.split(frame["file_path"])[-1])
         # image_file_path = os.path.join(self.basedir, self.split, "%d.png" % (self.skip * index + 1))
         # mask_file_path = os.path.join(self.basedir, self.split, "%d_mask.png" % (self.skip * index + 1))
@@ -102,6 +104,12 @@ class NeRFColmapDataset(NerfDataset):
         )
         prior_irradiance_file_path = os.path.join(
             self.basedir, "images", os.path.split(frame["file_path"])[-1][:-4] + "_{}_s.png".format(self.prior_type)
+        )
+        mask_file_path = os.path.join(
+            self.basedir, "images", os.path.split(frame["file_path"])[-1][:-4] + "_mask.png"
+        )
+        edit_albedo_file_path = os.path.join(
+            self.basedir, "images", os.path.split(frame["file_path"])[-1][:-4] + "_edit_albedo.png"
         )
 
         # (1) load RGB Image
@@ -123,6 +131,10 @@ class NeRFColmapDataset(NerfDataset):
         if self.load_priors:
             sample["prior_albedo"] = load_image_from_path(prior_albedo_file_path, scale=self.scale)
             sample["prior_irradiance"] = load_image_from_path(prior_irradiance_file_path, scale=self.scale)
+        if self.load_mask:
+            sample["mask"] = load_image_from_path(mask_file_path, scale=self.scale)
+        if self.load_edit_albedo:
+            sample["edit_albedo"] = load_image_from_path(edit_albedo_file_path, scale=self.scale)
 
         # (2) load instance_label_mask
         if self.load_instance_label_mask:

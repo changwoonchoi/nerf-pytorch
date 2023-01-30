@@ -1,0 +1,6 @@
+include = common.txt
+
+prior_type = ting
+
+edit_roughness = True
+# edit_normal = True

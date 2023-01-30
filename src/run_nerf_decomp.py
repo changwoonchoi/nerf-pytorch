@@ -222,8 +222,8 @@ def train(args):
 		load_params["load_priors"] = False
 		load_params["load_mask"] = args.edit_roughness or args.edit_normal
 		load_params["load_edit_albedo"] = args.edit_albedo
-		load_params["load_irradiance"] = args.edit_irradiance
-		load_params["load_normal"] = args.edit_roughness or args.edit_normal
+		# load_params["load_irradiance"] = args.edit_irradiance
+		# load_params["load_normal"] = args.edit_roughness or args.edit_normal
 		if args.dataset_type == "mitsuba":
 			dataset_val = load_dataset_split("test", skip=10, **load_params)
 		elif args.dataset_type == "falcor":
