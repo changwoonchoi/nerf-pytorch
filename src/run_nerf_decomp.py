@@ -929,10 +929,12 @@ def train(args):
 
 		# export images
 		if i % args.i_testset == 0 and i > 0:
-			# for theta_i in range(51):
-			# 	theta = theta_i * math.pi / 50
-			# 	for phi_i in range(100):
-			# 		phi = phi_i * math.pi / 50
+			# for theta_i in range(5):
+			# 	# theta = theta_i * math.pi / 10
+			# 	theta = np.pi / 2 + (theta_i - 2) * 0.05
+			# 	for phi_i in range(5):
+			# 		# phi = phi_i * math.pi / 10
+			# 		phi = np.pi / 5 + (phi_i - 2) * 0.05
 			# 		run_test_dataset(i, render_factor=6, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal, theta=theta, phi=phi)
 			run_test_dataset(i, render_factor=1, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal, edit_albedo=args.edit_albedo, edit_irradiance=args.edit_irradiance)
 

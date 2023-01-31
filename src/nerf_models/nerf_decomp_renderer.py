@@ -242,9 +242,14 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# mask = mask_rgb > 0
 	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
 		mask_rgb = gt_values["mask"][:, 0]
-		mask = mask_rgb > 0
-		norm_dir = torch.Tensor([0.10610942, 0.99428456, -0.01178994]).to(mask.device)  # side
-		# norm_dir = torch.Tensor([0.61423, -0.747126, -0.2542576]).to(mask.device)  # front
+		mask_upper = 0.7 < mask_rgb
+		mask_lower = torch.logical_and(0 < mask_rgb, mask_rgb < 0.7)
+		# norm_dir = torch.Tensor([0.10610942, 0.99428456, -0.01178994]).to(mask_upper.device)  # side
+		# norm_dir = torch.Tensor([0.61423, -0.747126, -0.2542576]).to(mask_upper.device)  # front
+		# norm_dir = -torch.Tensor([0.866898, -0.443436, -0.2277105]).to(mask_upper.device)  # front
+		theta = 1.57
+		phi = 0.6283
+		norm_dir = torch.Tensor([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)]).to(mask_upper.device)
 		"""
 		mask = mask_rgb > 0
 		# theta = kwargs.get('theta')
@@ -282,6 +287,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	x_surface.detach_()
 
 	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
+		# x_surface[mask_lower] = rays_o[mask_lower] + 0.95 * rays_d[mask_lower] * target_depth_map[..., None][mask_lower]
 		"""
 		# print(x_surface[mask].shape)
 		t = -(rays_o[:, 2:] + 0.9) / rays_d[:, 2:]
@@ -507,16 +513,19 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				target_irradiance_map[mask] *= 0.7
 			"""
 			if kwargs.get("edit_roughness", False):
-				target_roughness_map[mask] = 1.
-				target_normal_map[mask] = norm_dir
+				target_roughness_map[mask_upper] = 1.
+				target_roughness_map[mask_lower] = 1.
+				target_normal_map[mask_upper] = norm_dir
+				target_normal_map[mask_lower] = norm_dir
 				# norm_dir = torch.Tensor([0.10610942, 0.99428456, -0.01178994]).to(mask.device)  # side
-				norm_dir = torch.Tensor([]).to(mask.device)  # front
-				target_albedo_map[mask] = torch.Tensor([210/255., 217/255., 192/255.]).to(mask.device)
+				norm_dir = torch.Tensor([0.57674571, -0.64736752, -0.49827682]).to(mask_upper.device)  # front
+				target_albedo_map[mask_lower] = torch.Tensor([210 / 255., 217 / 255., 192 / 255.]).to(mask_lower.device)  # green
+				target_albedo_map[mask_upper] = torch.Tensor([240 / 255., 188 / 255., 175 / 255.]).to(mask_lower.device)  # pink
 			if kwargs.get("edit_normal", False):
-				target_normal_map[mask] = norm_dir
+				target_normal_map[mask_lower] = norm_dir
 			if kwargs.get("edit_albedo", False):
-				target_albedo_map[mask] = gt_values["edit_albedo"][mask]
-				target_irradiance_map[mask] *= 0.7
+				target_albedo_map[mask_lower] = gt_values["edit_albedo"][mask_lower]
+				target_irradiance_map[mask_lower] *= 0.7
 			"""
 			if kwargs.get('edit_roughness', False):
 				target_roughness_map[mask_1] = 1.
