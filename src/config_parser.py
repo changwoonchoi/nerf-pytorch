@@ -268,6 +268,8 @@ def config_parser(default_files=None):
 	parser.add_argument("--edit_albedo", action='store_true', help='edit albedo')
 	parser.add_argument("--edit_irradiance", action='store_true', help='edit irradiance')
 
+	parser.add_argument("--object_insert", action='store_true', help='object insert mode')
+
 	return parser
 
 

@@ -96,6 +96,10 @@ class MitsubaDataset(NerfDataset):
 		prior_albedo_file_path = os.path.join(self.basedir, self.split, "{}_{}_r.png".format(self.skip * index + 1, self.prior_type))
 		prior_irradiance_file_path = os.path.join(self.basedir, self.split, "{}_{}_s.png".format(self.skip * index + 1, self.prior_type))
 
+		object_insert_mask_file_path = os.path.join(self.basedir, self.split, f"{self.skip * index + 1}_insert_mask.png")
+		object_insert_depth_file_path = os.path.join(self.basedir, self.split, f"{self.skip * index + 1}_insert_depth.npy")
+		object_insert_normal_file_path = os.path.join(self.basedir, self.split, f"{self.skip * index + 1}_insert_normal.png")
+
 		# (1) load RGB Image
 		if self.load_image:
 			sample["image"] = load_image_from_path(image_file_path, scale=self.scale)
@@ -126,6 +130,11 @@ class MitsubaDataset(NerfDataset):
 			sample["mask"] = load_image_from_path(mask_file_path, scale=self.scale)
 		if self.load_edit_albedo:
 			sample["edit_albedo"] = load_image_from_path(edit_albedo_file_path, scale=self.scale)
+
+		if self.object_insert:
+			sample["object_insert_mask"] = load_image_from_path(object_insert_mask_file_path, scale=self.scale)
+			sample["object_insert_normal"] = load_image_from_path(object_insert_normal_file_path, scale=self.scale)
+			sample["object_insert_depth"] = load_numpy_from_path(object_insert_depth_file_path, scale=self.scale)[..., None]
 
 		# (2) load instance_label_mask
 		if self.load_instance_label_mask:

@@ -52,6 +52,7 @@ class NerfDataset(Dataset, ABC):
 		self.load_depth = kwargs.get("load_depth", False)
 		self.load_diffuse_specular = kwargs.get("load_diffuse_specular", False)
 		self.load_irradiance = kwargs.get("load_irradiance", False)
+		self.object_insert = kwargs.get("object_insert", False)
 
 		self.load_priors = kwargs.get("load_priors", False)
 
@@ -85,6 +86,10 @@ class NerfDataset(Dataset, ABC):
 		self.load_normal = kwargs.get("load_normal", False)
 		self.masks = []
 		self.edit_albedos = []
+
+		self.object_insert_masks = []
+		self.object_insert_depths = []
+		self.object_insert_normals = []
 
 	def get_focal_matrix(self):
 		if self.K is None:
@@ -133,6 +138,15 @@ class NerfDataset(Dataset, ABC):
 		if self.load_edit_albedo:
 			edit_albedo_temp = self.edit_albedos[i].permute((2, 0, 1))
 			result["edit_albedo"] = t(edit_albedo_temp).permute((1, 2, 0))
+
+		if self.object_insert:
+			object_insert_mask_temp = self.object_insert_masks[i].permute((2, 0, 1))
+			object_insert_depth_temp = self.object_insert_depths[i].permute((2, 0, 1))
+			object_insert_normal_temp = self.object_insert_normals[i].permute((2, 0, 1))
+
+			result["object_insert_mask"] = t(object_insert_mask_temp).permute((1, 2, 0))
+			result["object_insert_depth"] = t(object_insert_depth_temp).permute((1, 2, 0))
+			result["object_insert_normal"] = t(object_insert_normal_temp).permute((1, 2, 0))
 
 		return result
 
@@ -235,6 +249,11 @@ class NerfDataset(Dataset, ABC):
 				self.masks.append(data["mask"][0])
 			if self.load_edit_albedo:
 				self.edit_albedos.append(data["edit_albedo"][0])
+			if self.object_insert:
+				self.object_insert_masks.append(data["object_insert_mask"][0])
+				self.object_insert_depths.append(data["object_insert_depth"][0])
+				self.object_insert_normals.append(data["object_insert_normal"][0])
+
 		self.full_data_loaded = True
 
 	def to_tensor(self, device):
@@ -274,6 +293,11 @@ class NerfDataset(Dataset, ABC):
 			self.masks = torch.stack(self.masks, 0).to(device)
 		if self.load_edit_albedo:
 			self.edit_albedos = torch.stack(self.edit_albedos, 0).to(device)
+		if self.object_insert:
+			self.object_insert_masks = torch.stack(self.object_insert_masks, 0).to(device)
+			self.object_insert_depths = torch.stack(self.object_insert_depths, 0).to(device)
+			self.object_insert_normals = torch.stack(self.object_insert_normals, 0).to(device)
+
 	def __getitem__(self, item):
 		pass
 

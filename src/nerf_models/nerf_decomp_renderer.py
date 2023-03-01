@@ -240,8 +240,19 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 
 	# mask_rgb = gt_values["mask"][:, 0]
 	# mask = mask_rgb > 0
-	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
+
+	# object insert
+	if kwargs.get("object_insert", False):
+		mask_rgb = gt_values["object_insert_mask"][:, 0]
+		mask_all = mask_rgb > 0
+		mask_front = mask_rgb > 0.9
+		mask_side = torch.logical_and(0.9 > mask_rgb, mask_rgb > 0.7)
+		mask_top = torch.logical_and(0.7 > mask_rgb, mask_rgb > 0.5)
+		mask_back = 0.5 > mask_rgb
+
+	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False) or kwargs.get("edit_albedo", False):
 		mask_rgb = gt_values["mask"][:, 0]
+		mask = mask_rgb > 0
 		"""
 		mask = mask_rgb > 0
 		# theta = kwargs.get('theta')
@@ -250,10 +261,10 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 		# norm_dir = torch.Tensor([0.1667948, 0.02185217, 0.985794945]).to(mask.device)  # 3
 		norm_dir = torch.Tensor([0., 0., 1.]).to(mask.device)  # 4
 		"""
-		mask_1 = mask_rgb > 0.9
-		mask_2 = torch.logical_and(0.75 < mask_rgb, mask_rgb <= 0.9)
-		mask_3 = torch.logical_and(0.5 < mask_rgb, mask_rgb <= 0.75)
-		mask_4 = torch.logical_and(0.25 < mask_rgb, mask_rgb <= 0.5)
+		# mask_1 = mask_rgb > 0.9
+		# mask_2 = torch.logical_and(0.75 < mask_rgb, mask_rgb <= 0.9)
+		# mask_3 = torch.logical_and(0.5 < mask_rgb, mask_rgb <= 0.75)
+		# mask_4 = torch.logical_and(0.25 < mask_rgb, mask_rgb <= 0.5)
 
 	# (0) get sigma
 	raw2sigma = lambda raw, dists, act_fn=F.relu: 1. - torch.exp(-act_fn(raw) * dists)
@@ -268,6 +279,8 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	target_depth_map = depth_map
 	if kwargs.get("depth_map_from_ground_truth", False):
 		target_depth_map = gt_values["depth"][..., 0]
+	if kwargs.get("object_insert", False):
+		target_depth_map[mask_all] = gt_values["object_insert_depth"][..., 0][mask_all]
 
 	disp_map = 1. / torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
 	acc_map = torch.sum(weights, -1)
@@ -484,7 +497,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			raise ValueError
 
 		# Edit!!
-		if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False):
+		if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False) or kwargs.get("edit_albedo", False):
 			"""
 			if kwargs.get("edit_roughness", False):
 				target_roughness_map[mask] = 0.
@@ -500,7 +513,6 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			if kwargs.get("edit_albedo", False):
 				target_albedo_map[mask] = gt_values["edit_albedo"][mask]
 				target_irradiance_map[mask] *= 0.7
-			"""
 			if kwargs.get('edit_roughness', False):
 				target_roughness_map[mask_1] = 1.
 				target_roughness_map[mask_2] = 1.
@@ -519,10 +531,20 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 				target_albedo_map[mask_2] *= torch.tensor([222 / 255., 83 / 255., 113 / 255.])
 				target_albedo_map[mask_3] *= torch.tensor([31 / 255., 115 / 255., 34 / 255.])
 				target_albedo_map[mask_4] *= torch.tensor([31 / 255., 115 / 255., 34 / 255.])
-			if kwargs.get("edit_irradiance", False):
-				pass
+			"""
+			if kwargs.get("edit_albedo", False):
+				target_albedo_map[mask] = gt_values["edit_albedo"][mask]
+				# bias = 8
+				# target_irradiance_map[mask] = torch.sigmoid((target_irradiance_map[mask] - 0.6) * bias)
 				# target_irradiance_map[mask_1] = gt_values["irradiance"][mask_1][:, 0:1]
-
+		if kwargs.get("object_insert", False):
+			# target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
+			gt_normal_map = normalize(2 * gt_values["object_insert_normal"] - 1, dim=-1)
+			target_normal_map[mask_all] = gt_normal_map[mask_all]
+			target_albedo_map[mask_all] = torch.Tensor([222 / 255., 83 / 255., 113 / 255.])
+			# target_depth_map[mask_all] = gt_values["object_insert_depth"][:, 0][mask_all]
+			target_roughness_map[mask_all] = 1.
+			target_irradiance_map[mask_all] = 0.5
 
 		n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
 		n_dot_v = torch.clip(n_dot_v, 0, 1)

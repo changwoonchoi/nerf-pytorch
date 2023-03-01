@@ -1,0 +1,4 @@
+include = common.txt
+gamma_correct=True
+
+object_insert=True
