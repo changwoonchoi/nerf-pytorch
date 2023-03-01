@@ -244,11 +244,14 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 	# object insert
 	if kwargs.get("object_insert", False):
 		mask_rgb = gt_values["object_insert_mask"][:, 0]
-		mask_all = mask_rgb > 0
-		mask_front = mask_rgb > 0.9
-		mask_side = torch.logical_and(0.9 > mask_rgb, mask_rgb > 0.7)
-		mask_top = torch.logical_and(0.7 > mask_rgb, mask_rgb > 0.5)
-		mask_back = 0.5 > mask_rgb
+		mask_all = mask_rgb > 0.1
+		mask_front_1 = mask_rgb > 253. / 255.
+		mask_front_2 = torch.logical_and(237. / 255. > mask_rgb, mask_rgb > 233. / 255.)
+		mask_front_3 = torch.logical_and(217. / 255. > mask_rgb, mask_rgb > 213. / 255.)
+		mask_front_4 = torch.logical_and(197. / 255. > mask_rgb, mask_rgb > 193. / 255.)
+		mask_side = torch.logical_and(177. / 255. > mask_rgb, mask_rgb > 173. / 255.)
+		mask_top = torch.logical_and(157. / 255. > mask_rgb, mask_rgb > 153. / 255.)
+		mask_back = torch.logical_and(137. / 255. > mask_rgb, mask_rgb > 133. / 255.)
 
 	if kwargs.get("edit_roughness", False) or kwargs.get("edit_normal", False) or kwargs.get("edit_albedo", False):
 		mask_rgb = gt_values["mask"][:, 0]
@@ -541,10 +544,35 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			# target_normal_map = normalize(2 * gt_values["normal"] - 1, dim=-1)
 			gt_normal_map = normalize(2 * gt_values["object_insert_normal"] - 1, dim=-1)
 			target_normal_map[mask_all] = gt_normal_map[mask_all]
-			target_albedo_map[mask_all] = torch.Tensor([222 / 255., 83 / 255., 113 / 255.])
+			# target_albedo_map[mask_all] = torch.Tensor([222 / 255., 83 / 255., 113 / 255.])
+			target_albedo_map[mask_front_1] = torch.Tensor([46 / 255., 61 / 255., 48 / 255.])
+			target_albedo_map[mask_front_2] = torch.Tensor([222 / 255., 83 / 255., 113 / 255.])
+			target_albedo_map[mask_front_3] = torch.Tensor([226 / 255., 222 / 255., 219 / 255.])
+			target_albedo_map[mask_front_4] = torch.Tensor([226 / 255., 222 / 255., 219 / 255.])
+
+			target_albedo_map[mask_side] = torch.Tensor([101 / 255., 97 / 255., 95 / 255.])
+			target_albedo_map[mask_top] = torch.Tensor([200 / 255., 200 / 255., 200 / 255.])
+			target_albedo_map[mask_back] = torch.Tensor([50 / 255., 50 / 255., 50 / 255.])
+
+			target_irradiance_map[mask_front_1] = 0.5
+			target_irradiance_map[mask_front_2] = 0.5
+			target_irradiance_map[mask_front_3] = 0.5
+			target_irradiance_map[mask_front_4] = 0.5
+
+			target_irradiance_map[mask_side] = 0.1
+			target_albedo_map[mask_top] = 0.1
+			target_irradiance_map[mask_back] = 0.5
+
 			# target_depth_map[mask_all] = gt_values["object_insert_depth"][:, 0][mask_all]
-			target_roughness_map[mask_all] = kwargs.get("object_roughness", 1)
-			target_irradiance_map[mask_all] = 0.5
+			target_roughness_map[mask_front_1] = kwargs.get("object_roughness", 1)
+			target_roughness_map[mask_front_2] = kwargs.get("object_roughness", 1)
+			target_roughness_map[mask_front_3] = kwargs.get("object_roughness", 1)
+			target_roughness_map[mask_front_4] = kwargs.get("object_roughness", 1)
+
+			target_roughness_map[mask_side] = 1
+			target_roughness_map[mask_top] = 1
+			target_roughness_map[mask_back] = 1
+
 
 		n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
 		n_dot_v = torch.clip(n_dot_v, 0, 1)
@@ -1123,7 +1151,10 @@ def render_decomp_path(
 
 	results = {}
 
-	def append_result(render_decomp_results, key_name, index, out_name, label_encoder=None, theta=None, phi=None):
+	def append_result(
+			render_decomp_results, key_name, index, out_name, label_encoder=None, theta=None, phi=None,
+			object_roughness=None
+	):
 		if key_name not in render_decomp_results:
 			return
 		result_image = render_decomp_results[key_name]
@@ -1145,6 +1176,8 @@ def render_decomp_path(
 			result_image_8bit = to8b(results[out_name][-1])
 			if theta is not None and phi is not None:
 				filename = os.path.join(savedir, (out_name + '_{:03d}_{}_{}.png').format(index, theta, phi))
+			elif object_roughness is not None:
+				filename = os.path.join(savedir, (out_name + '_{:03d}_{}.png').format(index, object_roughness))
 			else:
 				filename = os.path.join(savedir, (out_name + '_{:03d}.png').format(index))
 			imageio.imwrite(filename, result_image_8bit)
@@ -1159,7 +1192,7 @@ def render_decomp_path(
 			H, W, K=intrinsic, chunk=chunk, c2w=c2w[:3, :4], init_basecolor=init_basecolor, gt_values=gt_values,
 			use_instance=use_instance, label_encoder=label_encoder, roughness=roughness_t, **render_kwargs, **kwargs
 		)
-		append_result(results_i, "color_map", i, "rgb", theta=kwargs.get('theta', None), phi=kwargs.get('phi', None))
+		append_result(results_i, "color_map", i, "rgb", theta=kwargs.get('theta', None), phi=kwargs.get('phi', None), object_roughness=kwargs.get('object_roughness', None))
 		append_result(results_i, "radiance_map", i, "radiance")
 		for k in range(render_kwargs["coarse_radiance_number"]):
 			append_result(results_i, "radiance_map_%d" % (k+1), i, "radiance_%d" % (k+1))

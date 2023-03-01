@@ -96,7 +96,7 @@ class MitsubaDataset(NerfDataset):
 		prior_albedo_file_path = os.path.join(self.basedir, self.split, "{}_{}_r.png".format(self.skip * index + 1, self.prior_type))
 		prior_irradiance_file_path = os.path.join(self.basedir, self.split, "{}_{}_s.png".format(self.skip * index + 1, self.prior_type))
 
-		object_insert_mask_file_path = os.path.join(self.basedir, self.split, f"{self.skip * index + 1}_insert_mask.png")
+		object_insert_mask_file_path = os.path.join(self.basedir, self.split, f"{self.skip * index + 1}_insert_mask_refine.png")
 		object_insert_depth_file_path = os.path.join(self.basedir, self.split, f"{self.skip * index + 1}_insert_depth.npy")
 		object_insert_normal_file_path = os.path.join(self.basedir, self.split, f"{self.skip * index + 1}_insert_normal.png")
 
