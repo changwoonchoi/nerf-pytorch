@@ -439,7 +439,7 @@ def train(args):
 		torch.save(save_target, path)
 		print('Saved checkpoints at', path)
 
-	def run_test_dataset(_i, render_factor=4, edit_roughness=False, edit_normal=False, edit_albedo=False, edit_irradiance=False, theta=None, phi=None, object_insert=False):
+	def run_test_dataset(_i, render_factor=4, edit_roughness=False, edit_normal=False, edit_albedo=False, edit_irradiance=False, theta=None, phi=None, object_insert=False, object_roughness=0):
 		testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(_i))
 		os.makedirs(testsavedir, exist_ok=True)
 
@@ -456,7 +456,7 @@ def train(args):
 			approximate_radiance=_i >= args.N_iter_ignore_approximated_radiance,
 			edit_roughness=edit_roughness, edit_normal=edit_normal, edit_albedo=edit_albedo,
 			edit_irradiance=edit_irradiance,
-			theta=theta, phi=phi, object_insert=object_insert
+			theta=theta, phi=phi, object_insert=object_insert, object_roughness=object_roughness
 		)
 
 		for key_name in render_decomp_path_results.keys():
@@ -936,7 +936,8 @@ def train(args):
 			# 	for phi_i in range(100):
 			# 		phi = phi_i * math.pi / 50
 			# 		run_test_dataset(i, render_factor=6, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal, theta=theta, phi=phi)
-			run_test_dataset(i, render_factor=1, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal, edit_albedo=args.edit_albedo, edit_irradiance=args.edit_irradiance, object_insert=args.object_insert)
+			for roughness_i in range(30):
+				run_test_dataset(i, render_factor=1, edit_roughness=args.edit_roughness, edit_normal=args.edit_normal, edit_albedo=args.edit_albedo, edit_irradiance=args.edit_irradiance, object_insert=args.object_insert, object_roughness=(29 - roughness_i) / 29.)
 
 		global_step += 1
 

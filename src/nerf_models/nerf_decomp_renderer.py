@@ -543,7 +543,7 @@ def raw2outputs(rays_o, rays_d, z_vals, z_vals_constant,
 			target_normal_map[mask_all] = gt_normal_map[mask_all]
 			target_albedo_map[mask_all] = torch.Tensor([222 / 255., 83 / 255., 113 / 255.])
 			# target_depth_map[mask_all] = gt_values["object_insert_depth"][:, 0][mask_all]
-			target_roughness_map[mask_all] = 1.
+			target_roughness_map[mask_all] = kwargs.get("object_roughness", 1)
 			target_irradiance_map[mask_all] = 0.5
 
 		n_dot_v = torch.sum(-rays_d * target_normal_map, -1)
